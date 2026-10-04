@@ -35,7 +35,21 @@ $pendingRefunds = (int) $stmt->fetchColumn();
 $period = $_GET['period'] ?? 'daily';
 if (!in_array($period, ['daily', 'monthly', 'quarterly', 'yearly'], true)) $period = 'daily';
 
+// How far back an admin can step through this period, so "view previous
+// periods" stays a quick comparison tool rather than an unbounded
+// historical report browser: 2 weeks of days, 6 months, 4 quarters
+// (a year), or 3 years back.
+$maxOffset = ['daily' => 14, 'monthly' => 6, 'quarterly' => 4, 'yearly' => 3][$period];
+$offset    = max(0, min((int) ($_GET['offset'] ?? 0), $maxOffset));
+
 $now = new DateTime();
+switch ($period) {
+  case 'monthly':   $now->modify("-{$offset} months"); break;
+  case 'quarterly': $now->modify('-' . ($offset * 3) . ' months'); break;
+  case 'yearly':    $now->modify("-{$offset} years"); break;
+  default:          $now->modify("-{$offset} days"); break; // daily
+}
+
 $qStartMonth = ((int) ceil(((int) $now->format('n')) / 3) - 1) * 3 + 1;
 
 switch ($period) {
@@ -331,7 +345,22 @@ layoutHeader('Sales', '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart
 <div class="report-head">
   <div>
     <div class="report-title">Sales Report</div>
-    <div class="report-sub"><?= e($periodLabel) ?></div>
+    <div class="report-sub" style="display:flex;align-items:center;gap:8px">
+      <button type="button" class="btn btn-sm btn-ghost" style="padding:2px 8px"
+        onclick="location.href='?period=<?= $period ?>&offset=<?= $offset + 1 ?>'"
+        <?= $offset >= $maxOffset ? 'disabled' : '' ?> title="Previous <?= $period ?>">
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+      <span><?= e($periodLabel) ?></span>
+      <button type="button" class="btn btn-sm btn-ghost" style="padding:2px 8px"
+        onclick="location.href='?period=<?= $period ?>&offset=<?= $offset - 1 ?>'"
+        <?= $offset <= 0 ? 'disabled' : '' ?> title="Next <?= $period ?>">
+        <i class="fa-solid fa-chevron-right"></i>
+      </button>
+      <?php if ($offset > 0): ?>
+        <a href="?period=<?= $period ?>" style="font-size:0.74rem;color:var(--primary-color);font-weight:600">Jump to current</a>
+      <?php endif; ?>
+    </div>
   </div>
   <div class="tab-bar">
     <?php foreach (['daily' => 'Daily', 'monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'yearly' => 'Yearly'] as $p => $l): ?>

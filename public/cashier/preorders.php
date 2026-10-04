@@ -806,7 +806,7 @@ layoutHeader('Pre-orders', '');
 
             <?php elseif ($o['status'] === STATUS_READY): ?>
               <button type="button" class="btn btn-success btn-sm flex-1"
-                onclick="handleClaimOrder(<?= $o['id'] ?>, '<?= e($o['customer_name']) ?>')">
+                onclick="openClaimChoiceModal(<?= $o['id'] ?>, '<?= e($o['customer_name']) ?>', '<?= e($o['order_number']) ?>')">
                 <i class="fa-solid fa-id-card"></i> Claim Order
               </button>
             <?php endif; ?>
@@ -823,6 +823,25 @@ layoutHeader('Pre-orders', '');
     <?php endforeach; ?>
   </div>
 <?php endif; ?>
+
+<!-- Claim Order: choose how to verify the customer before marking claimed -->
+<div class="modal-overlay hidden" id="claim-choice-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fa-solid fa-id-card"></i> Claim Order</div>
+      <button class="modal-close" onclick="closeClaimChoiceModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px" id="claim-choice-sub"></p>
+      <button type="button" class="btn btn-success w-full" style="margin-bottom:10px" id="claim-choice-id-btn">
+        <i class="fa-solid fa-id-card"></i> Verify Physical School ID
+      </button>
+      <button type="button" class="btn btn-outline w-full" id="claim-choice-qr-btn">
+        <i class="fa-solid fa-qrcode"></i> Scan Customer's QR Code
+      </button>
+    </div>
+  </div>
+</div>
 
 <script>
   // Modal-based handlers for order actions
@@ -915,6 +934,28 @@ layoutHeader('Pre-orders', '');
       unlockOrder(orderId); // release if they cancel
     }
   }
+
+  function openClaimChoiceModal(orderId, customerName, orderNumber) {
+    document.getElementById('claim-choice-sub').innerHTML =
+      `How are you verifying <strong>${customerName}</strong> for order <strong>${orderNumber}</strong>?`;
+    document.getElementById('claim-choice-id-btn').onclick = () => {
+      closeClaimChoiceModal();
+      handleClaimOrder(orderId, customerName);
+    };
+    document.getElementById('claim-choice-qr-btn').onclick = () => {
+      // The scanner page already handles the actual claim (scan -> review
+      // details -> Confirm Handover), so just send them there.
+      window.location.href = '<?= APP_URL ?>/cashier/qr-scanner.php';
+    };
+    document.getElementById('claim-choice-modal').classList.remove('hidden');
+  }
+
+  function closeClaimChoiceModal() {
+    document.getElementById('claim-choice-modal').classList.add('hidden');
+  }
+  document.getElementById('claim-choice-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeClaimChoiceModal();
+  });
 
   async function handleClaimOrder(orderId, studentName) {
     const confirmed = await confirmModal(

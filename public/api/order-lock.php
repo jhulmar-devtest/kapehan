@@ -14,6 +14,15 @@ error_reporting(E_ALL);
 ob_start();
 
 try {
+  // This file loads its own config files instead of config/init.php (the
+  // custom output-buffering error handling here needs to wrap the includes
+  // themselves) — so it needs config/secrets.php loaded explicitly, the
+  // same way config/init.php does it, or DB_HOST/etc. are undefined by the
+  // time config/database.php tries to use them.
+  if (!file_exists(__DIR__ . '/../../config/secrets.php')) {
+    throw new Exception('config/secrets.php is missing — copy it from config/secrets.example.php.');
+  }
+  require_once __DIR__ . '/../../config/secrets.php';
   require_once __DIR__ . '/../../config/constants.php';
   require_once __DIR__ . '/../../config/database.php';
   require_once __DIR__ . '/../../config/session.php';

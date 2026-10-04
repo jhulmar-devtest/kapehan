@@ -429,7 +429,12 @@ function renderOrderTimeline(string $status): string {
                 <div class="order-side">
                   <div class="order-total"><?= peso($o['total_amount']) ?></div>
                   <span class="badge badge-<?= e($o['status']) ?>" data-status-badge><?= e(ucfirst(str_replace('_', ' ', $o['status']))) ?></span>
-                  <div class="order-actions">
+                  <div class="order-actions" data-order-actions>
+                    <?php if ($o['status'] === 'ready'): ?>
+                      <button class="btn btn-sm btn-primary" data-qr-btn onclick="openQrModal(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>')">
+                        <i class="fa-solid fa-qrcode"></i> Show QR to Claim
+                      </button>
+                    <?php endif; ?>
                     <?php if ($group === 'completed' && empty($o['feedback_id'])): ?>
                       <button class="btn btn-sm btn-outline" onclick="openRateModal(<?= $o['id'] ?>)">Rate Order</button>
                     <?php endif; ?>
@@ -471,8 +476,26 @@ function renderOrderTimeline(string $status): string {
     </div>
   </div>
 
+  <div class="modal-overlay" id="qrModal" hidden>
+    <div class="modal-box" style="text-align:center;max-width:340px">
+      <button class="modal-close" onclick="closeQrModal()">&times;</button>
+      <div style="font-size:18px;font-weight:800;margin-bottom:2px">Show this to the cashier</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px" id="qrOrderNum"></p>
+      <div id="qrCanvasBox" style="display:flex;align-items:center;justify-content:center;min-height:220px">
+        <i class="fa-solid fa-spinner fa-spin" style="font-size:28px;color:var(--text-muted)"></i>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:14px" id="qrExpiryNote">
+        This code is valid for 10 minutes.
+      </p>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" id="qrRefreshBtn" onclick="refreshQr()" hidden>
+        <i class="fa-solid fa-rotate"></i> Code expired — Tap to refresh
+      </button>
+    </div>
+  </div>
+
   <?php require __DIR__ . '/../includes/cart-drawer.php'; ?>
 
+  <script src="<?= APP_URL ?>/../assets/js/qrcode.min.js"></script>
   <script>
     const APP_URL = '<?= APP_URL ?>';
     const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
@@ -483,6 +506,73 @@ function renderOrderTimeline(string $status): string {
     window.addEventListener('click', e => {
       if (!e.target.closest('.user-menu')) document.getElementById('userMenuDropdown')?.classList.remove('open');
     });
+
+    /* ── Show QR modal (pickup claim) ──
+       Mirrors the 10-minute expiry enforced server-side in
+       api/qr-claim.php — the countdown here is just so the student/
+       faculty isn't caught off guard by a code that silently stopped
+       working; refreshQr() gets a freshly-signed one from the same
+       endpoint used to render it the first time. */
+    let qrCountdownTimer = null;
+    let qrCurrentOrderId = null;
+
+    function openQrModal(orderId, orderNumber) {
+      qrCurrentOrderId = orderId;
+      document.getElementById('qrOrderNum').textContent = orderNumber;
+      document.getElementById('qrModal').hidden = false;
+      loadQr(orderId);
+    }
+
+    function closeQrModal() {
+      document.getElementById('qrModal').hidden = true;
+      clearInterval(qrCountdownTimer);
+    }
+
+    function refreshQr() {
+      if (qrCurrentOrderId) loadQr(qrCurrentOrderId);
+    }
+
+    function loadQr(orderId) {
+      clearInterval(qrCountdownTimer);
+      document.getElementById('qrRefreshBtn').hidden = true;
+      const box = document.getElementById('qrCanvasBox');
+      box.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:28px;color:var(--text-muted)"></i>';
+
+      fetch(`${APP_URL}/api/qr-generate.php?order_id=${orderId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) {
+            box.innerHTML = `<p style="color:var(--status-cancelled);font-size:13px;padding:0 10px">${data.message || 'Could not generate a QR code for this order right now.'}</p>`;
+            return;
+          }
+          box.innerHTML = '';
+          new QRCode(box, { text: data.qr_data, width: 200, height: 200 });
+          startQrCountdown(600); // seconds — matches the server-side expiry window
+        })
+        .catch(() => {
+          box.innerHTML = '<p style="color:var(--status-cancelled);font-size:13px">Network error — try again.</p>';
+        });
+    }
+
+    function startQrCountdown(seconds) {
+      let remaining = seconds;
+      const note = document.getElementById('qrExpiryNote');
+      const refreshBtn = document.getElementById('qrRefreshBtn');
+      const tick = () => {
+        if (remaining <= 0) {
+          clearInterval(qrCountdownTimer);
+          note.textContent = 'This code has expired.';
+          refreshBtn.hidden = false;
+          return;
+        }
+        const m = Math.floor(remaining / 60);
+        const s = String(remaining % 60).padStart(2, '0');
+        note.textContent = `Valid for ${m}:${s} more`;
+        remaining--;
+      };
+      tick();
+      qrCountdownTimer = setInterval(tick, 1000);
+    }
 
     /* ── Rate Order modal ── */
     function openRateModal(orderId) {
@@ -549,6 +639,15 @@ function renderOrderTimeline(string $status): string {
 
             if (o.status === 'ready' && wasStatus !== 'ready') {
               showToast('success', `Order ${row.dataset.orderNumber} is ready for pickup!`, 8000);
+              const actions = row.querySelector('[data-order-actions]');
+              if (actions && !actions.querySelector('[data-qr-btn]')) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-sm btn-primary';
+                btn.setAttribute('data-qr-btn', '');
+                btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> Show QR to Claim';
+                btn.onclick = () => openQrModal(o.id, row.dataset.orderNumber);
+                actions.prepend(btn);
+              }
             } else if (o.status === 'cancelled' || o.status === 'no_show') {
               showToast('warning', `Order ${row.dataset.orderNumber} was cancelled.`, 8000);
             }

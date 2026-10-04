@@ -8,7 +8,7 @@
  * Returns: JSON { success, qr_data }  where qr_data is a signed string
  */
 require_once __DIR__ . '/../../config/init.php';
-requireRole(ROLE_STUDENT); // students AND faculty can call this
+requireRole(ROLE_STUDENT, ROLE_FACULTY); // students AND faculty can call this
 
 header('Content-Type: application/json');
 

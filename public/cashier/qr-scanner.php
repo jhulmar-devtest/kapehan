@@ -251,6 +251,27 @@ layoutHeader('QR Scanner', '');
     color: var(--primary-color);
   }
 
+  /* Review state — shown after a scan but before the cashier confirms
+     the handover. Amber instead of green: nothing has been claimed yet. */
+  .result-card.review {
+    border-color: var(--color-warning-border);
+  }
+  .result-card.review .result-header {
+    background: var(--color-warning-bg);
+    border-bottom-color: var(--color-warning-border);
+  }
+  .result-card.review .result-icon {
+    background: var(--color-warning);
+  }
+  .result-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 16px;
+  }
+  .result-actions .btn {
+    flex: 1;
+  }
+
   /* Error card */
   .error-card {
     display: none;
@@ -323,12 +344,13 @@ layoutHeader('QR Scanner', '');
   <!-- Debug panel -->
   <div id="debugPanel"></div>
 
-  <!-- Success result -->
+  <!-- Scan result — reused for both the pre-confirm review state and the
+       post-confirm claimed state; see showReview()/showClaimed() below -->
   <div class="result-card" id="resultCard">
     <div class="result-header">
-      <div class="result-icon"><i class="fa-solid fa-circle-check"></i></div>
+      <div class="result-icon"><i class="fa-solid" id="resultIcon"></i></div>
       <div>
-        <div style="font-weight:800;font-size:1rem">Order Claimed ✓</div>
+        <div style="font-weight:800;font-size:1rem" id="resultTitle"></div>
         <div style="font-size:0.74rem;color:#166534" id="resultOrderNum"></div>
       </div>
     </div>
@@ -338,11 +360,7 @@ layoutHeader('QR Scanner', '');
       <div class="result-row"><span class="lbl">Items</span><span class="val" id="rItems"></span></div>
       <div class="result-row"><span class="lbl">Total</span><span class="val result-total" id="rTotal"></span></div>
     </div>
-    <div style="padding:0 16px 16px">
-      <button class="btn btn-primary" style="width:100%" onclick="scanAgain()">
-        <i class="fa-solid fa-qrcode"></i> Scan Next Order
-      </button>
-    </div>
+    <div class="result-actions" id="resultActions"></div>
   </div>
 
   <!-- Error -->
@@ -535,6 +553,8 @@ layoutHeader('QR Scanner', '');
   }
 
   // ── Handle scan ───────────────────────────────────────────────────────────────
+  let pendingQrData = null; // the scanned string, kept so Confirm can re-submit it
+
   async function handleScan(qrData) {
     if (isProcessing || cooldown) return;
     if (qrData === lastData) return;
@@ -547,58 +567,80 @@ layoutHeader('QR Scanner', '');
     playBeep('scan');
 
     try {
-      const fd = new FormData();
-      fd.append('qr_data', qrData);
-
-      const csrfInput = document.querySelector('input[name="csrf_token"]');
-      if (csrfInput) fd.append('csrf_token', csrfInput.value);
-
-      const res = await fetch('<?= APP_URL ?>/api/qr-claim.php', {
-        method: 'POST',
-        body: fd
-      });
-      const text = await res.text();
-      dbg(`Response: ${text.substring(0, 100)}`);
-
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Server returned non-JSON: ' + text.substring(0, 80));
-      }
+      const data = await postQr('<?= APP_URL ?>/api/qr-verify.php', qrData);
 
       if (data.success) {
         stopCamera();
-        showSuccess(data.order);
-        playBeep('success');
+        pendingQrData = qrData;
+        showReview(data.order);
+        setStatus('success', 'fa-circle-check', `<strong>${data.order.order_number}</strong> — review before confirming`);
       } else {
-        setStatus('error', 'fa-circle-xmark', data.message || 'Could not claim order');
-        showError(data.message || 'Could not claim order', '');
-        playBeep('error');
-        // Allow retry after 4 seconds
-        setTimeout(() => {
-          isProcessing = false;
-          cooldown = false;
-          lastData = null;
-          setStatus('active', 'fa-circle-dot', 'Ready to scan…');
-          document.getElementById('errorCard').classList.remove('show');
-        }, 4000);
+        failScan(data.message || 'Could not read this order');
       }
     } catch (err) {
       dbg(`Fetch error: ${err.message}`);
-      showError('Network Error', err.message);
-      setTimeout(() => {
-        isProcessing = false;
-        cooldown = false;
-        lastData = null;
-      }, 4000);
+      failScan('Network error: ' + err.message);
     }
   }
 
+  async function confirmHandover() {
+    if (!pendingQrData) return;
+    const btn = document.getElementById('confirmBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Confirming…';
+    }
+
+    try {
+      const data = await postQr('<?= APP_URL ?>/api/qr-claim.php', pendingQrData);
+      if (data.success) {
+        showClaimed(data.order);
+        playBeep('success');
+      } else {
+        // The QR could have expired, or someone else claimed it, while this
+        // was sitting on the review screen — surface that instead of a
+        // generic failure, and drop back to scanning.
+        failScan(data.message || 'Could not confirm this order');
+        playBeep('error');
+      }
+    } catch (err) {
+      failScan('Network error: ' + err.message);
+    }
+    pendingQrData = null;
+  }
+
+  async function postQr(url, qrData) {
+    const fd = new FormData();
+    fd.append('qr_data', qrData);
+    const csrfInput = document.querySelector('input[name="csrf_token"]');
+    if (csrfInput) fd.append('csrf_token', csrfInput.value);
+
+    const res = await fetch(url, { method: 'POST', body: fd });
+    const text = await res.text();
+    dbg(`Response: ${text.substring(0, 100)}`);
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('Server returned non-JSON: ' + text.substring(0, 80));
+    }
+  }
+
+  function failScan(message) {
+    setStatus('error', 'fa-circle-xmark', message);
+    showError(message, '');
+    playBeep('error');
+    setTimeout(() => {
+      isProcessing = false;
+      cooldown = false;
+      lastData = null;
+      pendingQrData = null;
+      setStatus('active', 'fa-circle-dot', 'Ready to scan…');
+      document.getElementById('errorCard').classList.remove('show');
+    }, 4000);
+  }
+
   // ── UI helpers ────────────────────────────────────────────────────────────────
-  function showSuccess(order) {
-    document.getElementById('resultCard').classList.add('show');
-    document.getElementById('errorCard').classList.remove('show');
+  function fillOrderFields(order) {
     document.getElementById('resultOrderNum').textContent = order.order_number;
     document.getElementById('rCustomer').textContent = order.customer_name;
     document.getElementById('rCustomerId').textContent = order.customer_id_no;
@@ -606,12 +648,47 @@ layoutHeader('QR Scanner', '');
     document.getElementById('rTotal').textContent = '₱' + parseFloat(order.total_amount).toLocaleString('en-PH', {
       minimumFractionDigits: 2
     });
+  }
+
+  // Step 1 result: scanned and verified, but NOT yet claimed. The cashier
+  // checks the items/customer match what's being handed over before this
+  // becomes a real status change.
+  function showReview(order) {
+    const card = document.getElementById('resultCard');
+    card.classList.add('show', 'review');
+    document.getElementById('errorCard').classList.remove('show');
+    document.getElementById('resultIcon').className = 'fa-solid fa-circle-question';
+    document.getElementById('resultTitle').textContent = 'Review before confirming';
+    fillOrderFields(order);
+    document.getElementById('resultActions').innerHTML = `
+      <button class="btn btn-ghost" onclick="scanAgain()">Cancel</button>
+      <button class="btn btn-primary" id="confirmBtn" onclick="confirmHandover()">
+        <i class="fa-solid fa-check"></i> Confirm Handover
+      </button>`;
+  }
+
+  // Step 2 result: actually claimed — order_status is now 'claimed'.
+  function showClaimed(order) {
+    const card = document.getElementById('resultCard');
+    card.classList.add('show');
+    card.classList.remove('review');
+    document.getElementById('errorCard').classList.remove('show');
+    document.getElementById('resultIcon').className = 'fa-solid fa-circle-check';
+    document.getElementById('resultTitle').textContent = 'Order Claimed ✓';
+    fillOrderFields(order);
     setStatus('success', 'fa-circle-check', `<strong>${order.order_number}</strong> claimed successfully!`);
+    document.getElementById('resultActions').innerHTML = `
+      <button class="btn btn-ghost" onclick="window.open('<?= APP_URL ?>/cashier/receipt.php?id=${order.id}', '_blank')">
+        <i class="fa-solid fa-print"></i> Print Receipt
+      </button>
+      <button class="btn btn-primary" onclick="scanAgain()">
+        <i class="fa-solid fa-qrcode"></i> Scan Next
+      </button>`;
   }
 
   function showError(title, detail) {
     document.getElementById('errorCard').classList.add('show');
-    document.getElementById('resultCard').classList.remove('show');
+    document.getElementById('resultCard').classList.remove('show', 'review');
     document.getElementById('errTitle').textContent = title;
     document.getElementById('errDetail').textContent = detail;
   }
@@ -620,7 +697,8 @@ layoutHeader('QR Scanner', '');
     isProcessing = false;
     cooldown = false;
     lastData = null;
-    document.getElementById('resultCard').classList.remove('show');
+    pendingQrData = null;
+    document.getElementById('resultCard').classList.remove('show', 'review');
     document.getElementById('errorCard').classList.remove('show');
     startCamera();
   }
