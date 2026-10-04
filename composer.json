@@ -1,0 +1,11 @@
+{
+    "name": "earist/kapehan-pos",
+    "description": "EARIST Cavite Campus Coffee Shop POS System",
+    "type": "project",
+    "require": {
+        "phpmailer/phpmailer": "^7.0"
+    },
+    "autoload": {
+        "classmap": []
+    }
+}

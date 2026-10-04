@@ -1,0 +1,134 @@
+/* ============================================================
+   variables.css — Single source of truth for all design tokens.
+   Zero hardcoded colors anywhere else in the codebase.
+   ============================================================ */
+:root {
+  /* ── Brand Palette ─────────────────────────────────────── */
+  --primary-color: #c0392b;
+  --primary-dark: #9b2d22;
+  --primary-light: #e05246;
+  --primary-subtle: rgba(192, 57, 43, 0.08);
+  --primary-glow: rgba(192, 57, 43, 0.18);
+
+  --secondary-color: #6b3e26;
+  --secondary-light: #8b5035;
+  --secondary-subtle: rgba(107, 62, 38, 0.08);
+
+  --accent-color: #f0b429;
+  --accent-dark: #d09a1a;
+  --accent-subtle: rgba(240, 180, 41, 0.1);
+
+  /* ── Surfaces ──────────────────────────────────────────── */
+  --background-color: #f3f0ec;
+  --surface-color: #ffffff;
+  --surface-raised: #faf8f5;
+  --surface-sunken: #ede9e4;
+  --border-color: #e0dbd4;
+  --border-strong: #cac3ba;
+
+  /* ── Typography ────────────────────────────────────────── */
+  --text-color: #18120e;
+  --text-secondary: #54483e;
+  --text-muted: #978e84;
+  --text-placeholder: #b9b1a8;
+  --text-on-primary: #ffffff;
+  --text-on-accent: #18120e;
+
+  /* ── Sidebar (light warm cream) ────────────────────────── */
+  --sidebar-bg: #ffffff;
+  --sidebar-surface: #faf8f5;
+  --sidebar-hover: #f3f0ec;
+  --sidebar-active-bg: var(--primary-color);
+  --sidebar-text: #18120e;
+  --sidebar-text-dim: #978e84;
+  --sidebar-border: #e0dbd4;
+  --sidebar-width: 272px;
+  --sidebar-collapsed: 68px;
+
+  /* ── Status ────────────────────────────────────────────── */
+  --status-pending: #d97706;
+  --status-pending-bg: rgba(217, 119, 6, 0.09);
+  --status-pending-border: rgba(217, 119, 6, 0.22);
+
+  --status-preparing: #2563eb;
+  --status-preparing-bg: rgba(37, 99, 235, 0.08);
+  --status-preparing-border: rgba(37, 99, 235, 0.22);
+
+  --status-ready: #059669;
+  --status-ready-bg: rgba(5, 150, 105, 0.09);
+  --status-ready-border: rgba(5, 150, 105, 0.22);
+
+  --status-claimed: #6b7280;
+  --status-claimed-bg: rgba(107, 114, 128, 0.09);
+  --status-claimed-border: rgba(107, 114, 128, 0.22);
+
+  --status-cancelled: #dc2626;
+  --status-cancelled-bg: rgba(220, 38, 38, 0.08);
+  --status-cancelled-border: rgba(220, 38, 38, 0.22);
+
+  --status-paid: #059669;
+  --status-paid-bg: rgba(5, 150, 105, 0.09);
+  --status-paid-border: rgba(5, 150, 105, 0.22);
+
+  --status-refunded: #7c3aed;
+  --status-refunded-bg: rgba(124, 58, 237, 0.09);
+  --status-refunded-border: rgba(124, 58, 237, 0.22);
+
+  /* ── Generic semantic feedback (toasts, form validation, banners) ──
+     Aliased to the same hues as the status tokens above so success/
+     error/warning/info always mean the same color everywhere in the app. */
+  --color-success: var(--status-ready);
+  --color-success-bg: var(--status-ready-bg);
+  --color-success-border: var(--status-ready-border);
+
+  --color-warning: var(--status-pending);
+  --color-warning-bg: var(--status-pending-bg);
+  --color-warning-border: var(--status-pending-border);
+
+  --color-error: var(--status-cancelled);
+  --color-error-bg: var(--status-cancelled-bg);
+  --color-error-border: var(--status-cancelled-border);
+
+  --color-info: var(--status-preparing);
+  --color-info-bg: var(--status-preparing-bg);
+  --color-info-border: var(--status-preparing-border);
+
+  /* ── Shadows (warm-toned) ──────────────────────────────── */
+  --shadow-xs: 0 1px 3px rgba(24, 18, 14, 0.06);
+  --shadow-sm:
+    0 2px 8px rgba(24, 18, 14, 0.08), 0 1px 2px rgba(24, 18, 14, 0.04);
+  --shadow-md:
+    0 4px 16px rgba(24, 18, 14, 0.1), 0 2px 4px rgba(24, 18, 14, 0.04);
+  --shadow-lg:
+    0 8px 32px rgba(24, 18, 14, 0.12), 0 3px 8px rgba(24, 18, 14, 0.05);
+  --shadow-xl:
+    0 20px 60px rgba(24, 18, 14, 0.15), 0 6px 16px rgba(24, 18, 14, 0.07);
+  --shadow-primary: 0 4px 14px rgba(192, 57, 43, 0.3);
+
+  /* ── Radius ────────────────────────────────────────────── */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* ── Spacing ────────────────────────────────────────────── */
+  --space-1: 5px;
+  --space-2: 9px;
+  --space-3: 14px;
+  --space-4: 18px;
+  --space-5: 23px;
+  --space-6: 27px;
+  --space-7: 32px;
+  --space-8: 36px;
+  --space-10: 46px;
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  --header-h: 68px;
+
+  /* ── Transitions ─────────────────────────────────────────── */
+  --transition-fast: 0.12s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

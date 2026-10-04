@@ -1,0 +1,24 @@
+# ── Secrets — NEVER commit this file ──────────────────────────
+# Each developer creates their own from config/secrets.example.php
+config/secrets.php
+
+# ── Composer dependencies ──────────────────────────────────────
+# Regenerated per-machine with `composer install` (composer.lock IS
+# committed, so everyone installs the exact same dependency versions).
+/vendor/
+
+# ── Claude Code local settings ─────────────────────────────────
+# Contains machine-specific paths (e.g. C:\Users\yourname\...) — not
+# meant to be shared between group members.
+.claude/settings.local.json
+
+# ── Editor / OS clutter ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ── Logs ─────────────────────────────────────────────────────────
+*.log
+error_log
