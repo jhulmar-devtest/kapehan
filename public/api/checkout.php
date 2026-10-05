@@ -30,30 +30,46 @@ $notes       = sanitizeString($data['notes'] ?? '', 500);
 $pickupDate  = sanitizeString($data['pickup_date'] ?? '', 10);
 $pickupTime  = sanitizeString($data['pickup_time'] ?? '', 10);
 
-// Store hours check (from app_settings, with a hardcoded fallback)
+// Pickup is same-day only. Validate the chosen slot itself rather than
+// rejecting orders just because the current time is outside store hours.
 $openTime  = getSetting('store_open_time', '07:00');
 $closeTime = getSetting('store_close_time', '20:00');
-$currentHour = (int) date('G');
-if ($currentHour < (int) substr($openTime, 0, 2) || $currentHour >= (int) substr($closeTime, 0, 2)) {
-  http_response_code(422);
-  echo json_encode(['ok' => false, 'reason' => 'closed', 'message' => "Orders cannot be placed outside of store hours ({$openTime}-{$closeTime})."]);
-  exit;
-}
 
 if (empty($items)) {
   http_response_code(422);
   echo json_encode(['ok' => false, 'message' => 'Your cart is empty.']);
   exit;
 }
-if (empty($pickupDate) || empty($pickupTime)) {
+if ($pickupDate !== date('Y-m-d') || empty($pickupTime)) {
   http_response_code(422);
-  echo json_encode(['ok' => false, 'message' => 'Please choose a pickup date and time.']);
+  echo json_encode(['ok' => false, 'reason' => 'closed', 'message' => 'Orders are available for pickup today only.']);
+  exit;
+}
+
+$slotTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $pickupTime);
+$openTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $openTime);
+$closeTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $closeTime);
+$slotIntervalSeconds = max(5, (int) getSetting('pickup_slot_interval_minutes', '15')) * 60;
+if (
+  !$slotTimestamp || !$openTimestamp || !$closeTimestamp ||
+  $slotTimestamp->format('H:i') !== $pickupTime ||
+  $slotTimestamp < $openTimestamp || $slotTimestamp >= $closeTimestamp ||
+  (($slotTimestamp->getTimestamp() - $openTimestamp->getTimestamp()) % $slotIntervalSeconds !== 0) ||
+  $slotTimestamp->getTimestamp() < (time() + PICKUP_MIN_LEAD_MINUTES * 60)
+) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'reason' => 'slot_unavailable', 'message' => 'That pickup time has passed or is outside store hours. Please choose a current available time.']);
   exit;
 }
 
 // Pre-orders are GCash-only — no cash, no other e-wallets/banks. A
 // reference number is always required since there's no cash fallback.
 $method = 'GCash';
+if (empty(GCASH_PAYMENT_NUMBER) || empty(GCASH_PAYMENT_NAME)) {
+  http_response_code(503);
+  echo json_encode(['ok' => false, 'message' => 'Online ordering is temporarily unavailable while the shop configures its GCash account.']);
+  exit;
+}
 if (empty($ref)) {
   http_response_code(422);
   echo json_encode(['ok' => false, 'message' => 'GCash reference number is required.']);
@@ -70,7 +86,7 @@ try {
   $slotStmt->execute([$pickupDate, $pickupTime]);
   if ((int) $slotStmt->fetchColumn() >= (int) getSetting('pickup_slot_capacity', '6')) {
     http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => 'That pickup slot is full. Please choose another time.']);
+    echo json_encode(['ok' => false, 'reason' => 'slot_full', 'message' => 'That pickup time just filled up. Please choose another time.']);
     exit;
   }
 } catch (\Throwable $e) {
@@ -148,9 +164,10 @@ try {
     $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
   }
 
-  // GCash-only pre-orders are always paid up front (no cash-on-pickup path).
-  $payStatus = PAY_STATUS_PAID;
-  $paidAt    = date('Y-m-d H:i:s');
+  // The submitted reference is customer-provided and must be verified by
+  // cashier staff before it is recorded as paid.
+  $payStatus = PAY_STATUS_PENDING;
+  $paidAt    = null;
   $db->prepare(
     "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, reference_number, paid_at)
      VALUES (?, ?, ?, ?, ?, ?)"

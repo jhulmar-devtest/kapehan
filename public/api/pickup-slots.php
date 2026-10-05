@@ -9,7 +9,8 @@ if (!isLoggedIn()) {
 }
 
 $date = sanitizeString($_GET['date'] ?? '', 10);
-if (empty($date)) {
+date_default_timezone_set('Asia/Manila');
+if (empty($date) || $date !== date('Y-m-d')) {
   echo json_encode([]);
   exit;
 }
@@ -34,12 +35,13 @@ $slots = [];
 $cursor = strtotime($date . ' ' . $open);
 $end    = strtotime($date . ' ' . $close);
 $now    = time();
-$isToday = ($date === date('Y-m-d'));
+$minimumPickupTime = $now + (PICKUP_MIN_LEAD_MINUTES * 60);
 
 while ($cursor < $end) {
   $label = date('H:i', $cursor);
-  // Don't offer slots already in the past for today
-  if ($cursor > $now) {
+  // Give the shop at least five minutes to prepare orders; a slot inside
+  // this lead-time window is no longer offered.
+  if ($cursor >= $minimumPickupTime) {
     $slots[] = [
       'value' => $label,
       'label' => date('g:i A', $cursor),
@@ -54,13 +56,11 @@ while ($cursor < $end) {
 // above rather than being a separate concept, so nothing downstream that
 // reads pickup_time (order display, urgency badges, receipts, reports)
 // needs to know it exists.
-if ($isToday) {
-  foreach ($slots as $i => $s) {
-    if (!$s['full']) {
-      $slots[$i]['label'] = 'ASAP (~' . $s['label'] . ')';
-      $slots[$i]['asap']  = true;
-      break;
-    }
+foreach ($slots as $i => $s) {
+  if (!$s['full']) {
+    $slots[$i]['label'] = 'ASAP (~' . $s['label'] . ')';
+    $slots[$i]['asap']  = true;
+    break;
   }
 }
 

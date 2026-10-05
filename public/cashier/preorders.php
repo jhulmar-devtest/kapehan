@@ -52,6 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
       $db->prepare("UPDATE orders SET status=?,cashier_id=?,locked_by=NULL,locked_at=NULL,lock_expire_at=NULL WHERE id=?")
         ->execute([$status, $currentUser, $oid]);
     }
+    if ($status === STATUS_PREPARING) {
+      // The customer-submitted GCash reference remains pending until the
+      // cashier confirms it in the existing Start Preparing confirmation.
+      $db->prepare(
+        "UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?"
+      )->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
+    }
     auditLog(ROLE_CASHIER, $currentUser, "status_{$status}", 'orders', $oid);
     flash('global', "Order updated to: {$status}.", 'success');
   }

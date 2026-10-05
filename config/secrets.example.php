@@ -49,3 +49,9 @@ define('MAIL_FROM',     'your-gmail-address@gmail.com');
 // Quick way to generate one: run this in a terminal with PHP installed:
 //   php -r "echo bin2hex(random_bytes(32));"
 define('APP_KEY', 'REPLACE_WITH_YOUR_OWN_RANDOM_KEY');
+
+// --- Customer GCash payments ---
+// Set these to the shop's GCash recipient name and number. They are shown
+// together in the payment modal so customers can confirm the recipient.
+define('GCASH_PAYMENT_NAME', '');
+define('GCASH_PAYMENT_NUMBER', '');

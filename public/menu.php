@@ -90,7 +90,7 @@ $storeClose = getSetting('store_close_time', '20:00');
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
-  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
   <style>
     *,
     *::before,
@@ -983,28 +983,43 @@ $storeClose = getSetting('store_close_time', '20:00');
     <?php else: ?>
       <div class="cart-sidebar-body" id="cartBody"><!-- rendered by JS --></div>
       <div class="cart-sidebar-footer" id="cartFooter">
-        <div class="field-label">Pickup Date</div>
-        <input type="date" class="field-input" id="pickupDate" min="<?= date('Y-m-d') ?>" value="<?= date('Y-m-d') ?>">
         <div class="field-label">Pickup Time</div>
         <select class="field-select" id="pickupTime">
-          <option value="">Select date first...</option>
+          <option value="">Loading available times...</option>
         </select>
-
-        <div class="field-label">GCash Reference Number</div>
-        <input class="field-input" id="refNo" placeholder="e.g. 1234567890123" style="margin-top:2px">
-        <div class="cart-hint" style="font-size:12px;color:var(--text-muted);margin-top:6px">
-          Pre-orders are paid via GCash only. Send payment first, then enter the reference number here.
-        </div>
+        <p id="pickupSlotMessage" class="cart-hint" role="status" style="font-size:12px;color:var(--text-muted);margin:6px 0 0"></p>
         <input class="field-input" id="cartNotes" placeholder="Notes (optional)" style="margin-top:10px">
 
         <div class="cart-total-row" style="margin-top:16px">
           <span>Total</span><span id="cartTotal">\u20b10.00</span>
         </div>
-        <button class="btn btn-primary" style="width:100%" onclick="placeOrder()">Place Order</button>
+        <button class="btn btn-primary" id="proceedPaymentButton" style="width:100%" onclick="proceedToPayment()" disabled>Proceed to payment</button>
         <p style="font-size:11.5px;color:var(--text-muted);margin-top:8px;text-align:center">Store hours: <?= e($storeOpen) ?> - <?= e($storeClose) ?></p>
       </div>
     <?php endif; ?>
   </aside>
+
+  <div class="modal-overlay" id="paymentModal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="paymentHeading">
+      <button class="modal-close" onclick="closePaymentModal()" aria-label="Close">&times;</button>
+      <div class="confirm-heading" id="paymentHeading">Pay with GCash</div>
+      <p class="confirm-subheading">Send the exact amount below, then paste your GCash reference number.</p>
+      <div class="confirm-details">
+        <div class="confirm-row"><span>Account name</span><strong id="gcashPaymentName" style="text-align:right;overflow-wrap:anywhere"><?= e(GCASH_PAYMENT_NAME ?: 'Name not configured') ?></strong></div>
+        <div class="confirm-row"><span>GCash number</span><strong id="gcashPaymentNumber" style="text-align:right;overflow-wrap:anywhere"><?= e(GCASH_PAYMENT_NUMBER ?: 'Number not configured') ?></strong></div>
+        <div class="confirm-row total"><span>Amount</span><span id="paymentAmount"></span></div>
+      </div>
+      <?php if (!GCASH_PAYMENT_NUMBER || !GCASH_PAYMENT_NAME): ?>
+        <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be added to config/secrets.php before customers can pay.</p>
+      <?php endif; ?>
+      <label class="field-label" for="refNo">GCash reference number</label>
+      <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="Paste reference number">
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
+        <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= GCASH_PAYMENT_NUMBER && GCASH_PAYMENT_NAME ? '' : 'disabled' ?>>Submit order</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ══════════════ AUTH MODAL (item 2 & 6) ══════════════ -->
   <div class="modal-overlay" id="authModal" hidden>
@@ -1341,7 +1356,7 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
     });
   </script>
-  <script src="<?= APP_URL ?>/../assets/js/cart-drawer.js"></script>
+  <script src="<?= APP_URL ?>/../assets/js/cart-drawer.js?v=<?= (int) filemtime(__DIR__ . '/../assets/js/cart-drawer.js') ?>"></script>
 </body>
 
 </html>

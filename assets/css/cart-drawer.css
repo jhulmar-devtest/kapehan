@@ -251,6 +251,39 @@
   width: min(360px, calc(100vw - 40px));
 }
 
+/* Keep cart feedback clear of the checkout controls and give it an opaque
+   surface while it is layered over the open drawer. */
+.toast-stack.cart-open {
+  top: 76px;
+  bottom: auto;
+  z-index: 700;
+}
+
+.toast-stack.cart-open .toast {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  max-width: 100%;
+  background: var(--surface-color);
+  box-shadow: 0 8px 24px rgba(28, 20, 14, 0.2);
+}
+
+.toast-stack.cart-open .toast-error {
+  color: #991b1b;
+}
+
+.toast-stack.cart-open .toast-warning {
+  color: #78350f;
+}
+
+.toast-stack.cart-open .toast-success {
+  color: #166534;
+}
+
+.toast-stack.cart-open .toast-info {
+  color: #1e3a8a;
+}
+
 .toast {
   display: flex;
   align-items: center;

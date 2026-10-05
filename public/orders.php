@@ -186,7 +186,7 @@ function renderOrderTimeline(string $status): string {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css">
-  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
   <style>
     /* ── Page-specific styles ── */
     .order-tabs {
@@ -657,7 +657,7 @@ function renderOrderTimeline(string $status): string {
     }
     setInterval(pollOrderStatuses, 20000);
   </script>
-  <script src="<?= APP_URL ?>/../assets/js/cart-drawer.js"></script>
+  <script src="<?= APP_URL ?>/../assets/js/cart-drawer.js?v=<?= (int) filemtime(__DIR__ . '/../assets/js/cart-drawer.js') ?>"></script>
 </body>
 
 </html>

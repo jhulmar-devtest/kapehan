@@ -19,6 +19,16 @@
 define('APP_NAME',    'Kapehan ni Amang');
 define('APP_TAGLINE', 'Swak sa Panlasa at Gawi ng Mag-aaral ni Amang');
 
+// Customer-facing merchant account used by the manual GCash checkout flow.
+// Put the real value in config/secrets.php; this fallback keeps setup safe.
+if (!defined('GCASH_PAYMENT_NUMBER')) {
+  define('GCASH_PAYMENT_NUMBER', '');
+}
+if (!defined('GCASH_PAYMENT_NAME')) {
+  define('GCASH_PAYMENT_NAME', '');
+}
+define('PICKUP_MIN_LEAD_MINUTES', 5);
+
 // APP_URL auto-detects the host AND protocol so the app works on:
 //   - localhost (http)
 //   - local IP / LAN  (http, e.g. 192.168.x.x)

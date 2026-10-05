@@ -69,11 +69,13 @@ function openCart() {
   renderCartSidebar();
   document.getElementById("cartSidebar").classList.add("open");
   document.getElementById("scrim").classList.add("open");
+  document.getElementById("toastStack")?.classList.add("cart-open");
 }
 
 function closeCart() {
   document.getElementById("cartSidebar").classList.remove("open");
   document.getElementById("scrim").classList.remove("open");
+  document.getElementById("toastStack")?.classList.remove("cart-open");
 }
 
 function renderCartSidebar() {
@@ -123,20 +125,64 @@ function cartRemove(lineId) {
   renderCartSidebar();
 }
 
-function loadPickupSlots() {
-  const dateEl = document.getElementById("pickupDate");
+let pickupTimeManuallySelected = false;
+
+function todayInManila() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function updateProceedButton() {
   const timeEl = document.getElementById("pickupTime");
-  if (!dateEl || !timeEl) return;
-  fetch(`${APP_URL}/api/pickup-slots.php?date=${dateEl.value}`)
+  const button = document.getElementById("proceedPaymentButton");
+  if (!timeEl || !button) return;
+  button.disabled = !timeEl.value || timeEl.options[timeEl.selectedIndex]?.disabled;
+}
+
+function loadPickupSlots() {
+  const timeEl = document.getElementById("pickupTime");
+  const messageEl = document.getElementById("pickupSlotMessage");
+  if (!timeEl) return;
+  const previousValue = timeEl.value;
+  const previousWasAsap = !pickupTimeManuallySelected ||
+    timeEl.options[timeEl.selectedIndex]?.dataset.asap === "true";
+  const button = document.getElementById("proceedPaymentButton");
+  if (button) button.disabled = true;
+  fetch(`${APP_URL}/api/pickup-slots.php?date=${todayInManila()}`)
     .then((r) => r.json())
     .then((slots) => {
-      timeEl.innerHTML =
-        slots
-          .map(
-            (s) =>
-              `<option value="${s.value}" ${s.full ? "disabled" : ""}>${s.label}${s.full ? " (full)" : ""}</option>`,
-          )
-          .join("") || '<option value="">No slots available</option>';
+      const available = slots.filter((slot) => !slot.full);
+      timeEl.innerHTML = slots.map((slot) =>
+        `<option value="${slot.value}" data-asap="${slot.asap ? "true" : "false"}" ${slot.full ? "disabled" : ""}>${slot.label}${slot.full ? " (full)" : ""}</option>`,
+      ).join("") || '<option value="">No times available</option>';
+
+      if (!available.length) {
+        timeEl.value = "";
+        if (messageEl) messageEl.textContent = slots.length
+          ? "All pickup times are full for today."
+          : "Ordering is closed for today.";
+      } else if (previousWasAsap) {
+        timeEl.value = available[0].value;
+        if (messageEl) messageEl.textContent = "Pickup is available today only. ASAP follows the earliest available time.";
+      } else if (available.some((slot) => slot.value === previousValue)) {
+        timeEl.value = previousValue;
+        if (messageEl) messageEl.textContent = "Pickup is available today only.";
+      } else {
+        timeEl.value = "";
+        if (messageEl) messageEl.textContent = previousValue
+          ? "Your selected time has passed or filled up. Please choose another."
+          : "Pickup is available today only.";
+      }
+      updateProceedButton();
+    })
+    .catch(() => {
+      timeEl.innerHTML = '<option value="">Could not load times</option>';
+      if (messageEl) messageEl.textContent = "Could not load pickup times. Please try again.";
+      updateProceedButton();
     });
 }
 
@@ -171,16 +217,41 @@ function reorder(orderId) {
 }
 
 /* ── Checkout ── */
-function placeOrder() {
+function proceedToPayment() {
   const cart = getCart();
   if (cart.length === 0) {
     showToast("warning", "Your cart is empty.");
     return;
   }
-  const pickupDateEl = document.getElementById("pickupDate");
   const pickupTimeEl = document.getElementById("pickupTime");
-  if (!pickupDateEl.value || !pickupTimeEl.value) {
-    showToast("warning", "Please choose a pickup date and time.");
+  if (!pickupTimeEl?.value || pickupTimeEl.options[pickupTimeEl.selectedIndex]?.disabled) {
+    showToast("warning", "Please choose an available pickup time.");
+    return;
+  }
+  const pickupDate = todayInManila();
+  const pickupTime = pickupTimeEl.value;
+  const pickupTimestamp = new Date(`${pickupDate}T${pickupTime}:00+08:00`).getTime();
+  if (pickupTimestamp < Date.now() + 5 * 60 * 1000) {
+    loadPickupSlots();
+    showToast("warning", "Pickup times must be at least 5 minutes from now. Choose another time.");
+    return;
+  }
+  document.getElementById("paymentAmount").textContent =
+    "₱" + cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0).toFixed(2);
+  document.getElementById("refNo").value = "";
+  document.getElementById("paymentModal").hidden = false;
+}
+
+function closePaymentModal() {
+  document.getElementById("paymentModal").hidden = true;
+}
+
+function submitOrder() {
+  const cart = getCart();
+  const pickupTimeEl = document.getElementById("pickupTime");
+  if (cart.length === 0 || !pickupTimeEl?.value) {
+    closePaymentModal();
+    showToast("warning", "Your cart or pickup time changed. Please review it and try again.");
     return;
   }
   const refNo = document.getElementById("refNo").value.trim();
@@ -188,19 +259,20 @@ function placeOrder() {
     showToast("warning", "Please enter your GCash reference number.");
     return;
   }
+  const pickupDate = todayInManila();
   const pickupLabel =
     pickupTimeEl.options[pickupTimeEl.selectedIndex]?.text ||
     pickupTimeEl.value;
-  const placeBtn = document.querySelector("#cartFooter .btn-primary");
+  const placeBtn = document.getElementById("submitPaymentButton");
   const payload = {
     items: cart,
     reference_no: refNo,
     notes: document.getElementById("cartNotes").value.trim(),
-    pickup_date: pickupDateEl.value,
+    pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
   };
   placeBtn.disabled = true;
-  placeBtn.textContent = "Placing order…";
+  placeBtn.textContent = "Submitting…";
   fetch(`${APP_URL}/api/checkout.php`, {
     method: "POST",
     headers: {
@@ -213,10 +285,15 @@ function placeOrder() {
     .then((res) => {
       if (res.ok) {
         saveCart([]);
+        closePaymentModal();
         closeCart();
-        openConfirmModal(res, { pickupLabel, pickupDate: payload.pickup_date });
+        openConfirmModal(res, { pickupLabel, pickupDate });
         if (typeof onOrderPlaced === "function") onOrderPlaced(res);
       } else {
+        if (["slot_unavailable", "slot_full", "closed"].includes(res.reason)) {
+          closePaymentModal();
+          loadPickupSlots();
+        }
         showToast("error", res.message || "Something went wrong.");
       }
     })
@@ -225,7 +302,7 @@ function placeOrder() {
     })
     .finally(() => {
       placeBtn.disabled = false;
-      placeBtn.textContent = "Place Order";
+      placeBtn.textContent = "Submit order";
     });
 }
 
@@ -237,7 +314,7 @@ function openConfirmModal(res, meta) {
   );
   document.getElementById("confPickup").textContent =
     `${dateLabel}, ${meta.pickupLabel}`;
-  document.getElementById("confPayment").textContent = "GCash";
+  document.getElementById("confPayment").textContent = "GCash — pending verification";
   document.getElementById("confTotal").textContent =
     "\u20b1" + Number(res.total).toFixed(2);
   document.getElementById("confirmModal").hidden = false;
@@ -247,12 +324,22 @@ function closeConfirmModal() {
   document.getElementById("confirmModal").hidden = true;
 }
 
-/* ── Wiring: date change + keyboard support for pill-style pickers
+/* ── Wiring: pickup-time refresh + keyboard support for pill-style pickers
    (size/sugar in the customize modal still use .pay-option styling) ── */
 document.addEventListener("DOMContentLoaded", () => {
-  document
-    .getElementById("pickupDate")
-    ?.addEventListener("change", loadPickupSlots);
+  document.getElementById("pickupTime")?.addEventListener("change", () => {
+    pickupTimeManuallySelected = true;
+    const messageEl = document.getElementById("pickupSlotMessage");
+    if (messageEl) messageEl.textContent = "Pickup is available today only.";
+    updateProceedButton();
+  });
+  // Refresh while the drawer is open. If the selection is still the automatic
+  // ASAP choice, it advances as time passes; an explicitly chosen time stays put.
+  window.setInterval(() => {
+    if (document.getElementById("cartSidebar")?.classList.contains("open")) {
+      loadPickupSlots();
+    }
+  }, 30000);
   renderCartBadge();
 });
 
