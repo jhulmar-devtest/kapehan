@@ -331,14 +331,139 @@ layoutHeader('Walk-in POS', '');
     z-index: 90;
   }
 
+  .pos-cart-close-btn {
+    display: none;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  .pos-cart-close-btn:hover,
+  .pos-cart-close-btn:focus-visible {
+    background: var(--primary-subtle);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  .pos-cart-body {
+    min-height: 0;
+  }
+
+  .pos-cart-fab.hidden {
+    display: none;
+  }
+
+  .pos-cart-fab:focus-visible,
+  .pos-cart-handle:focus-visible {
+    outline: 3px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 1100px) {
+    .pos-wrap {
+      margin-right: 0;
+      padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .pos-cart {
+      top: var(--header-h);
+      right: 0;
+      bottom: 0;
+      width: min(420px, calc(100vw - 16px));
+      height: auto;
+      max-height: none;
+      border-left: 1.5px solid var(--border-color);
+      border-top: none;
+      border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+      transform: translateX(105%);
+      transition: transform var(--transition-slow);
+      z-index: 120;
+    }
+
+    .pos-cart.cart-open {
+      transform: translateX(0);
+    }
+
+    .pos-cart-handle {
+      display: none;
+    }
+
+    .pos-cart:not(.cart-open) > * {
+      visibility: hidden;
+    }
+
+    .pos-cart-close-btn {
+      display: flex;
+    }
+
+    .pos-cart-backdrop {
+      position: fixed;
+      inset: var(--header-h) 0 0;
+      z-index: 110;
+      border: 0;
+      background: rgba(24, 18, 14, 0.36);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-fast);
+    }
+
+    .pos-cart-backdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .pos-cart-fab {
+      display: flex;
+      position: fixed;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      z-index: 130;
+      max-width: calc(100vw - 32px);
+      min-height: 52px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: var(--radius-full);
+      background: var(--text-color);
+      color: var(--text-on-primary);
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      font-family: inherit;
+      white-space: nowrap;
+      box-shadow: var(--shadow-xl);
+      cursor: pointer;
+    }
+
+    .pos-cart-fab:hover {
+      background: var(--primary-color);
+    }
+
+    .pos-cart-fab-count {
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--primary-color);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .pos-cart-fab-total {
+      font-weight: 800;
+    }
+  }
+
   @media (max-width: 768px) {
     :root {
       --pos-cart-w: 100vw;
-    }
-
-    .pos-wrap {
-      margin-right: 0;
-      padding-bottom: 80px;
     }
 
     .pos-cart {
@@ -364,10 +489,22 @@ layoutHeader('Walk-in POS', '');
 
     .pos-cart-handle {
       display: flex;
+      width: 100%;
+      min-height: 44px;
       justify-content: center;
       padding: 12px 0 8px;
       flex-shrink: 0;
       cursor: pointer;
+      border: 0;
+      background: transparent;
+    }
+
+    .pos-cart:not(.cart-open) > .pos-cart-handle {
+      visibility: visible;
+    }
+
+    .pos-cart-footer {
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     }
 
     .pos-cart-handle::before {
@@ -380,41 +517,16 @@ layoutHeader('Walk-in POS', '');
     }
 
     .pos-cart-fab {
-      display: flex;
-      position: fixed;
-      bottom: 16px;
+      right: auto;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 95;
-      background: var(--text-color);
-      color: var(--text-on-primary);
-      border: none;
-      border-radius: var(--radius-full);
-      padding: 0 20px;
-      height: 50px;
-      gap: var(--space-3);
-      font-size: 0.88rem;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      box-shadow: var(--shadow-xl);
-      align-items: center;
-      white-space: nowrap;
-      transition: background var(--transition-fast), box-shadow var(--transition-fast);
-    }
-
-    .pos-cart-fab:hover {
-      background: var(--primary-color);
-    }
-
-    .pos-cart-fab.hidden {
-      display: none;
     }
   }
 
-  @media (min-width: 769px) {
-
+  @media (min-width: 1101px) {
     .pos-cart-handle,
+    .pos-cart-close-btn,
+    .pos-cart-backdrop,
     .pos-cart-fab {
       display: none;
     }
@@ -1495,12 +1607,13 @@ layoutHeader('Walk-in POS', '');
   </div>
 
   <div class="pos-cart" id="pos-cart">
-    <div class="pos-cart-handle" onclick="toggleMobileCart()"></div>
+    <button type="button" class="pos-cart-handle" onclick="toggleMobileCart()" aria-label="Open order panel" aria-controls="pos-cart" aria-expanded="false"></button>
     <div class="pos-cart-head">
       <div class="pos-cart-title"><i class="fa-solid fa-receipt"></i> Current Order</div>
       <div style="display:flex;align-items:center;gap:var(--space-2)">
         <span class="pos-item-chip" id="pos-item-chip">Empty</span>
         <button class="pos-cart-clear-btn" onclick="clearCart()" title="Clear order"><i class="fa-solid fa-trash"></i></button>
+        <button type="button" class="pos-cart-close-btn" id="pos-cart-close-btn" onclick="toggleMobileCart()" aria-label="Close order panel"><i class="fa-solid fa-xmark"></i></button>
       </div>
     </div>
 
@@ -1547,11 +1660,14 @@ layoutHeader('Walk-in POS', '');
   </div>
 </div>
 
-<button class="pos-cart-fab hidden" id="pos-cart-fab" onclick="toggleMobileCart()">
+<button type="button" class="pos-cart-fab hidden" id="pos-cart-fab" onclick="toggleMobileCart()" aria-label="Open order panel" aria-controls="pos-cart" aria-expanded="false">
   <i class="fa-solid fa-receipt"></i>
-  <span id="fab-label">Cart</span>
-  <span id="fab-chip" style="background:var(--primary-color);color:#fff;font-size:0.62rem;font-weight:800;padding:2px 7px;border-radius:var(--radius-full);margin-left:4px"></span>
+  <span id="fab-label">Order</span>
+  <span id="fab-chip" class="pos-cart-fab-count">0 items</span>
+  <span id="fab-total" class="pos-cart-fab-total">₱0.00</span>
 </button>
+
+<button type="button" class="pos-cart-backdrop" id="pos-cart-backdrop" aria-label="Close order panel" tabindex="-1" onclick="toggleMobileCart()"></button>
 
 <!-- Payment Modal -->
 <div class="cash-modal-overlay" id="cash-modal-overlay">
@@ -1744,6 +1860,7 @@ layoutHeader('Walk-in POS', '');
       document.getElementById('pos-totals-block').style.display = 'none';
       document.getElementById('pos-total').textContent = '₱0.00';
       document.getElementById('pos-process-btn').disabled = true;
+      updateCartFab();
       return;
     }
 
@@ -1962,24 +2079,61 @@ layoutHeader('Walk-in POS', '');
   // ── Mobile cart toggle ─────────────────────────────────────────────────────
   function toggleMobileCart() {
     const cart = document.getElementById('pos-cart');
-    const fab = document.getElementById('pos-cart-fab');
     const isOpen = cart.classList.toggle('cart-open');
-    if (fab) fab.querySelector('span:first-of-type').textContent = isOpen ? 'Close' : 'Cart';
+    document.querySelector('.pos-wrap').classList.toggle('cart-is-open', isOpen);
+    updateCartFab();
+    if (window.innerWidth <= 1100) {
+      const focusTarget = isOpen ? document.getElementById('pos-cart-close-btn') : document.getElementById('pos-cart-fab');
+      if (focusTarget && !focusTarget.classList.contains('hidden')) focusTarget.focus();
+    }
   }
 
   function updateCartFab() {
     const fab = document.getElementById('pos-cart-fab');
     if (!fab) return;
-    const count = Object.keys(cart).length;
-    if (window.innerWidth <= 768) {
-      fab.classList.toggle('hidden', false);
-      const chip = document.getElementById('fab-chip');
-      if (chip) chip.textContent = count > 0 ? count : '';
-    } else {
-      fab.classList.add('hidden');
+    const cartEl = document.getElementById('pos-cart');
+    const cartOpen = cartEl.classList.contains('cart-open');
+    const compactLayout = window.innerWidth <= 1100;
+    const quantity = Object.values(cart).reduce((sum, item) => sum + item.qty, 0);
+    const total = quantity > 0 ? getFinancials(getSubtotal()).total : 0;
+    const countLabel = quantity + (quantity === 1 ? ' item' : ' items');
+    const totalLabel = '₱' + total.toFixed(2);
+
+    document.getElementById('fab-chip').textContent = countLabel;
+    document.getElementById('fab-total').textContent = totalLabel;
+    fab.setAttribute('aria-label', `Open order panel, ${countLabel}, ${totalLabel}`);
+    fab.setAttribute('aria-expanded', cartOpen ? 'true' : 'false');
+
+    const handle = document.querySelector('.pos-cart-handle');
+    if (handle) {
+      handle.setAttribute('aria-label', cartOpen ? 'Close order panel' : 'Open order panel');
+      handle.setAttribute('aria-expanded', cartOpen ? 'true' : 'false');
     }
+
+    const backdrop = document.getElementById('pos-cart-backdrop');
+    if (backdrop) backdrop.classList.toggle('visible', compactLayout && cartOpen);
+
+    if (!compactLayout) {
+      cartEl.classList.remove('cart-open');
+      document.querySelector('.pos-wrap').classList.remove('cart-is-open');
+      fab.setAttribute('aria-expanded', 'false');
+      if (handle) {
+        handle.setAttribute('aria-label', 'Open order panel');
+        handle.setAttribute('aria-expanded', 'false');
+      }
+      if (backdrop) backdrop.classList.remove('visible');
+    }
+    fab.classList.toggle('hidden', !compactLayout || cartOpen);
   }
   window.addEventListener('resize', updateCartFab);
+  document.addEventListener('keydown', event => {
+    const paymentOpen = document.getElementById('cash-modal-overlay').classList.contains('open');
+    const productOptionsOpen = document.getElementById('pos-modal').classList.contains('open');
+    if (event.key === 'Escape' && !paymentOpen && !productOptionsOpen && window.innerWidth <= 1100 && document.getElementById('pos-cart').classList.contains('cart-open')) {
+      toggleMobileCart();
+    }
+  });
+  updateCartFab();
 
   // ── Category filter ────────────────────────────────────────────────────────
   let activeType = '';
