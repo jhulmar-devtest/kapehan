@@ -178,18 +178,18 @@ layoutHeader('Walk-in POS', '');
   }
 
   :root {
-    --pos-cart-w: 380px;
+    --pos-cart-w: 410px;
   }
 
   @media (max-width: 1180px) {
     :root {
-      --pos-cart-w: 320px;
+      --pos-cart-w: 340px;
     }
   }
 
   @media (max-width: 900px) {
     :root {
-      --pos-cart-w: 290px;
+      --pos-cart-w: 300px;
     }
   }
 
@@ -228,10 +228,10 @@ layoutHeader('Walk-in POS', '');
   }
 
   .cat-pill {
-    height: 32px;
-    padding: 0 16px;
+    height: 40px;
+    padding: 0 18px;
     border-radius: var(--radius-full);
-    font-size: 0.78rem;
+    font-size: 0.86rem;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
@@ -422,13 +422,13 @@ layoutHeader('Walk-in POS', '');
 
   .pos-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--space-4);
   }
 
   @media (min-width: 540px) {
     .pos-grid {
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
     }
   }
 
@@ -525,7 +525,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-card-img-icon {
-    font-size: 26px;
+    font-size: 30px;
     color: var(--border-strong);
   }
 
@@ -537,7 +537,7 @@ layoutHeader('Walk-in POS', '');
     bottom: auto;
     background: linear-gradient(135deg, #f59e0b, #d97706);
     color: #fff;
-    font-size: 0.55rem;
+    font-size: 0.62rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -577,15 +577,15 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-card-body {
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    padding: var(--space-3) var(--space-3) var(--space-3);
   }
 
   .pos-card-name {
-    font-size: 0.80rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: var(--text-color);
     line-height: 1.3;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -593,7 +593,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-card-price {
-    font-size: 0.90rem;
+    font-size: 0.98rem;
     font-weight: 800;
     color: var(--primary-color);
   }
@@ -619,7 +619,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-cart-title {
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 800;
     color: var(--text-color);
     display: flex;
@@ -632,17 +632,17 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-chip {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 800;
     background: var(--primary-subtle);
     color: var(--primary-color);
-    padding: 3px 10px;
+    padding: 4px 11px;
     border-radius: var(--radius-full);
   }
 
   .pos-cart-clear-btn {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     background: var(--surface-raised);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -684,10 +684,10 @@ layoutHeader('Walk-in POS', '');
 
   .pos-cart-items {
     flex-shrink: 0;
-    padding: 8px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .pos-cart-empty {
@@ -730,8 +730,8 @@ layoutHeader('Walk-in POS', '');
     border: none;
     border-radius: var(--radius-sm);
     width: 100%;
-    padding: 12px 16px;
-    font-size: 0.88rem;
+    padding: 15px 18px;
+    font-size: 0.98rem;
     font-weight: 700;
     cursor: pointer;
     transition: background var(--transition-fast), transform var(--transition-fast);
@@ -753,8 +753,8 @@ layoutHeader('Walk-in POS', '');
   .pos-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px;
+    gap: 13px;
+    padding: 14px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -769,10 +769,10 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-thumb {
-    width: 54px;
-    height: 54px;
-    min-width: 54px;
-    min-height: 54px;
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    min-height: 60px;
     flex-shrink: 0;
     align-self: stretch;
     border-radius: var(--radius-sm);
@@ -808,7 +808,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-name {
-    font-size: 0.88rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: var(--text-color);
     overflow: hidden;
@@ -817,7 +817,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-note {
-    font-size: 0.7rem;
+    font-size: 0.76rem;
     color: var(--text-muted);
     font-style: italic;
     white-space: nowrap;
@@ -826,7 +826,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-unit-price {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--primary-color);
   }
@@ -840,7 +840,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-item-sub {
-    font-size: 0.95rem;
+    font-size: 1.02rem;
     font-weight: 800;
     color: var(--text-color);
   }
@@ -857,13 +857,13 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-qty-btn {
-    width: 26px;
-    height: 26px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -935,8 +935,8 @@ layoutHeader('Walk-in POS', '');
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
-    font-size: 0.8rem;
+    padding: 5px 0;
+    font-size: 0.88rem;
     color: var(--text-muted);
   }
 
@@ -964,7 +964,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-totals-line.total-final .lbl {
-    font-size: 0.85rem;
+    font-size: 0.92rem;
     font-weight: 800;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -973,7 +973,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-totals-line.total-final .val {
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: 900;
     color: var(--primary-color);
     line-height: 1;
@@ -989,7 +989,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .discount-label {
-    font-size: 0.7rem;
+    font-size: 0.76rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -1004,9 +1004,9 @@ layoutHeader('Walk-in POS', '');
 
   .discount-pill {
     flex: 1;
-    height: 32px;
+    height: 40px;
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 700;
     border: 1px solid var(--border-color);
     background: var(--surface-raised);
@@ -1134,7 +1134,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .cash-modal-due-val {
-    font-size: 1.8rem;
+    font-size: 2rem;
     font-weight: 900;
     color: var(--primary-color);
   }
@@ -1148,9 +1148,9 @@ layoutHeader('Walk-in POS', '');
 
   .pay-tab {
     flex: 1;
-    height: 38px;
+    height: 46px;
     border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: 0.88rem;
     font-weight: 700;
     font-family: inherit;
     border: 1.5px solid var(--border-color);
@@ -1196,12 +1196,12 @@ layoutHeader('Walk-in POS', '');
 
   .cash-modal-confirm-btn {
     width: 100%;
-    height: 52px;
+    height: 56px;
     background: var(--primary-color);
     color: var(--text-on-primary);
     border: none;
     border-radius: var(--radius-md);
-    font-size: 1rem;
+    font-size: 1.08rem;
     font-weight: 800;
     cursor: pointer;
     display: flex;
@@ -1268,11 +1268,11 @@ layoutHeader('Walk-in POS', '');
   }
 
   .cash-quick-btn {
-    height: 38px;
+    height: 42px;
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--surface-raised);
-    font-size: 0.82rem;
+    font-size: 0.88rem;
     font-weight: 700;
     font-family: inherit;
     color: var(--text-secondary);
@@ -1755,13 +1755,13 @@ layoutHeader('Walk-in POS', '');
       const thumbHtml = posImg ?
         '<img src="' + posImg + '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">' :
         '<span class="pos-item-thumb-icon"><i class="fa-solid fa-mug-hot"></i></span>';
-      const noteHtml = item.note ? '<div class="pos-item-note">' + item.note + '</div>' : '';
+      const noteHtml = item.note ? '<div class="pos-item-note">' + e(item.note) + '</div>' : '';
 
       html +=
         '<div class="pos-item" id="posrow-' + key + '">' +
         '<div class="pos-item-thumb">' + thumbHtml + '</div>' +
         '<div class="pos-item-main">' +
-        '<div class="pos-item-name">' + item.name + '</div>' + noteHtml +
+        '<div class="pos-item-name">' + e(item.name) + '</div>' + noteHtml +
         '<div class="pos-item-unit-price">₱' + item.price.toFixed(2) + ' each</div>' +
         '<div class="pos-item-stepper">' +
         '<button class="pos-qty-btn minus" onclick="updateQty(\'' + key + '\',-1)">−</button>' +
@@ -1914,8 +1914,16 @@ layoutHeader('Walk-in POS', '');
   });
 
   // ── Submit order ───────────────────────────────────────────────────────────
+  let orderSubmitting = false;
+
   function submitOrder() {
     if (Object.keys(cart).length === 0) return;
+    // A fast double-tap here — easy to do on a touchscreen, or while
+    // waiting on a slow connection — would submit this form twice and
+    // create two real orders for one payment. Lock it once validation
+    // passes and we're actually about to submit (not before — a failed
+    // validation below must leave the button usable again).
+    if (orderSubmitting) return;
 
     const fin = getFinancials(getSubtotal());
     const items = Object.values(cart).map(item => ({
@@ -1937,6 +1945,11 @@ layoutHeader('Walk-in POS', '');
       document.getElementById('denom-data').value = JSON.stringify({});
       document.getElementById('gcash-ref-data').value = ref;
     }
+
+    orderSubmitting = true;
+    const btn = document.getElementById('cash-confirm-btn');
+    if (btn) btn.disabled = true;
+    document.getElementById('confirm-btn-label').textContent = 'Processing…';
 
     document.getElementById('cart-data').value = JSON.stringify(items);
     document.getElementById('pay-method-data').value = _payMethod;
@@ -2091,8 +2104,8 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-thumb {
-    width: 50px;
-    height: 50px;
+    width: 58px;
+    height: 58px;
     border-radius: var(--radius-sm);
     background: var(--surface-raised);
     border: 1px solid var(--border-color);
@@ -2120,13 +2133,13 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-product-name {
-    font-size: 0.94rem;
+    font-size: 1.04rem;
     font-weight: 800;
     color: var(--text-color);
   }
 
   .pm-base-price {
-    font-size: 0.73rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 2px;
   }
@@ -2162,7 +2175,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-section-label {
-    font-size: 0.65rem;
+    font-size: 0.72rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.11em;
@@ -2194,17 +2207,17 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-size-name {
-    font-size: 0.80rem;
+    font-size: 0.88rem;
     font-weight: 700;
     color: var(--text-color);
     display: block;
   }
 
   .pm-size-adj {
-    font-size: 0.68rem;
+    font-size: 0.74rem;
     color: var(--text-muted);
     display: block;
-    margin-top: 1px;
+    margin-top: 2px;
   }
 
   .pm-size-btn.active .pm-size-name,
@@ -2219,12 +2232,12 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-sugar-btn {
-    height: 30px;
-    padding: 0 12px;
+    height: 36px;
+    padding: 0 14px;
     border-radius: var(--radius-full);
     border: 1.5px solid var(--border-color);
     background: var(--surface-color);
-    font-size: 0.76rem;
+    font-size: 0.84rem;
     font-weight: 600;
     color: var(--text-muted);
     cursor: pointer;
@@ -2253,7 +2266,7 @@ layoutHeader('Walk-in POS', '');
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3);
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius-xs);
     cursor: pointer;
@@ -2271,15 +2284,15 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-addon-check {
-    width: 18px;
-    height: 18px;
+    width: 21px;
+    height: 21px;
     border-radius: 4px;
     border: 2px solid var(--border-color);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 9px;
+    font-size: 10px;
     color: transparent;
     transition: all var(--transition-fast);
   }
@@ -2292,29 +2305,29 @@ layoutHeader('Walk-in POS', '');
 
   .pm-addon-name {
     flex: 1;
-    font-size: 0.82rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-color);
   }
 
   .pm-addon-price {
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: var(--primary-color);
   }
 
   .pm-no-addons {
-    font-size: 0.76rem;
+    font-size: 0.82rem;
     color: var(--text-muted);
     font-style: italic;
   }
 
   .pm-notes {
     width: 100%;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3);
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius-sm);
-    font-size: 0.82rem;
+    font-size: 0.9rem;
     font-family: inherit;
     color: var(--text-color);
     background: var(--surface-color);
@@ -2352,8 +2365,8 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-qty-btn {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     border: none;
     border-radius: calc(var(--radius-sm) - 2px);
     background: transparent;
@@ -2387,12 +2400,12 @@ layoutHeader('Walk-in POS', '');
 
   .pm-add-btn {
     flex: 1;
-    height: 42px;
+    height: 48px;
     background: var(--primary-color);
     color: var(--text-on-primary);
     border: none;
     border-radius: var(--radius-sm);
-    font-size: 0.88rem;
+    font-size: 0.95rem;
     font-weight: 700;
     font-family: inherit;
     cursor: pointer;
@@ -2416,12 +2429,12 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pm-unit-lbl {
-    font-size: 0.62rem;
+    font-size: 0.68rem;
     opacity: 0.75;
   }
 
   .pm-total-lbl {
-    font-size: 0.92rem;
+    font-size: 1rem;
     font-weight: 800;
   }
 </style>
