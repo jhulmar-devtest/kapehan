@@ -121,6 +121,34 @@ layoutHeader('Pre-orders', '');
     gap: var(--space-4);
   }
 
+  .queue-qr-row {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.84rem;
+  }
+
+  .queue-qr-row:last-of-type {
+    border-bottom: 0;
+  }
+
+  .queue-qr-label {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  .queue-qr-value {
+    min-width: 0;
+    text-align: right;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
   /* Status accent left-border */
   .order-card {
     background: var(--surface-color);
@@ -633,6 +661,9 @@ layoutHeader('Pre-orders', '');
     <div class="page-header-sub"><?= count($orders) ?> active · <?= $counts['ready'] ?> ready to claim</div>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline" onclick="openQueueQrModal()">
+      <i class="fa-solid fa-qrcode"></i> Scan QR to find order
+    </button>
     <?php if ($counts['ready'] > 0): ?>
       <span class="badge badge-ready"><?= $counts['ready'] ?> ready</span>
     <?php endif; ?>
@@ -649,8 +680,8 @@ layoutHeader('Pre-orders', '');
 <div class="alert alert-info mb-5" style="margin-bottom:var(--space-5)">
   <i class="fa-solid fa-circle-info"></i>
   <div>
-    <strong>How to verify payment:</strong> Before pressing <em>Start Preparing</em>, check the reference number below against your <strong>GCash / PayMaya inbox</strong> or ask to see the student's payment screenshot.
-    Always verify the student's <strong>physical school ID</strong> before marking as <em>Claimed</em>.
+    <strong>How to verify payment:</strong> Before pressing <em>Start Preparing</em>, check the reference number below against your <strong>GCash inbox</strong> or ask to see the student's payment screenshot.
+    At pickup, use <strong>Verify ID</strong> to check the physical school ID, or scan the customer's QR and review the matched order before confirming handover.
   </div>
 </div>
 
@@ -817,8 +848,8 @@ layoutHeader('Pre-orders', '');
 
             <?php elseif ($o['status'] === STATUS_READY): ?>
               <button type="button" class="btn btn-success btn-sm flex-1"
-                onclick="openClaimChoiceModal(<?= $o['id'] ?>, '<?= e($o['customer_name']) ?>', '<?= e($o['order_number']) ?>')">
-                <i class="fa-solid fa-id-card"></i> Claim Order
+                onclick="handleClaimOrder(<?= $o['id'] ?>, '<?= e($o['customer_name']) ?>')">
+                <i class="fa-solid fa-id-card"></i> Verify ID
               </button>
             <?php endif; ?>
 
@@ -835,28 +866,57 @@ layoutHeader('Pre-orders', '');
   </div>
 <?php endif; ?>
 
-<!-- Claim Order: choose how to verify the customer before marking claimed -->
-<div class="modal-overlay hidden" id="claim-choice-modal">
-  <div class="modal" style="max-width:380px">
+<!-- Scan QR without selecting an order card; the signed QR identifies it. -->
+<div class="modal-overlay hidden" id="queue-qr-modal">
+  <div class="modal" style="max-width:520px">
     <div class="modal-header">
-      <div class="modal-title"><i class="fa-solid fa-id-card"></i> Claim Order</div>
-      <button class="modal-close" onclick="closeClaimChoiceModal()"><i class="fa-solid fa-xmark"></i></button>
+      <div class="modal-title"><i class="fa-solid fa-qrcode"></i> Scan customer QR</div>
+      <button type="button" class="modal-close" onclick="closeQueueQrModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="modal-body">
-      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px" id="claim-choice-sub"></p>
-      <button type="button" class="btn btn-success w-full" style="margin-bottom:10px" id="claim-choice-id-btn">
-        <i class="fa-solid fa-id-card"></i> Verify Physical School ID
-      </button>
-      <button type="button" class="btn btn-outline w-full" id="claim-choice-qr-btn">
-        <i class="fa-solid fa-qrcode"></i> Scan Customer's QR Code
-      </button>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px">Scan the QR shown by the customer. The matching order will appear here for review before you hand it over.</p>
+      <div id="queueQrCameraBox" style="position:relative;overflow:hidden;border-radius:var(--radius-md);background:#111;min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div id="queueQrPlaceholder" style="color:#ddd;text-align:center;padding:28px">
+          <i class="fa-solid fa-camera" style="font-size:2rem;display:block;margin-bottom:10px"></i>
+          Camera is off
+        </div>
+        <video id="queueQrVideo" autoplay playsinline muted style="display:none;width:100%;max-height:55vh;object-fit:cover"></video>
+        <canvas id="queueQrCanvas" hidden></canvas>
+      </div>
+      <div id="queueQrStatus" class="alert alert-info" role="status" style="margin-top:12px">Camera is off. Start the camera to scan.</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button type="button" class="btn btn-primary flex-1" id="queueQrStart" onclick="startQueueQrCamera()"><i class="fa-solid fa-camera"></i> Start Camera</button>
+        <button type="button" class="btn btn-ghost flex-1" id="queueQrStop" onclick="stopQueueQrCamera()" hidden><i class="fa-solid fa-stop"></i> Stop Camera</button>
+      </div>
+      <section id="queueQrReview" class="card" style="margin-top:16px;padding:16px" hidden>
+        <h3 id="queueQrReviewTitle" style="margin:0 0 10px">Review matched order</h3>
+        <div class="queue-qr-row"><span class="queue-qr-label">Order</span><span class="queue-qr-value" id="queueQrOrderNumber"></span></div>
+        <div class="queue-qr-row"><span class="queue-qr-label">Customer</span><span class="queue-qr-value" id="queueQrCustomer"></span></div>
+        <div class="queue-qr-row"><span class="queue-qr-label">School ID</span><span class="queue-qr-value" id="queueQrCustomerId"></span></div>
+        <div class="queue-qr-row"><span class="queue-qr-label">Items</span><span class="queue-qr-value" id="queueQrItems"></span></div>
+        <div class="queue-qr-row"><span class="queue-qr-label">Total</span><span class="queue-qr-value" id="queueQrTotal"></span></div>
+        <div id="queueQrReviewActions" style="display:flex;gap:8px;margin-top:14px">
+          <button type="button" class="btn btn-ghost flex-1" onclick="resetQueueQrReview()">Scan again</button>
+          <button type="button" class="btn btn-success flex-1" id="queueQrConfirm" onclick="confirmQueueQrHandover()"><i class="fa-solid fa-check"></i> Confirm Handover</button>
+        </div>
+        <button type="button" class="btn btn-primary w-full" id="queueQrDone" onclick="finishQueueQrClaim()" hidden style="margin-top:14px">Done</button>
+      </section>
     </div>
   </div>
 </div>
 
+<script src="<?= APP_URL ?>/../assets/js/jsQR.min.js"></script>
 <script>
   // Modal-based handlers for order actions
   let isSubmitting = false;
+  let queueQrStream = null;
+  let queueQrFrame = null;
+  let queueQrBusy = false;
+  let pendingQueueQrData = null;
+  const queueQrVideo = document.getElementById('queueQrVideo');
+  const queueQrCanvas = document.getElementById('queueQrCanvas');
+  const queueQrContext = queueQrCanvas.getContext('2d', { willReadFrequently: true });
+
   async function handleStartPreparing(orderId, orderNumber, paymentMethod) {
     // First try to lock the order
     const lockRes = await lockOrder(orderId);
@@ -946,27 +1006,190 @@ layoutHeader('Pre-orders', '');
     }
   }
 
-  function openClaimChoiceModal(orderId, customerName, orderNumber) {
-    document.getElementById('claim-choice-sub').innerHTML =
-      `How are you verifying <strong>${customerName}</strong> for order <strong>${orderNumber}</strong>?`;
-    document.getElementById('claim-choice-id-btn').onclick = () => {
-      closeClaimChoiceModal();
-      handleClaimOrder(orderId, customerName);
-    };
-    document.getElementById('claim-choice-qr-btn').onclick = () => {
-      // The scanner page already handles the actual claim (scan -> review
-      // details -> Confirm Handover), so just send them there.
-      window.location.href = '<?= APP_URL ?>/cashier/qr-scanner.php';
-    };
-    document.getElementById('claim-choice-modal').classList.remove('hidden');
+  function openQueueQrModal() {
+    const modal = document.getElementById('queue-qr-modal');
+    modal.classList.remove('hidden');
+    document.getElementById('queueQrReview').hidden = true;
+    document.getElementById('queueQrStart').hidden = false;
+    document.getElementById('queueQrStop').hidden = true;
+    setQueueQrStatus('Starting camera…');
+    startQueueQrCamera();
   }
 
-  function closeClaimChoiceModal() {
-    document.getElementById('claim-choice-modal').classList.add('hidden');
+  function closeQueueQrModal() {
+    stopQueueQrCamera();
+    pendingQueueQrData = null;
+    queueQrBusy = false;
+    document.getElementById('queue-qr-modal').classList.add('hidden');
   }
-  document.getElementById('claim-choice-modal').addEventListener('click', function(e) {
-    if (e.target === this) closeClaimChoiceModal();
+
+  document.getElementById('queue-qr-modal').addEventListener('click', function(event) {
+    if (event.target === this) closeQueueQrModal();
   });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && !document.getElementById('queue-qr-modal').classList.contains('hidden')) {
+      closeQueueQrModal();
+    }
+  });
+
+  function setQueueQrStatus(message, type = 'info') {
+    const status = document.getElementById('queueQrStatus');
+    status.className = `alert alert-${type}`;
+    status.textContent = message;
+  }
+
+  async function startQueueQrCamera() {
+    if (queueQrStream) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof jsQR !== 'function') {
+      setQueueQrStatus('Camera scanning is not available in this browser. Use Verify ID instead.', 'danger');
+      return;
+    }
+    setQueueQrStatus('Requesting camera access…');
+    try {
+      queueQrStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+      });
+      queueQrVideo.srcObject = queueQrStream;
+      await new Promise((resolve, reject) => {
+        if (queueQrVideo.readyState >= 1) return resolve();
+        queueQrVideo.onloadedmetadata = resolve;
+        queueQrVideo.onerror = reject;
+        setTimeout(() => reject(new Error('Camera did not start in time.')), 10000);
+      });
+      await queueQrVideo.play();
+      document.getElementById('queueQrPlaceholder').hidden = true;
+      queueQrVideo.style.display = 'block';
+      document.getElementById('queueQrStart').hidden = true;
+      document.getElementById('queueQrStop').hidden = false;
+      setQueueQrStatus('Scanning… point the camera at the customer’s order QR code.');
+      queueQrFrame = requestAnimationFrame(scanQueueQrFrame);
+    } catch (error) {
+      stopQueueQrCamera();
+      const message = error.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Allow camera access, then try again.'
+        : error.name === 'NotFoundError'
+          ? 'No camera was found on this device.'
+          : error.message || 'Could not start the camera.';
+      setQueueQrStatus(message, 'danger');
+    }
+  }
+
+  function stopQueueQrCamera() {
+    if (queueQrFrame) cancelAnimationFrame(queueQrFrame);
+    queueQrFrame = null;
+    if (queueQrStream) queueQrStream.getTracks().forEach(track => track.stop());
+    queueQrStream = null;
+    if (queueQrVideo) {
+      queueQrVideo.pause();
+      queueQrVideo.srcObject = null;
+      queueQrVideo.style.display = 'none';
+    }
+    const placeholder = document.getElementById('queueQrPlaceholder');
+    if (placeholder) placeholder.hidden = false;
+    const stop = document.getElementById('queueQrStop');
+    if (stop) stop.hidden = true;
+    const start = document.getElementById('queueQrStart');
+    if (start) start.hidden = false;
+  }
+
+  function scanQueueQrFrame() {
+    if (!queueQrStream) return;
+    if (!queueQrBusy && queueQrVideo.readyState >= 2 && queueQrVideo.videoWidth > 0) {
+      queueQrCanvas.width = queueQrVideo.videoWidth;
+      queueQrCanvas.height = queueQrVideo.videoHeight;
+      queueQrContext.drawImage(queueQrVideo, 0, 0, queueQrCanvas.width, queueQrCanvas.height);
+      const pixels = queueQrContext.getImageData(0, 0, queueQrCanvas.width, queueQrCanvas.height);
+      const code = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+      if (code?.data) {
+        queueQrBusy = true;
+        pendingQueueQrData = code.data;
+        stopQueueQrCamera();
+        verifyQueueQr(code.data);
+        return;
+      }
+    }
+    queueQrFrame = requestAnimationFrame(scanQueueQrFrame);
+  }
+
+  async function postQueueQr(endpoint, qrData) {
+    const body = new FormData();
+    body.append('qr_data', qrData);
+    body.append('csrf_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+    const response = await fetch(endpoint, { method: 'POST', body });
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('The server returned an unreadable response.');
+    }
+  }
+
+  async function verifyQueueQr(qrData) {
+    setQueueQrStatus('QR detected. Looking up the matching order…');
+    try {
+      const result = await postQueueQr('<?= APP_URL ?>/api/qr-verify.php', qrData);
+      if (!result.success) {
+        queueQrBusy = false;
+        pendingQueueQrData = null;
+        setQueueQrStatus(result.message || 'This QR code could not be verified.', 'danger');
+        return;
+      }
+      const order = result.order;
+      document.getElementById('queueQrOrderNumber').textContent = order.order_number || '—';
+      document.getElementById('queueQrCustomer').textContent = order.customer_name || '—';
+      document.getElementById('queueQrCustomerId').textContent = order.customer_id_no || '—';
+      document.getElementById('queueQrItems').textContent = order.items || '—';
+      document.getElementById('queueQrTotal').textContent = '₱' + Number(order.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      document.getElementById('queueQrReviewTitle').textContent = 'Review matched order';
+      document.getElementById('queueQrReviewActions').hidden = false;
+      document.getElementById('queueQrConfirm').disabled = false;
+      document.getElementById('queueQrDone').hidden = true;
+      document.getElementById('queueQrReview').hidden = false;
+      document.getElementById('queueQrStart').hidden = true;
+      setQueueQrStatus('Order verified. Check the customer and items before confirming handover.', 'success');
+    } catch (error) {
+      queueQrBusy = false;
+      pendingQueueQrData = null;
+      setQueueQrStatus(error.message || 'Could not verify this QR. Check your connection and try again.', 'danger');
+    }
+  }
+
+  function resetQueueQrReview() {
+    pendingQueueQrData = null;
+    queueQrBusy = false;
+    document.getElementById('queueQrReview').hidden = true;
+    startQueueQrCamera();
+  }
+
+  async function confirmQueueQrHandover() {
+    if (!pendingQueueQrData) return;
+    const button = document.getElementById('queueQrConfirm');
+    button.disabled = true;
+    setQueueQrStatus('Confirming handover…');
+    try {
+      const result = await postQueueQr('<?= APP_URL ?>/api/qr-claim.php', pendingQueueQrData);
+      if (!result.success) {
+        button.disabled = false;
+        setQueueQrStatus(result.message || 'Could not claim this order. Scan the current QR and try again.', 'danger');
+        return;
+      }
+      pendingQueueQrData = null;
+      document.getElementById('queueQrReviewTitle').textContent = 'Order claimed';
+      document.getElementById('queueQrReviewActions').hidden = true;
+      document.getElementById('queueQrDone').hidden = false;
+      setQueueQrStatus('Handover confirmed. Give the displayed items to the customer.', 'success');
+    } catch (error) {
+      button.disabled = false;
+      setQueueQrStatus(error.message || 'Network error while claiming the order.', 'danger');
+    }
+  }
+
+  function finishQueueQrClaim() {
+    closeQueueQrModal();
+    window.location.reload();
+  }
+
+  window.addEventListener('beforeunload', stopQueueQrCamera);
 
   async function handleClaimOrder(orderId, studentName) {
     const confirmed = await confirmModal(
