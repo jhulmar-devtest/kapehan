@@ -65,7 +65,7 @@ if (
 // Pre-orders are GCash-only — no cash, no other e-wallets/banks. A
 // reference number is always required since there's no cash fallback.
 $method = 'GCash';
-if (empty(GCASH_PAYMENT_NUMBER) || empty(GCASH_PAYMENT_NAME)) {
+if (gcashPaymentNumber() === '' || gcashPaymentName() === '') {
   http_response_code(503);
   echo json_encode(['ok' => false, 'message' => 'Online ordering is temporarily unavailable while the shop configures its GCash account.']);
   exit;
@@ -169,9 +169,9 @@ try {
   $payStatus = PAY_STATUS_PENDING;
   $paidAt    = null;
   $db->prepare(
-    "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, reference_number, paid_at)
-     VALUES (?, ?, ?, ?, ?, ?)"
-  )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, $paidAt]);
+    "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, reference_number, recipient_name, recipient_number, paid_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
 
   $db->commit();
   auditLog($role, currentUserId(), 'place_preorder', 'orders', $orderId);

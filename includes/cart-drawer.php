@@ -42,18 +42,18 @@
     <div class="confirm-heading" id="paymentHeading">Pay with GCash</div>
     <p class="confirm-subheading">Send the exact amount below, then paste your GCash reference number.</p>
     <div class="confirm-details">
-      <div class="confirm-row"><span>Account name</span><strong id="gcashPaymentName" style="text-align:right;overflow-wrap:anywhere"><?= e(GCASH_PAYMENT_NAME ?: 'Name not configured') ?></strong></div>
-      <div class="confirm-row"><span>GCash number</span><strong id="gcashPaymentNumber" style="text-align:right;overflow-wrap:anywhere"><?= e(GCASH_PAYMENT_NUMBER ?: 'Number not configured') ?></strong></div>
+      <div class="confirm-row"><span>Account name</span><strong id="gcashPaymentName" style="text-align:right;overflow-wrap:anywhere"><?= e(gcashPaymentName() ?: 'Name not configured') ?></strong></div>
+      <div class="confirm-row"><span>GCash number</span><strong id="gcashPaymentNumber" style="text-align:right;overflow-wrap:anywhere"><?= e(gcashPaymentNumber() ?: 'Number not configured') ?></strong></div>
       <div class="confirm-row total"><span>Amount</span><span id="paymentAmount"></span></div>
     </div>
-    <?php if (!GCASH_PAYMENT_NUMBER || !GCASH_PAYMENT_NAME): ?>
-      <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be added to config/secrets.php before customers can pay.</p>
+    <?php if (gcashPaymentNumber() === '' || gcashPaymentName() === ''): ?>
+      <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
     <?php endif; ?>
     <label class="field-label" for="refNo">GCash reference number</label>
     <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="Paste reference number">
     <div class="confirm-actions" style="margin-top:18px">
       <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
-      <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= GCASH_PAYMENT_NUMBER && GCASH_PAYMENT_NAME ? '' : 'disabled' ?>>Submit order</button>
+      <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= gcashPaymentNumber() !== '' && gcashPaymentName() !== '' ? '' : 'disabled' ?>>Submit order</button>
     </div>
   </div>
 </div>

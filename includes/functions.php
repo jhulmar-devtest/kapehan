@@ -453,6 +453,39 @@ function setSetting(string $key, string $value): void {
 }
 
 /**
+ * gcashPaymentName() / gcashPaymentNumber()
+ *
+ * The shop's GCash recipient shown in the payment modal and required by
+ * checkout. Admin-editable via Settings (app_settings table); falls back to
+ * the GCASH_PAYMENT_* constants from config/secrets.php so existing installs
+ * keep working until an admin saves a value.
+ */
+function gcashPaymentName(): string {
+  $v = trim(getSetting('gcash_payment_name', ''));
+  return $v !== '' ? $v : (string) GCASH_PAYMENT_NAME;
+}
+
+function gcashPaymentNumber(): string {
+  $v = trim(getSetting('gcash_payment_number', ''));
+  return $v !== '' ? $v : (string) GCASH_PAYMENT_NUMBER;
+}
+
+/**
+ * normalizePhMobile($raw)
+ *
+ * Accepts 09XXXXXXXXX, 9XXXXXXXXX, 639XXXXXXXXX or +639XXXXXXXXX (spaces and
+ * dashes ignored) and returns 09XXXXXXXXX, or null if it isn't a valid PH
+ * mobile number.
+ */
+function normalizePhMobile(string $raw): ?string {
+  $d = preg_replace('/[\s\-()]/', '', $raw);
+  if (preg_match('/^\+?63(9\d{9})$/', $d, $m)) return '0' . $m[1];
+  if (preg_match('/^0(9\d{9})$/', $d, $m))      return '0' . $m[1];
+  if (preg_match('/^(9\d{9})$/', $d, $m))       return '0' . $m[1];
+  return null;
+}
+
+/**
  * getSpotlightProducts($limit)
  *
  * Picks the products shown in the homepage "Spotlight" carousel

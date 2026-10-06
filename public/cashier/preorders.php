@@ -73,7 +73,7 @@ $orders = $db->query(
           o.locked_by, o.locked_at, o.lock_expire_at, o.pickup_time,
           COALESCE(s.full_name, f.full_name) AS customer_name,
           COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id,
-          p.payment_method, p.reference_number,
+          p.payment_method, p.reference_number, p.recipient_name, p.recipient_number,
           c.full_name AS locked_by_name,
           GROUP_CONCAT(CONCAT(od.quantity,'× ',pr.name,
             IF(od.customization_note IS NOT NULL AND od.customization_note != '',
@@ -90,7 +90,7 @@ $orders = $db->query(
      AND o.status IN ('pending','preparing','ready')
    GROUP BY o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes,
             o.locked_by, o.locked_at, o.lock_expire_at,
-            customer_name, customer_id, p.payment_method, p.reference_number, c.full_name
+            customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, c.full_name
    ORDER BY
      FIELD(o.status,'ready','preparing','pending'),
      CASE WHEN o.pickup_time = 'ASAP' THEN 0 ELSE 1 END ASC,
@@ -766,6 +766,10 @@ layoutHeader('Pre-orders', '');
                   <div class="ref-number"><?= e($o['reference_number']) ?></div>
                 <?php else: ?>
                   <div class="ref-missing">No reference number</div>
+                <?php endif; ?>
+                <?php if (!empty($o['recipient_number'])): ?>
+                  <div class="ref-label" style="margin-top:8px">Paid to</div>
+                  <div style="font-size:13px;font-weight:600"><?= e($o['recipient_name'] ?? '') ?> &middot; <?= e($o['recipient_number']) ?></div>
                 <?php endif; ?>
               </div>
             </div>

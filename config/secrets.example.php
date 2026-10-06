@@ -51,7 +51,8 @@ define('MAIL_FROM',     'your-gmail-address@gmail.com');
 define('APP_KEY', 'REPLACE_WITH_YOUR_OWN_RANDOM_KEY');
 
 // --- Customer GCash payments ---
-// Set these to the shop's GCash recipient name and number. They are shown
-// together in the payment modal so customers can confirm the recipient.
+// OPTIONAL DEFAULTS. The shop admin can set/change the GCash recipient name
+// and number from Admin > Settings (stored in the database), which takes
+// priority over these. They're only used until an admin saves a value.
 define('GCASH_PAYMENT_NAME', '');
 define('GCASH_PAYMENT_NUMBER', '');
