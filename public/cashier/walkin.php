@@ -1883,7 +1883,7 @@ layoutHeader('Walk-in POS', '');
         '<div class="pos-item-stepper">' +
         '<button class="pos-qty-btn minus" onclick="updateQty(\'' + key + '\',-1)">−</button>' +
         '<input class="pos-qty-input" type="number" min="1" max="999" value="' + item.qty + '" ' +
-        'onchange="setQty(\'' + key + '\',this.value)" onblur="setQty(\'' + key + '\',this.value)" onclick="this.select()">' +
+        'onchange="setQty(\'' + key + '\',this.value)" onclick="this.select()">' +
         '<button class="pos-qty-btn" onclick="updateQty(\'' + key + '\',1)">+</button>' +
         '</div>' +
         '</div>' +
@@ -1920,24 +1920,61 @@ layoutHeader('Walk-in POS', '');
 
   function updateQty(key, delta) {
     if (!cart[key]) return;
-    cart[key].qty = Math.max(0, cart[key].qty + delta);
-    if (cart[key].qty === 0) delete cart[key];
+    const nextQty = cart[key].qty + delta;
+    if (nextQty <= 0) {
+      confirmRemoveItem(key);
+      return;
+    }
+    cart[key].qty = nextQty;
     renderCart();
   }
 
   function setQty(key, val) {
     const qty = parseInt(val, 10);
-    if (isNaN(qty) || qty <= 0) delete cart[key];
-    else if (cart[key]) cart[key].qty = qty;
+    if (!cart[key]) return;
+    if (isNaN(qty) || qty <= 0) {
+      confirmRemoveItem(key);
+      return;
+    }
+    cart[key].qty = qty;
     renderCart();
   }
 
   function removeItem(key) {
-    delete cart[key];
-    renderCart();
+    confirmRemoveItem(key);
+  }
+
+  function confirmRemoveItem(key) {
+    const item = cart[key];
+    if (!item) return;
+    const remove = function() {
+      delete cart[key];
+      renderCart();
+    };
+    if (typeof window.showLayoutConfirmation !== 'function') {
+      remove();
+      return;
+    }
+    window.showLayoutConfirmation({
+      title: 'Remove this item?',
+      message: 'Remove ' + item.name + ' from this order?',
+      confirmLabel: 'Remove item',
+      onConfirm: remove
+    });
   }
 
   function clearCart() {
+    const itemCount = Object.keys(cart).length;
+    if (!itemCount) return;
+    window.showLayoutConfirmation({
+      title: 'Clear the entire order?',
+      message: 'Remove all ' + itemCount + (itemCount === 1 ? ' item' : ' items') + ' from this order?',
+      confirmLabel: 'Clear order',
+      onConfirm: clearCartNow
+    });
+  }
+
+  function clearCartNow() {
     cart = {};
     document.getElementById('cash-input').value = '';
     document.getElementById('gcash-ref-input').value = '';

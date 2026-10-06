@@ -150,6 +150,21 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
   </header>
 ';
 
+  echo "\n" . '<div class="modal-overlay hidden" id="logoutConfirmModal" role="presentation">
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="logoutConfirmTitle" aria-describedby="logoutConfirmMessage">
+    <div class="modal-header">
+      <div class="modal-title" id="logoutConfirmTitle">Sign out?</div>
+      <button type="button" class="modal-close" id="logoutConfirmClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="logoutConfirmMessage">Are you sure you want to sign out?</div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="logoutConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="logoutConfirmSubmit">Sign out</button>
+    </div>
+  </div>
+</div>
+';
+
   // Flash messages
   if (!empty($_SESSION['flash'])) {
     echo '<div style="padding:12px 28px 0">';
@@ -173,6 +188,59 @@ function layoutFooter(string $extraScripts = ''): void {
   echo '</div><!-- /main-wrapper -->' . "\n\n";
   echo '<script src="' . $appUrl . '/../assets/js/sidebar.js"></script>' . "\n";
   echo '<script src="' . $appUrl . '/../assets/js/utils.js"></script>' . "\n";
+  echo '<script>
+(function() {
+  const modal = document.getElementById("logoutConfirmModal");
+  const cancel = document.getElementById("logoutConfirmCancel");
+  const close = document.getElementById("logoutConfirmClose");
+  const submit = document.getElementById("logoutConfirmSubmit");
+  if (!modal || !cancel || !close || !submit) return;
+  let pendingAction = null;
+  let returnFocusTo = null;
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    pendingAction = null;
+    returnFocusTo?.focus();
+  }
+
+  window.showLayoutConfirmation = function(options) {
+    document.getElementById("logoutConfirmTitle").textContent = options.title;
+    document.getElementById("logoutConfirmMessage").textContent = options.message;
+    submit.textContent = options.confirmLabel || "Confirm";
+    pendingAction = options.onConfirm;
+    returnFocusTo = document.activeElement;
+    modal.classList.remove("hidden");
+    cancel.focus();
+  };
+
+  document.addEventListener("click", function(event) {
+    const link = event.target.closest("a[href$=\"/logout.php\"]");
+    if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    window.showLayoutConfirmation({
+      title: "Sign out?",
+      message: "Are you sure you want to sign out?",
+      confirmLabel: "Sign out",
+      onConfirm: function() { window.location.assign(link.href); }
+    });
+  });
+
+  cancel.addEventListener("click", closeModal);
+  close.addEventListener("click", closeModal);
+  modal.addEventListener("click", function(event) {
+    if (event.target === modal) closeModal();
+  });
+  document.addEventListener("keydown", function(event) {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) closeModal();
+  });
+  submit.addEventListener("click", function() {
+    const action = pendingAction;
+    closeModal();
+    if (action) action();
+  });
+})();
+</script>' . "\n";
 
   // Auto-dismiss any server-rendered flash toast (showFlash()) after a
   // few seconds — it only ever had a manual close button before, so it

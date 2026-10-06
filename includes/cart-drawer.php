@@ -13,6 +13,18 @@
 ?>
 <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
+<div class="modal-overlay" id="actionConfirmModal" hidden>
+  <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="actionConfirmHeading" aria-describedby="actionConfirmMessage">
+    <button class="modal-close" type="button" onclick="closeActionConfirmation()" aria-label="Close">&times;</button>
+    <div class="confirm-heading" id="actionConfirmHeading">Confirm action</div>
+    <p class="confirm-subheading" id="actionConfirmMessage"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" type="button" id="actionCancelButton">Cancel</button>
+      <button class="btn btn-danger" type="button" id="actionConfirmButton">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay-scrim" id="scrim" onclick="closeCart()"></div>
 
 <aside class="cart-sidebar" id="cartSidebar">

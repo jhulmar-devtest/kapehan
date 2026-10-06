@@ -151,10 +151,28 @@
 }
 
 .cart-line-remove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
   color: var(--primary-color);
   font-size: 12px;
   cursor: pointer;
   margin-top: 6px;
+}
+
+.cart-line-remove:hover {
+  text-decoration: underline;
+}
+
+.btn-danger {
+  background: var(--status-cancelled);
+  border: 1px solid var(--status-cancelled);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  filter: brightness(0.92);
 }
 
 .cart-empty-state {

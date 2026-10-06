@@ -98,7 +98,7 @@ function renderCartSidebar() {
             <span>${item.qty}</span>
             <button class="qty-btn" onclick="cartChangeQty('${item.lineId}',1)">+</button>
           </div>
-          <div class="cart-line-remove" onclick="cartRemove('${item.lineId}')">Remove</div>
+          <button type="button" class="cart-line-remove" onclick="requestCartRemoval('${item.lineId}')">Remove</button>
         </div>
         <div class="cart-line-price">\u20b1${(item.unit_price * item.qty).toFixed(2)}</div>
       </div>
@@ -123,6 +123,45 @@ function cartChangeQty(lineId, d) {
 function cartRemove(lineId) {
   saveCart(getCart().filter((i) => i.lineId !== lineId));
   renderCartSidebar();
+}
+
+function requestCartRemoval(lineId) {
+  const item = getCart().find((line) => line.lineId === lineId);
+  if (!item) return;
+  openActionConfirmation({
+    title: "Remove this item?",
+    message: `Remove ${item.name} from your cart?`,
+    confirmLabel: "Remove item",
+    onConfirm: () => cartRemove(lineId),
+  });
+}
+
+let actionConfirmationCallback = null;
+
+function openActionConfirmation({ title, message, confirmLabel, onConfirm }) {
+  const modal = document.getElementById("actionConfirmModal");
+  if (!modal) {
+    onConfirm?.();
+    return;
+  }
+  document.getElementById("actionConfirmHeading").textContent = title;
+  document.getElementById("actionConfirmMessage").textContent = message;
+  document.getElementById("actionConfirmButton").textContent = confirmLabel;
+  actionConfirmationCallback = onConfirm;
+  modal.hidden = false;
+  document.getElementById("actionConfirmButton").focus();
+}
+
+function closeActionConfirmation() {
+  const modal = document.getElementById("actionConfirmModal");
+  if (modal) modal.hidden = true;
+  actionConfirmationCallback = null;
+}
+
+function confirmPendingAction() {
+  const callback = actionConfirmationCallback;
+  closeActionConfirmation();
+  callback?.();
 }
 
 let pickupTimeManuallySelected = false;
@@ -327,6 +366,27 @@ function closeConfirmModal() {
 /* ── Wiring: pickup-time refresh + keyboard support for pill-style pickers
    (size/sugar in the customize modal still use .pay-option styling) ── */
 document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest('a[href$="/logout.php"]');
+    if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    openActionConfirmation({
+      title: "Sign out?",
+      message: "Are you sure you want to sign out?",
+      confirmLabel: "Sign out",
+      onConfirm: () => window.location.assign(link.href),
+    });
+  });
+  document.getElementById("actionConfirmModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "actionConfirmModal") closeActionConfirmation();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !document.getElementById("actionConfirmModal")?.hidden) {
+      closeActionConfirmation();
+    }
+  });
+  document.getElementById("actionConfirmButton")?.addEventListener("click", confirmPendingAction);
+  document.getElementById("actionCancelButton")?.addEventListener("click", closeActionConfirmation);
   document.getElementById("pickupTime")?.addEventListener("change", () => {
     pickupTimeManuallySelected = true;
     const messageEl = document.getElementById("pickupSlotMessage");
