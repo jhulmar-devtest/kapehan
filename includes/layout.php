@@ -68,6 +68,7 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
     $nav .= '<div class="nav-section-label">Operations</div>';
     $nav .= navItem('fa-chart-simple', 'Dashboard',   $appUrl . '/cashier/dashboard.php',  $pageTitle);
     $nav .= navItem('fa-store',        'Walk-in POS', $appUrl . '/cashier/walkin.php',      $pageTitle);
+    $nav .= navItem('fa-cash-register', 'Cash Drawer', $appUrl . '/cashier/cash-drawer.php', $pageTitle);
     $nav .= navItem('fa-clock',        'Pre-orders',  $appUrl . '/cashier/preorders.php',   $pageTitle, $preorderCount, $preorderUrgency);
     $nav .= navItem('fa-clock-rotate-left', 'Order History', $appUrl . '/cashier/orders.php',    $pageTitle);
     $nav .= navItem('fa-gear',  'Settings',  $appUrl . '/settings.php',    $pageTitle);

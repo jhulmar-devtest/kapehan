@@ -411,6 +411,59 @@ CREATE TABLE `cashier_sessions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- Shared physical drawer records
+--
+CREATE TABLE `cash_drawer_days` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `business_date` date NOT NULL,
+  `opening_amount` decimal(10,2) NOT NULL,
+  `opened_by` int UNSIGNED NOT NULL,
+  `opened_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` enum('open','closed') NOT NULL DEFAULT 'open',
+  `closing_amount` decimal(10,2) DEFAULT NULL,
+  `expected_closing_amount` decimal(10,2) DEFAULT NULL,
+  `variance` decimal(10,2) DEFAULT NULL COMMENT 'Counted cash minus expected cash',
+  `closed_by` int UNSIGNED DEFAULT NULL,
+  `closed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_cash_drawer_business_date` (`business_date`),
+  KEY `idx_cash_drawer_status` (`status`),
+  CONSTRAINT `fk_cash_drawer_opened_by` FOREIGN KEY (`opened_by`) REFERENCES `cashiers` (`id`),
+  CONSTRAINT `fk_cash_drawer_closed_by` FOREIGN KEY (`closed_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cash_drawer_handoffs` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `drawer_day_id` int UNSIGNED NOT NULL,
+  `handed_from_cashier_id` int UNSIGNED NOT NULL,
+  `recorded_by` int UNSIGNED NOT NULL,
+  `expected_amount` decimal(10,2) NOT NULL,
+  `counted_amount` decimal(10,2) NOT NULL,
+  `variance` decimal(10,2) NOT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `recorded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_drawer_handoff_day_time` (`drawer_day_id`,`recorded_at`),
+  CONSTRAINT `fk_drawer_handoff_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_drawer_handoff_from_cashier` FOREIGN KEY (`handed_from_cashier_id`) REFERENCES `cashiers` (`id`),
+  CONSTRAINT `fk_drawer_handoff_cashier` FOREIGN KEY (`recorded_by`) REFERENCES `cashiers` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cash_drawer_movements` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `drawer_day_id` int UNSIGNED NOT NULL,
+  `cashier_id` int UNSIGNED NOT NULL,
+  `direction` enum('in','out') NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `reason` varchar(255) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_drawer_movement_day_time` (`drawer_day_id`,`created_at`),
+  CONSTRAINT `fk_drawer_movement_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_drawer_movement_cashier` FOREIGN KEY (`cashier_id`) REFERENCES `cashiers` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
 -- Dumping data for table `cashier_sessions`
 --
 
@@ -736,6 +789,7 @@ CREATE TABLE `order_feedback` (
 CREATE TABLE `payments` (
   `id` int UNSIGNED NOT NULL,
   `order_id` int UNSIGNED NOT NULL COMMENT 'One payment per order',
+  `drawer_day_id` int UNSIGNED DEFAULT NULL,
   `payment_method` enum('cash','online','GCash','PayMaya','Online Banking') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL,
   `change_given` decimal(10,2) NOT NULL DEFAULT '0.00',
@@ -1513,7 +1567,9 @@ ALTER TABLE `order_feedback`
 -- Constraints for table `payments`
 --
 ALTER TABLE `payments`
-  ADD CONSTRAINT `fk_payment_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`);
+  ADD KEY `idx_payments_drawer_day` (`drawer_day_id`),
+  ADD CONSTRAINT `fk_payment_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`),
+  ADD CONSTRAINT `fk_payments_drawer_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `payment_denominations`

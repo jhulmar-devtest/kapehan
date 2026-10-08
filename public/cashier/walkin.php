@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/cash-drawer.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 
@@ -77,6 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   if ($allOk) {
     $db->beginTransaction();
     try {
+      $activeDrawer = getOpenCashDrawer($db, true);
+      if (!$activeDrawer) {
+        throw new RuntimeException('Open the shared cash drawer before processing a walk-in order.');
+      }
+      $drawerDayId = (int)$activeDrawer['id'];
       // See api/checkout.php for why this retries: generateOrderNumber()
       // is count-then-insert, which can collide under concurrent cashiers
       // ringing up orders at the same moment — exactly the situation a
@@ -101,8 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       foreach ($details as $d) {
         $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
       }
-      $db->prepare("INSERT INTO payments (order_id,payment_method,amount_paid,change_given,reference_number,payment_status,paid_at) VALUES (?,?,?,?,?,?,NOW())")
-        ->execute([$orderId, $payMethod, $cash, $change, $gcashRef, PAY_STATUS_PAID]);
+      $db->prepare("INSERT INTO payments (order_id,drawer_day_id,payment_method,amount_paid,change_given,reference_number,payment_status,paid_at) VALUES (?,?,?,?,?,?,?,NOW())")
+        ->execute([$orderId, $drawerDayId, $payMethod, $cash, $change, $gcashRef, PAY_STATUS_PAID]);
       $paymentId = (int)$db->lastInsertId();
 
       // Denominations only apply to cash payments
@@ -124,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
     } catch (\Throwable $e) {
       $db->rollBack();
       error_log($e->getMessage());
-      flash('global', 'Order failed. Please try again.', 'error');
+      flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.', 'error');
       redirect(APP_URL . '/cashier/walkin.php');
     }
   } else {
@@ -164,6 +170,7 @@ $catGroups     = array_filter($allCats, fn($c) => $c['parent_id'] === null && !e
 $catStandalone = array_filter($allCats, fn($c) => $c['parent_id'] === null && empty($catsByParent[$c['id']]));
 
 $imgBase = APP_URL . '/../uploads/products/';
+$openDrawer = getOpenCashDrawer($db);
 layoutHeader('Walk-in POS', '');
 ?>
 <style>
@@ -1513,6 +1520,17 @@ layoutHeader('Walk-in POS', '');
 </form>
 
 <div class="pos-wrap">
+  <?php if (!$openDrawer): ?>
+    <div class="alert alert-warning mb-4">
+      <i class="fa-solid fa-cash-register"></i>
+      <div>The shared drawer has not been opened, so walk-in payments are paused. <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">Open the drawer day</a>.</div>
+    </div>
+  <?php else: ?>
+    <div class="alert alert-info mb-4" style="padding:8px 14px">
+      <i class="fa-solid fa-cash-register"></i>
+      <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
+    </div>
+  <?php endif; ?>
 
   <div class="pos-menu">
     <div class="pos-menu-head">
@@ -1653,7 +1671,7 @@ layoutHeader('Walk-in POS', '');
     </div>
 
     <div class="pos-cart-footer">
-      <button class="pos-process-btn" id="pos-process-btn" disabled onclick="openCashModal()">
+      <button class="pos-process-btn" id="pos-process-btn" disabled <?= !$openDrawer ? 'title="Open the shared drawer before processing orders"' : '' ?> onclick="openCashModal()">
         <i class="fa-solid fa-money-bill-wave"></i> Enter Payment &amp; Process
       </button>
     </div>
@@ -1755,6 +1773,7 @@ layoutHeader('Walk-in POS', '');
                             }
                             echo json_encode($images, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                             ?>;
+  const cashDrawerOpen = <?= $openDrawer ? 'true' : 'false' ?>;
 </script>
 
 <script>
@@ -1909,7 +1928,7 @@ layoutHeader('Walk-in POS', '');
       discRow.style.display = 'none';
     }
     document.getElementById('pos-total').textContent = '₱' + fin.total.toFixed(2);
-    document.getElementById('pos-process-btn').disabled = false;
+    document.getElementById('pos-process-btn').disabled = !cashDrawerOpen;
 
     const dueEl = document.getElementById('cash-modal-due-val');
     if (dueEl) dueEl.textContent = '₱' + fin.total.toFixed(2);
@@ -2020,12 +2039,12 @@ layoutHeader('Walk-in POS', '');
     }
 
     const processEl = document.getElementById('pos-process-btn');
-    if (processEl) processEl.disabled = Object.keys(cart).length === 0;
+    if (processEl) processEl.disabled = !cashDrawerOpen || Object.keys(cart).length === 0;
   }
 
   // ── Open / close payment modal ─────────────────────────────────────────────
   function openCashModal() {
-    if (Object.keys(cart).length === 0) return;
+    if (!cashDrawerOpen || Object.keys(cart).length === 0) return;
     const fin = getFinancials(getSubtotal());
     const total = fin.total;
     document.getElementById('cash-modal-due-val').textContent = '₱' + total.toFixed(2);

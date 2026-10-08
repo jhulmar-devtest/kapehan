@@ -1,8 +1,10 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/cash-drawer.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 $cid = currentUserId();
+$openDrawer = getOpenCashDrawer($db);
 
 $stmt = $db->prepare("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE DATE(created_at)=CURDATE() AND cashier_id=? AND status!='cancelled'");
 $stmt->execute([$cid]);
@@ -79,6 +81,10 @@ layoutHeader('Dashboard');
         <?php if ($pending + $ready > 0): ?>
           <span style="position:absolute;top:8px;right:8px;background:var(--primary-color);color:var(--text-on-primary);font-size:0.60rem;font-weight:700;padding:2px 7px;border-radius:var(--radius-full)"><?= $pending + $ready ?></span>
         <?php endif; ?>
+      </a>
+      <a href="<?= APP_URL ?>/cashier/cash-drawer.php" class="btn btn-ghost btn-lg w-full" style="flex-direction:column;height:72px;gap:6px">
+        <i class="fa-solid fa-cash-register" style="font-size:18px"></i>
+        <span><?= $openDrawer ? 'View Cash Drawer' : 'Open Cash Drawer' ?></span>
       </a>
     </div>
   </div>
