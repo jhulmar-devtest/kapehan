@@ -72,7 +72,9 @@ $printer->sep('-');
 $printer->center('CASHIER LOGIN TIMES');
 foreach ($report['cashier_sessions'] as $session) {
   $printer->wrapLeft($session['cashier_name']);
-  $printer->row(date('g:i A', strtotime($session['login_at'])), $session['logout_at'] ? date('g:i A', strtotime($session['logout_at'])) : 'Still logged in');
+  $endLabel = cashierSessionEndLabel($session);
+  if (!empty($session['after_drawer_close'])) $endLabel .= ' · after close';
+  $printer->row(date('g:i A', strtotime($session['login_at'])), $endLabel);
 }
 $printer->feed(1);
 $printer->sep('-');

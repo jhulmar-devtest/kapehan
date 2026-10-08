@@ -41,8 +41,24 @@ function cashDrawerExpectedAmount(PDO $db, int $drawerId, float $openingAmount, 
   return round($openingAmount + (float)$paymentStmt->fetchColumn() + (float)$movementStmt->fetchColumn(), 2);
 }
 
+// Text for the "logged out" end of a cashier_sessions row in the audit trail.
+function cashierSessionEndLabel(array $session, string $timeFormat = 'g:i A'): string
+{
+  if (empty($session['logout_at'])) return 'Still logged in';
+  $label = date($timeFormat, strtotime($session['logout_at']));
+  switch ($session['logout_reason'] ?? null) {
+    case 'timeout':     return $label . ' (auto, inactive)';
+    case 'deactivated': return $label . ' (account deactivated)';
+    default:            return $label;
+  }
+}
+
 function cashDrawerReportData(PDO $db, int $drawerId): ?array
 {
+  // Close sessions that expired with nobody around to log them out (closed
+  // tab, walked away) so they aren't reported as "Still logged in".
+  closeStaleCashierSessions($db);
+
   $stmt = $db->prepare(
     "SELECT d.*, opener.full_name AS opened_by_name, closer.full_name AS closed_by_name
      FROM cash_drawer_days d
@@ -88,14 +104,21 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   $stmt->execute([$drawerId]);
   $drawer['movements'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+  // The drawer can be closed before the calendar day ends. Keep same-day
+  // cashier logins visible in its audit trail, including logins made after
+  // close, and label those separately in the report.
+  $nextDayAt = date('Y-m-d H:i:s', strtotime($drawer['business_date'] . ' +1 day'));
   $stmt = $db->prepare(
-    "SELECT s.login_at, s.logout_at, c.full_name AS cashier_name
-     FROM cashier_sessions s JOIN cashiers c ON c.id = s.cashier_id
-     WHERE s.login_at >= ? AND s.login_at <= ?
-       AND (s.logout_at IS NULL OR s.logout_at >= ?)
-     ORDER BY s.login_at"
+     "SELECT s.login_at, s.logout_at, s.logout_reason,
+            (d.closed_at IS NOT NULL AND s.login_at > d.closed_at) AS after_drawer_close,
+            c.full_name AS cashier_name
+     FROM cashier_sessions s
+     JOIN cash_drawer_days d ON d.id = ?
+     JOIN cashiers c ON c.id = s.cashier_id
+     WHERE s.login_at >= ? AND s.login_at < ?
+     ORDER BY s.login_at DESC"
   );
-  $stmt->execute([$drawer['business_date'] . ' 00:00:00', $endAt, $drawer['opened_at']]);
+  $stmt->execute([$drawerId, $drawer['business_date'] . ' 00:00:00', $nextDayAt]);
   $drawer['cashier_sessions'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return $drawer;
 }

@@ -407,7 +407,9 @@ CREATE TABLE `cashier_sessions` (
   `id` int UNSIGNED NOT NULL,
   `cashier_id` int UNSIGNED NOT NULL,
   `login_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `logout_at` datetime DEFAULT NULL COMMENT 'NULL = still logged in'
+  `last_activity_at` datetime DEFAULT NULL,
+  `logout_at` datetime DEFAULT NULL COMMENT 'NULL = still logged in',
+  `logout_reason` varchar(20) DEFAULT NULL COMMENT 'manual | timeout | deactivated'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -1224,7 +1226,8 @@ ALTER TABLE `cashiers`
 ALTER TABLE `cashier_sessions`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_cs_cashier` (`cashier_id`),
-  ADD KEY `idx_cs_login_at` (`login_at`);
+  ADD KEY `idx_cs_login_at` (`login_at`),
+  ADD KEY `idx_cs_open` (`logout_at`, `last_activity_at`);
 
 --
 -- Indexes for table `categories`

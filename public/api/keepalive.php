@@ -21,4 +21,10 @@ if (
 // Touching $_SESSION is enough to reset the session timer
 $_SESSION['_keepalive'] = time();
 
+// Also tell the cashier_sessions row we're still here, so the drawer audit
+// trail can tell an idle-but-open POS from an abandoned session.
+if (currentRole() === ROLE_CASHIER) {
+  touchCashierSession();
+}
+
 echo json_encode(['ok' => true]);

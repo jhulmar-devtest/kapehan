@@ -38,6 +38,7 @@ $cashier = $stmt->fetch();
 
 if ($cashier && password_verify($password, $cashier['password'])) {
   clearLoginAttempts($rateKey);
+  closeStaleCashierSessions($db);
   loginUser($cashier, ROLE_CASHIER);
   auditLog(ROLE_CASHIER, $cashier['id'], 'login');
   redirectByRole();

@@ -51,6 +51,24 @@ if (isset($_SESSION['last_activity'])) {
     // "Network error, please try again" instead of "please log in
     // again," and retrying would never work. Detect API/AJAX-style
     // requests and respond with JSON + 401 instead.
+    //
+    // BUG FIX: the timeout used to just destroy the session. Nothing recorded
+    // that the user had been logged out, so the cashier_sessions row kept
+    // logout_at = NULL and the cash drawer audit trail showed the cashier as
+    // "Still logged in" forever. Record the logout BEFORE the session (and the
+    // data we need to identify who it was) is wiped. This file runs before
+    // functions.php / auth.php are loaded by init.php, so load them here;
+    // they only define functions, and require_once makes the later load a no-op.
+    $expiredRole      = $_SESSION['role']               ?? null;
+    $expiredUserId    = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+    $expiredCashierId = isset($_SESSION['cashier_session_id']) ? (int)$_SESSION['cashier_session_id'] : null;
+    if ($expiredRole && $expiredUserId) {
+      require_once __DIR__ . '/database.php';
+      require_once __DIR__ . '/../includes/functions.php';
+      require_once __DIR__ . '/../includes/auth.php';
+      recordSessionTimeout($expiredRole, $expiredUserId, $expiredCashierId);
+    }
+
     session_unset();
     session_destroy();
 

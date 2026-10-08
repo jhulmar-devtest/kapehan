@@ -74,11 +74,16 @@ function requireRole(string ...$roles): void {
     $stmt = Database::getInstance()->prepare("SELECT is_active FROM cashiers WHERE id = ?");
     $stmt->execute([$_SESSION['user_id']]);
     if (!$stmt->fetchColumn()) {
+      // Close the cashier_sessions row + audit it BEFORE wiping the session,
+      // otherwise the drawer audit trail keeps showing "Still logged in".
+      closeCashierSession('deactivated');
+      auditLog(ROLE_CASHIER, (int)$_SESSION['user_id'], 'logout_deactivated');
       session_unset();
       session_destroy();
       header('Location: ' . APP_URL . '/cashier-select.php?reason=deactivated');
       exit;
     }
+    touchCashierSession();
   }
 }
 
@@ -144,10 +149,11 @@ function loginUser(array $user, string $role): void {
     try {
       $db   = Database::getInstance();
       $stmt = $db->prepare(
-        "INSERT INTO cashier_sessions (cashier_id, login_at) VALUES (?, NOW())"
+        "INSERT INTO cashier_sessions (cashier_id, login_at, last_activity_at) VALUES (?, NOW(), NOW())"
       );
       $stmt->execute([$user['id']]);
       $_SESSION['cashier_session_id'] = (int) $db->lastInsertId();
+      $_SESSION['_cs_touch']          = time();
     } catch (\Throwable $e) {
       // Non-fatal — don't block login if table doesn't exist yet
       error_log('cashier_sessions insert failed: ' . $e->getMessage());
@@ -156,23 +162,122 @@ function loginUser(array $user, string $role): void {
 }
 
 /**
- * closeCashierSession()
+ * closeCashierSession(string $reason = 'manual')
  *
- * Stamps logout_at on the active cashier_sessions row.
- * Called by logoutUser() when role is cashier.
+ * Stamps logout_at (and why) on the active cashier_sessions row of the
+ * CURRENT session. Every way a cashier can leave must go through here (or
+ * through closeStaleCashierSessions() for sessions nobody was around to
+ * close) so the drawer audit trail never shows a stale "Still logged in".
+ *
+ * $reason: 'manual' | 'timeout' | 'deactivated'
  */
-function closeCashierSession(): void {
+function closeCashierSession(string $reason = 'manual'): void {
   if (!empty($_SESSION['cashier_session_id'])) {
-    try {
-      $db = Database::getInstance();
-      $db->prepare(
-        "UPDATE cashier_sessions SET logout_at = NOW()
-                  WHERE id = ? AND logout_at IS NULL"
-      )->execute([$_SESSION['cashier_session_id']]);
-    } catch (\Throwable $e) {
-      error_log('cashier_sessions update failed: ' . $e->getMessage());
-    }
+    closeCashierSessionRow((int)$_SESSION['cashier_session_id'], $reason);
   }
+}
+
+/**
+ * closeCashierSessionRow(int $rowId, string $reason)
+ *
+ * Closes one cashier_sessions row. For a 'timeout' the logout time is the
+ * moment the session actually expired (last activity + SESSION_TIMEOUT), not
+ * the moment someone happened to notice. All timestamps are computed in SQL
+ * so PHP and MySQL clocks/timezones can never disagree.
+ *
+ * Returns true if this call closed the row (false if it was already closed).
+ */
+function closeCashierSessionRow(int $rowId, string $reason = 'manual'): bool {
+  try {
+    $db = Database::getInstance();
+    if ($reason === 'timeout') {
+      $stmt = $db->prepare(
+        "UPDATE cashier_sessions
+            SET logout_at = LEAST(NOW(), COALESCE(last_activity_at, login_at) + INTERVAL ? SECOND),
+                logout_reason = ?
+          WHERE id = ? AND logout_at IS NULL"
+      );
+      $stmt->execute([SESSION_TIMEOUT, $reason, $rowId]);
+    } else {
+      $stmt = $db->prepare(
+        "UPDATE cashier_sessions SET logout_at = NOW(), logout_reason = ?
+          WHERE id = ? AND logout_at IS NULL"
+      );
+      $stmt->execute([$reason, $rowId]);
+    }
+    return $stmt->rowCount() > 0;
+  } catch (\Throwable $e) {
+    error_log('cashier_sessions update failed: ' . $e->getMessage());
+    return false;
+  }
+}
+
+/**
+ * touchCashierSession()
+ *
+ * Heartbeat: records that the logged-in cashier is still active. Throttled to
+ * one UPDATE per minute per session. This is what lets closeStaleCashierSessions()
+ * tell an abandoned session (closed browser, walked away) from a live one.
+ */
+function touchCashierSession(): void {
+  if (empty($_SESSION['cashier_session_id'])) return;
+  if (time() - ($_SESSION['_cs_touch'] ?? 0) < 60) return;
+  try {
+    Database::getInstance()
+      ->prepare("UPDATE cashier_sessions SET last_activity_at = NOW()
+                  WHERE id = ? AND logout_at IS NULL")
+      ->execute([$_SESSION['cashier_session_id']]);
+    $_SESSION['_cs_touch'] = time();
+  } catch (\Throwable $e) {
+    error_log('cashier_sessions touch failed: ' . $e->getMessage());
+  }
+}
+
+/**
+ * closeStaleCashierSessions(PDO $db)
+ *
+ * Closes every still-open cashier_sessions row whose cashier has been idle for
+ * longer than SESSION_TIMEOUT. A PHP session that times out because the user
+ * simply never came back (closed the tab, shut the POS) runs no code at all,
+ * so nothing else would ever stamp logout_at. Each closed row also gets a
+ * 'logout_timeout' audit_log entry. Safe to call often; it is a no-op when
+ * nothing is stale.
+ */
+function closeStaleCashierSessions(PDO $db): void {
+  try {
+    $stmt = $db->prepare(
+      "SELECT id, cashier_id FROM cashier_sessions
+        WHERE logout_at IS NULL
+          AND COALESCE(last_activity_at, login_at) < (NOW() - INTERVAL ? SECOND)"
+    );
+    $stmt->execute([SESSION_TIMEOUT]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+      // rowCount() guard: if two requests sweep at once, only one audits.
+      if (closeCashierSessionRow((int)$row['id'], 'timeout')) {
+        $db->prepare(
+          "INSERT INTO audit_log (actor_type, actor_id, action, target, target_id, ip_address)
+           VALUES ('cashier', ?, 'logout_timeout', 'cashier_sessions', ?, NULL)"
+        )->execute([(int)$row['cashier_id'], (int)$row['id']]);
+      }
+    }
+  } catch (\Throwable $e) {
+    error_log('closeStaleCashierSessions failed: ' . $e->getMessage());
+  }
+}
+
+/**
+ * recordSessionTimeout(?string $role, ?int $userId, ?int $cashierSessionId)
+ *
+ * Called by config/session.php when a request arrives with an expired session.
+ * Writes the 'logout_timeout' audit entry and, for cashiers, closes the
+ * cashier_sessions row. (A manual logout does the same via logout.php.)
+ */
+function recordSessionTimeout(?string $role, ?int $userId, ?int $cashierSessionId): void {
+  if (!$role || !$userId) return;
+  if ($role === ROLE_CASHIER && $cashierSessionId) {
+    closeCashierSessionRow($cashierSessionId, 'timeout');
+  }
+  auditLog($role, $userId, 'logout_timeout');
 }
 
 /**
@@ -186,7 +291,7 @@ function logoutUser(): void {
 
   // Close cashier session tracking before wiping the session
   if ($role === ROLE_CASHIER) {
-    closeCashierSession();
+    closeCashierSession('manual');
   }
 
   // Clear all session variables
