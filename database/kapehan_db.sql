@@ -440,13 +440,20 @@ CREATE TABLE `cash_drawer_handoffs` (
   `expected_amount` decimal(10,2) NOT NULL,
   `counted_amount` decimal(10,2) NOT NULL,
   `variance` decimal(10,2) NOT NULL,
+  `status` enum('pending','confirmed','disputed','unverified') NOT NULL DEFAULT 'unverified',
+  `confirmed_by` int UNSIGNED DEFAULT NULL,
+  `confirmation_amount` decimal(10,2) DEFAULT NULL,
+  `confirmation_variance` decimal(10,2) DEFAULT NULL COMMENT 'Incoming count minus outgoing count',
+  `confirmation_note` varchar(255) DEFAULT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
   `note` varchar(255) DEFAULT NULL,
   `recorded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_drawer_handoff_day_time` (`drawer_day_id`,`recorded_at`),
   CONSTRAINT `fk_drawer_handoff_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_drawer_handoff_from_cashier` FOREIGN KEY (`handed_from_cashier_id`) REFERENCES `cashiers` (`id`),
-  CONSTRAINT `fk_drawer_handoff_cashier` FOREIGN KEY (`recorded_by`) REFERENCES `cashiers` (`id`)
+  CONSTRAINT `fk_drawer_handoff_cashier` FOREIGN KEY (`recorded_by`) REFERENCES `cashiers` (`id`),
+  CONSTRAINT `fk_drawer_handoff_confirmed_by` FOREIGN KEY (`confirmed_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `cash_drawer_movements` (

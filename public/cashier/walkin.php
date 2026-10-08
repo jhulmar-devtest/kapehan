@@ -79,10 +79,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
     $db->beginTransaction();
     try {
       $activeDrawer = getOpenCashDrawer($db, true);
-      if (!$activeDrawer) {
-        throw new RuntimeException('Open the shared cash drawer before processing a walk-in order.');
+      if (!$activeDrawer || $activeDrawer['business_date'] !== date('Y-m-d')) {
+        throw new RuntimeException('The drawer day is not open for today. Close any overdue drawer, then open today’s drawer before processing walk-in orders.');
       }
       $drawerDayId = (int)$activeDrawer['id'];
+      if (cashDrawerHasPendingHandoff($db, $drawerDayId)) {
+        throw new RuntimeException('Walk-in payments are paused until the incoming cashier confirms or disputes the pending handoff.');
+      }
       // See api/checkout.php for why this retries: generateOrderNumber()
       // is count-then-insert, which can collide under concurrent cashiers
       // ringing up orders at the same moment — exactly the situation a
@@ -171,6 +174,9 @@ $catStandalone = array_filter($allCats, fn($c) => $c['parent_id'] === null && em
 
 $imgBase = APP_URL . '/../uploads/products/';
 $openDrawer = getOpenCashDrawer($db);
+$drawerReady = $openDrawer
+  && $openDrawer['business_date'] === date('Y-m-d')
+  && !cashDrawerHasPendingHandoff($db, (int)$openDrawer['id']);
 layoutHeader('Walk-in POS', '');
 ?>
 <style>
@@ -1520,15 +1526,24 @@ layoutHeader('Walk-in POS', '');
 </form>
 
 <div class="pos-wrap">
-  <?php if (!$openDrawer): ?>
+  <?php if (!$drawerReady): ?>
     <div class="alert alert-warning mb-4">
       <i class="fa-solid fa-cash-register"></i>
-      <div>The shared drawer has not been opened, so walk-in payments are paused. <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">Open the drawer day</a>.</div>
+      <div>
+        <?php if ($openDrawer && $openDrawer['business_date'] < date('Y-m-d')): ?>
+          The previous drawer day is still open. Walk-in payments are paused until it is closed and today’s drawer is opened.
+        <?php elseif ($openDrawer && cashDrawerHasPendingHandoff($db, (int)$openDrawer['id'])): ?>
+          A drawer handoff is waiting for the incoming cashier to recount and respond. Walk-in payments are paused.
+        <?php else: ?>
+          The shared drawer has not been opened for today, so walk-in payments are paused.
+        <?php endif; ?>
+        <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">Manage the drawer</a>.
+      </div>
     </div>
   <?php else: ?>
     <div class="alert alert-info mb-4" style="padding:8px 14px">
       <i class="fa-solid fa-cash-register"></i>
-      <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
+    <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
     </div>
   <?php endif; ?>
 
@@ -1671,7 +1686,7 @@ layoutHeader('Walk-in POS', '');
     </div>
 
     <div class="pos-cart-footer">
-      <button class="pos-process-btn" id="pos-process-btn" disabled <?= !$openDrawer ? 'title="Open the shared drawer before processing orders"' : '' ?> onclick="openCashModal()">
+      <button class="pos-process-btn" id="pos-process-btn" disabled <?= !$drawerReady ? 'title="Resolve the drawer status before processing orders"' : '' ?> onclick="openCashModal()">
         <i class="fa-solid fa-money-bill-wave"></i> Enter Payment &amp; Process
       </button>
     </div>
@@ -1773,7 +1788,7 @@ layoutHeader('Walk-in POS', '');
                             }
                             echo json_encode($images, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                             ?>;
-  const cashDrawerOpen = <?= $openDrawer ? 'true' : 'false' ?>;
+  const cashDrawerOpen = <?= $drawerReady ? 'true' : 'false' ?>;
 </script>
 
 <script>

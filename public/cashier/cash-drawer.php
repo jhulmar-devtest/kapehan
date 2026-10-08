@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   elseif ($amount >= 0) $amount = round($amount, 2);
   $drawerId = (int)($_POST['drawer_id'] ?? 0);
 
-  if (in_array($action, ['open', 'handoff', 'close', 'movement_in', 'movement_out'], true) && $amount < 0) {
+  if (in_array($action, ['open', 'handoff_submit', 'handoff_confirm', 'close', 'movement_in', 'movement_out'], true) && $amount < 0) {
     $errorMessage = 'Enter a valid amount of zero or more.';
   } elseif ($action === 'open') {
     try {
@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ? 'A drawer record already exists for today.'
         : $e->getMessage();
     }
-  } elseif (in_array($action, ['handoff', 'close', 'movement_in', 'movement_out'], true)) {
+  } elseif (in_array($action, ['handoff_submit', 'handoff_confirm', 'close', 'movement_in', 'movement_out'], true)) {
     try {
       $db->beginTransaction();
       $stmt = $db->prepare("SELECT * FROM cash_drawer_days WHERE id=? AND status='open' FOR UPDATE");
@@ -45,17 +45,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$drawer) throw new RuntimeException('This drawer day is no longer open. Refresh the page.');
 
       $note = sanitizeString($_POST['note'] ?? '', 255);
-      if ($action === 'handoff') {
+      if ($action === 'handoff_submit') {
+        if (cashDrawerHasPendingHandoff($db, $drawerId)) {
+          throw new RuntimeException('Another handoff is waiting for the incoming cashier to confirm it.');
+        }
         $expected = cashDrawerExpectedAmount($db, $drawerId, (float)$drawer['opening_amount']);
         $variance = round($amount - $expected, 2);
-        $fromCashierId = (int)($_POST['handed_from_cashier_id'] ?? 0);
-        if ($fromCashierId <= 0) throw new RuntimeException('Select the cashier handing over the drawer.');
         if ($variance != 0.0 && $note === '') throw new RuntimeException('Add a note explaining the handoff difference.');
-        $db->prepare('INSERT INTO cash_drawer_handoffs (drawer_day_id, handed_from_cashier_id, recorded_by, expected_amount, counted_amount, variance, note) VALUES (?,?,?,?,?,?,?)')
-          ->execute([$drawerId, $fromCashierId, currentUserId(), $expected, $amount, $variance, $note !== '' ? $note : null]);
+        $cashierId = currentUserId();
+        $db->prepare("INSERT INTO cash_drawer_handoffs (drawer_day_id, handed_from_cashier_id, recorded_by, expected_amount, counted_amount, variance, status, note) VALUES (?,?,?,?,?,?,'pending',?)")
+          ->execute([$drawerId, $cashierId, $cashierId, $expected, $amount, $variance, $note !== '' ? $note : null]);
         $db->commit();
-        flash('global', 'Handoff count recorded. Variance: ' . peso($variance), $variance == 0.0 ? 'success' : 'warning');
+        flash('global', 'Your count is recorded. The incoming cashier must recount and respond before walk-in orders resume.', 'info');
+      } elseif ($action === 'handoff_confirm') {
+        $handoffId = (int)($_POST['handoff_id'] ?? 0);
+        $stmt = $db->prepare("SELECT * FROM cash_drawer_handoffs WHERE id=? AND drawer_day_id=? AND status='pending' FOR UPDATE");
+        $stmt->execute([$handoffId, $drawerId]);
+        $handoff = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$handoff) throw new RuntimeException('This handoff is no longer awaiting confirmation.');
+        if ((int)$handoff['handed_from_cashier_id'] === currentUserId()) {
+          throw new RuntimeException('A different cashier must confirm the handoff.');
+        }
+        $confirmationVariance = round($amount - (float)$handoff['counted_amount'], 2);
+        if ($confirmationVariance != 0.0 && $note === '') {
+          throw new RuntimeException('Add a note explaining the difference between the two counts.');
+        }
+        $status = $confirmationVariance == 0.0 ? 'confirmed' : 'disputed';
+        $db->prepare('UPDATE cash_drawer_handoffs SET status=?, confirmed_by=?, confirmation_amount=?, confirmation_variance=?, confirmation_note=?, confirmed_at=NOW() WHERE id=? AND status=\'pending\'')
+          ->execute([$status, currentUserId(), $amount, $confirmationVariance, $note !== '' ? $note : null, $handoffId]);
+        $db->commit();
+        flash('global', $status === 'confirmed'
+          ? 'Handoff confirmed. Both cashiers recorded the same count.'
+          : 'The handoff counts differ. The difference and your note were recorded.', $status === 'confirmed' ? 'success' : 'warning');
       } elseif ($action === 'movement_in' || $action === 'movement_out') {
+        if (cashDrawerHasPendingHandoff($db, $drawerId)) {
+          throw new RuntimeException('Record the incoming cashier’s recount before recording other drawer activity.');
+        }
         if ($amount <= 0 || $note === '') throw new RuntimeException('Enter an amount and a reason for the cash movement.');
         $direction = $action === 'movement_in' ? 'in' : 'out';
         $db->prepare('INSERT INTO cash_drawer_movements (drawer_day_id, cashier_id, direction, amount, reason) VALUES (?,?,?,?,?)')
@@ -63,6 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->commit();
         flash('global', 'Cash movement recorded.', 'success');
       } else {
+        if (cashDrawerHasPendingHandoff($db, $drawerId)) {
+          throw new RuntimeException('Resolve the pending handoff before closing the drawer day.');
+        }
         $expected = cashDrawerExpectedAmount($db, $drawerId, (float)$drawer['opening_amount']);
         $variance = round($amount - $expected, 2);
         $db->prepare("UPDATE cash_drawer_days SET status='closed', closing_amount=?, expected_closing_amount=?, variance=?, closed_by=?, closed_at=NOW() WHERE id=? AND status='open'")
@@ -80,26 +108,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-$drawer = null;
-if (!empty($_GET['day'])) {
+$activeDrawer = getOpenCashDrawer($db);
+$todayDrawerStmt = $db->prepare('SELECT * FROM cash_drawer_days WHERE business_date=? LIMIT 1');
+$todayDrawerStmt->execute([$today]);
+$todayDrawer = $todayDrawerStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+$drawer = $activeDrawer;
+if (!$drawer && !empty($_GET['day'])) {
   $stmt = $db->prepare('SELECT * FROM cash_drawer_days WHERE id=?');
   $stmt->execute([(int)$_GET['day']]);
   $drawer = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
-if (!$drawer) $drawer = getOpenCashDrawer($db);
-if (!$drawer) {
-  $stmt = $db->prepare('SELECT * FROM cash_drawer_days WHERE business_date=? LIMIT 1');
-  $stmt->execute([$today]);
-  $drawer = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-}
+if (!$drawer) $drawer = $todayDrawer;
 $report = $drawer ? cashDrawerReportData($db, (int)$drawer['id']) : null;
-$cashiers = $db->query('SELECT id,full_name FROM cashiers WHERE is_active=1 ORDER BY full_name')->fetchAll(PDO::FETCH_ASSOC);
+$canOpenToday = !$activeDrawer && !$todayDrawer;
+$hasPendingHandoff = $activeDrawer ? cashDrawerHasPendingHandoff($db, (int)$activeDrawer['id']) : false;
+$lateClose = $report && $report['status'] === 'closed'
+  && date('Y-m-d', strtotime($report['closed_at'])) > $report['business_date'];
 $expectedNow = $drawer && $drawer['status'] === 'open'
   ? cashDrawerExpectedAmount($db, (int)$drawer['id'], (float)$drawer['opening_amount'])
   : (float)($drawer['expected_closing_amount'] ?? 0);
 
 layoutHeader('Cash Drawer');
 ?>
+<style>
+  .drawer-confirm-overlay { position:fixed; inset:0; z-index:1200; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(22,14,10,.62); }
+  .drawer-confirm-overlay.open { display:flex; }
+  .drawer-confirm-dialog { width:min(100%,440px); border-radius:var(--radius-lg); background:var(--surface-color); color:var(--text-color); box-shadow:var(--shadow-lg); padding:24px; }
+  .drawer-confirm-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:18px; }
+</style>
 <div class="page-header">
   <div>
     <div class="page-header-title">Shared Cash Drawer</div>
@@ -151,18 +187,24 @@ layoutHeader('Cash Drawer');
   </div>
 
   <?php if ($report['status'] === 'open'): ?>
+    <?php if ($report['business_date'] < $today): ?>
+      <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i><div>This drawer day is overdue. Walk-in sales are paused until you count and close it. After closing, you can open today’s drawer.</div></div>
+    <?php endif; ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--space-4)">
       <div class="card">
         <div class="card-header"><div class="card-title"><i class="fa-solid fa-right-left"></i> Cashier handoff count</div></div>
         <div class="card-body">
-          <p class="text-muted mb-3">Optional. Count the shared drawer when responsibility changes. The system records any difference without resetting the day’s expected balance.</p>
-          <form method="POST">
-            <?= csrfField() ?><input type="hidden" name="drawer_action" value="handoff"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>">
-            <div class="form-group"><label class="form-label" for="handoff-from">Cashier handing over the drawer</label><select class="form-control" id="handoff-from" name="handed_from_cashier_id" required><option value="">Select cashier</option><?php foreach ($cashiers as $cashier): ?><option value="<?= (int)$cashier['id'] ?>"><?= e($cashier['full_name']) ?></option><?php endforeach; ?></select></div>
-            <div class="form-group"><label class="form-label" for="handoff-amount">Cash counted (₱)</label><input class="form-control" id="handoff-amount" name="amount" type="number" min="0" step="0.01" required></div>
-            <div class="form-group"><label class="form-label" for="handoff-note">Note <span class="text-muted">(required if there’s a difference)</span></label><input class="form-control" id="handoff-note" name="note" maxlength="255" placeholder="Explain any difference"></div>
-            <button class="btn btn-ghost" type="submit"><i class="fa-solid fa-clipboard-check"></i> Record Handoff Count</button>
-          </form>
+          <?php if ($hasPendingHandoff): ?>
+            <p class="text-muted mb-3">A handoff is waiting for the incoming cashier to recount and confirm it. Walk-in payments stay paused until they respond.</p>
+          <?php else: ?>
+            <p class="text-muted mb-3">The outgoing cashier submits a count first. The incoming cashier must recount it under their own login. The expected day balance is not reset.</p>
+            <form method="POST">
+              <?= csrfField() ?><input type="hidden" name="drawer_action" value="handoff_submit"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>">
+              <div class="form-group"><label class="form-label" for="handoff-amount">Your count of the drawer (₱)</label><input class="form-control" id="handoff-amount" name="amount" type="number" min="0" step="0.01" required></div>
+              <div class="form-group"><label class="form-label" for="handoff-note">Note <span class="text-muted">(required if your count differs from expected)</span></label><input class="form-control" id="handoff-note" name="note" maxlength="255" placeholder="Explain any difference"></div>
+              <button class="btn btn-ghost" type="submit"><i class="fa-solid fa-share-from-square"></i> Submit Outgoing Count</button>
+            </form>
+          <?php endif; ?>
         </div>
       </div>
       <div class="card">
@@ -181,18 +223,43 @@ layoutHeader('Cash Drawer');
         <div class="card-header"><div class="card-title"><i class="fa-solid fa-lock"></i> Close drawer day</div></div>
         <div class="card-body">
           <p class="text-muted mb-3">Count all the cash in the drawer, including the starting fund. Expected cash right now is <strong><?= peso($expectedNow) ?></strong>.</p>
-          <form method="POST" onsubmit="return confirm('Close the shared drawer for today? This records the final count and variance.');">
-            <?= csrfField() ?><input type="hidden" name="drawer_action" value="close"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>">
-            <div class="form-group"><label class="form-label" for="closing-amount">Cash counted at closing (₱)</label><input class="form-control" id="closing-amount" name="amount" type="number" min="0" step="0.01" required></div>
-            <button class="btn btn-primary" type="submit"><i class="fa-solid fa-lock"></i> Close &amp; Save Count</button>
-          </form>
+          <?php if ($hasPendingHandoff): ?>
+            <p class="text-muted">Resolve the pending handoff before closing.</p>
+            <button class="btn btn-primary" type="button" disabled><i class="fa-solid fa-hourglass-half"></i> Handoff Needs Confirmation</button>
+          <?php else: ?>
+            <button class="btn btn-primary" type="button" onclick="openDrawerCloseModal()"><i class="fa-solid fa-lock"></i> Count &amp; Close Drawer</button>
+          <?php endif; ?>
         </div>
       </div>
     </div>
   <?php else: ?>
-    <div class="alert <?= (float)$report['variance'] === 0.0 ? 'alert-success' : 'alert-warning' ?> mb-4">
-      <i class="fa-solid fa-<?= (float)$report['variance'] === 0.0 ? 'circle-check' : 'triangle-exclamation' ?>"></i>
-      <div>Closed by <strong><?= e($report['closed_by_name'] ?? 'Cashier') ?></strong> at <?= date('g:i A', strtotime($report['closed_at'])) ?>. Counted <?= peso($report['closing_amount']) ?>; variance <?= peso($report['variance']) ?>.</div>
+    <div class="alert <?= (float)$report['variance'] === 0.0 && !$lateClose ? 'alert-success' : 'alert-warning' ?> mb-4">
+      <i class="fa-solid fa-<?= (float)$report['variance'] === 0.0 && !$lateClose ? 'circle-check' : 'triangle-exclamation' ?>"></i>
+      <div>
+        Closed by <strong><?= e($report['closed_by_name'] ?? 'Cashier') ?></strong> at <?= date('M j, g:i A', strtotime($report['closed_at'])) ?>. Counted <?= peso($report['closing_amount']) ?>; variance <?= peso($report['variance']) ?>.
+        <?php if ($lateClose): ?><br><strong>Late close:</strong> drawer day for <?= date('M j', strtotime($report['business_date'])) ?> was closed on <?= date('M j', strtotime($report['closed_at'])) ?>.<?php endif; ?>
+      </div>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($report['status'] === 'open' && $hasPendingHandoff): ?>
+    <div class="card mt-4">
+      <div class="card-header"><div class="card-title"><i class="fa-solid fa-user-check"></i> Incoming cashier confirmation</div></div>
+      <div class="card-body">
+        <?php foreach ($report['handoffs'] as $handoff): if ($handoff['status'] !== 'pending') continue; ?>
+          <?php if ((int)$handoff['handed_from_cashier_id'] === currentUserId()): ?>
+            <div class="alert alert-info"><i class="fa-solid fa-hourglass-half"></i><div>Outgoing count of <?= peso($handoff['counted_amount']) ?> submitted by <strong><?= e($handoff['handed_from_name']) ?></strong> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>. Waiting for a different cashier to recount.</div></div>
+          <?php else: ?>
+            <div class="alert alert-warning"><i class="fa-solid fa-scale-balanced"></i><div><strong><?= e($handoff['handed_from_name']) ?></strong> recorded <?= peso($handoff['counted_amount']) ?> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>; the system expected <?= peso($handoff['expected_amount']) ?>. Recount the physical drawer and enter your own count.</div></div>
+            <form method="POST" style="max-width:500px">
+              <?= csrfField() ?><input type="hidden" name="drawer_action" value="handoff_confirm"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>"><input type="hidden" name="handoff_id" value="<?= (int)$handoff['id'] ?>">
+              <div class="form-group"><label class="form-label" for="confirm-handoff-amount">Your recount (₱)</label><input class="form-control" id="confirm-handoff-amount" name="amount" type="number" min="0" step="0.01" required></div>
+              <div class="form-group"><label class="form-label" for="confirm-handoff-note">Note <span class="text-muted">(required if your count differs)</span></label><input class="form-control" id="confirm-handoff-note" name="note" maxlength="255" placeholder="Explain the difference"></div>
+              <button class="btn btn-primary" type="submit"><i class="fa-solid fa-check"></i> Confirm Recount</button>
+            </form>
+          <?php endif; ?>
+        <?php endforeach; ?>
+      </div>
     </div>
   <?php endif; ?>
 
@@ -203,13 +270,61 @@ layoutHeader('Cash Drawer');
         <?php if (!$report['cashier_sessions']): ?><div class="text-muted">No login sessions overlap this drawer day.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['cashier_sessions'] as $session): ?><div><strong><?= e($session['cashier_name']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($session['login_at'])) ?> – <?= $session['logout_at'] ? date('g:i A', strtotime($session['logout_at'])) : 'Still logged in' ?></div></div><?php endforeach; ?></div><?php endif; ?>
       </section>
       <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Handoff counts</h3>
-        <?php if (!$report['handoffs']): ?><div class="text-muted">No handoff counts recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['handoffs'] as $handoff): ?><div><strong><?= e($handoff['handed_from_name']) ?> → <?= e($handoff['cashier_name']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($handoff['recorded_at'])) ?> · Expected <?= peso($handoff['expected_amount']) ?> · Counted <?= peso($handoff['counted_amount']) ?> · Difference <?= peso($handoff['variance']) ?><?= $handoff['note'] ? ' · ' . e($handoff['note']) : '' ?></div></div><?php endforeach; ?></div><?php endif; ?>
+        <?php if (!$report['handoffs']): ?><div class="text-muted">No handoff counts recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['handoffs'] as $handoff): ?><div><strong><?= e($handoff['handed_from_name']) ?> → <?= e($handoff['confirmed_by_name'] ?? ($handoff['status'] === 'pending' ? 'Awaiting cashier' : 'Unverified')) ?></strong><div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($handoff['recorded_at'])) ?> · Expected <?= peso($handoff['expected_amount']) ?> · Outgoing count <?= peso($handoff['counted_amount']) ?> · Expected difference <?= peso($handoff['variance']) ?> · Status: <?= ucfirst(e($handoff['status'])) ?><?= $handoff['confirmation_amount'] !== null ? ' · Incoming count ' . peso($handoff['confirmation_amount']) . ' · Count difference ' . peso($handoff['confirmation_variance']) . ' · Confirmed ' . date('g:i A', strtotime($handoff['confirmed_at'])) : '' ?><?= $handoff['note'] ? ' · ' . e($handoff['note']) : '' ?><?= $handoff['confirmation_note'] ? ' · Incoming note: ' . e($handoff['confirmation_note']) : '' ?></div></div><?php endforeach; ?></div><?php endif; ?>
       </section>
       <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cash movements</h3>
         <?php if (!$report['movements']): ?><div class="text-muted">No cash movements recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['movements'] as $movement): ?><div><strong><?= ucfirst($movement['direction']) ?> <?= peso($movement['amount']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= e($movement['cashier_name']) ?> · <?= date('g:i A', strtotime($movement['created_at'])) ?> · <?= e($movement['reason']) ?></div></div><?php endforeach; ?></div><?php endif; ?>
       </section>
     </div>
   </div>
+<?php endif; ?>
+
+<?php if ($canOpenToday && $report && $report['business_date'] !== $today): ?>
+  <div class="alert alert-info mt-4"><i class="fa-solid fa-circle-info"></i><div>The previous drawer day is closed. You can now open today’s drawer.</div></div>
+  <div class="card" style="max-width:680px">
+    <div class="card-header"><div class="card-title"><i class="fa-solid fa-cash-register"></i> Open today’s drawer</div></div>
+    <div class="card-body">
+      <form method="POST" style="display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap">
+        <?= csrfField() ?><input type="hidden" name="drawer_action" value="open">
+        <div class="form-group" style="margin:0;min-width:230px;flex:1"><label class="form-label" for="opening-amount-today">Starting fund (₱)</label><input class="form-control" id="opening-amount-today" name="amount" type="number" min="0" step="0.01" required placeholder="e.g. 1500.00"></div>
+        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-lock-open"></i> Open Today’s Drawer</button>
+      </form>
+    </div>
+  </div>
+<?php endif; ?>
+
+<?php if ($report && $report['status'] === 'open' && !$hasPendingHandoff): ?>
+  <div class="drawer-confirm-overlay" id="drawer-close-overlay" onclick="if(event.target===this)closeDrawerCloseModal()" aria-hidden="true">
+    <section class="drawer-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="drawer-close-title" aria-describedby="drawer-close-description">
+      <h2 id="drawer-close-title" style="font-size:1.2rem;margin-bottom:8px"><i class="fa-solid fa-lock"></i> Close drawer day?</h2>
+      <p id="drawer-close-description" class="text-muted">This records the final cash count and closes <?= e(date('F j, Y', strtotime($report['business_date']))) ?>. You’ll need to open a new drawer day before processing walk-in orders again.</p>
+      <p style="margin:12px 0 16px">Expected cash: <strong><?= peso($expectedNow) ?></strong></p>
+      <form method="POST">
+        <?= csrfField() ?><input type="hidden" name="drawer_action" value="close"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>">
+        <div class="form-group"><label class="form-label" for="closing-amount">Cash counted in the drawer (₱)</label><input class="form-control" id="closing-amount" name="amount" type="number" min="0" step="0.01" required></div>
+        <div class="drawer-confirm-actions">
+          <button class="btn btn-ghost" type="button" onclick="closeDrawerCloseModal()">Keep Drawer Open</button>
+          <button class="btn btn-primary" type="submit"><i class="fa-solid fa-lock"></i> Confirm Close</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <script>
+    function openDrawerCloseModal() {
+      const overlay = document.getElementById('drawer-close-overlay');
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+      document.getElementById('closing-amount').focus();
+    }
+    function closeDrawerCloseModal() {
+      const overlay = document.getElementById('drawer-close-overlay');
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeDrawerCloseModal();
+    });
+  </script>
 <?php endif; ?>
 
 <?php

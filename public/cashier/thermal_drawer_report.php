@@ -33,8 +33,11 @@ $printer->row('Status', strtoupper($report['status']));
 $printer->row('Opened', date('g:i A', strtotime($report['opened_at'])));
 $printer->wrapLeft('By: ' . $report['opened_by_name']);
 if ($report['closed_at']) {
-  $printer->row('Closed', date('g:i A', strtotime($report['closed_at'])));
+  $printer->row('Closed', date('m/d g:i A', strtotime($report['closed_at'])));
   $printer->wrapLeft('By: ' . ($report['closed_by_name'] ?? 'Cashier'));
+  if (date('Y-m-d', strtotime($report['closed_at'])) > $report['business_date']) {
+    $printer->line('LATE CLOSE');
+  }
 }
 $printer->sep('-');
 $printer->amount('Opening fund', (float)$report['opening_amount']);
@@ -78,10 +81,18 @@ if (!$report['handoffs']) {
   $printer->line('No handoff counts');
 } else {
   foreach ($report['handoffs'] as $handoff) {
-    $printer->wrapLeft($handoff['handed_from_name'] . ' -> ' . $handoff['cashier_name'] . ' · ' . date('g:i A', strtotime($handoff['recorded_at'])));
+    $printer->wrapLeft($handoff['handed_from_name'] . ' -> ' . ($handoff['confirmed_by_name'] ?? 'Awaiting') . ' · ' . date('g:i A', strtotime($handoff['recorded_at'])));
+    $printer->row('Status', strtoupper($handoff['status']));
     $printer->amount('Expected', (float)$handoff['expected_amount']);
-    $printer->amount('Counted', (float)$handoff['counted_amount']);
-    $printer->amount('Difference', (float)$handoff['variance']);
+    $printer->amount('Outgoing count', (float)$handoff['counted_amount']);
+    $printer->amount('Vs expected', (float)$handoff['variance']);
+    if ($handoff['confirmation_amount'] !== null) {
+      $printer->amount('Incoming count', (float)$handoff['confirmation_amount']);
+      $printer->amount('Count difference', (float)$handoff['confirmation_variance']);
+      $printer->wrapLeft('Confirmed by ' . ($handoff['confirmed_by_name'] ?? 'Cashier') . ' · ' . date('g:i A', strtotime($handoff['confirmed_at'])));
+    }
+    if ($handoff['note']) $printer->wrapLeft('Out: ' . $handoff['note']);
+    if ($handoff['confirmation_note']) $printer->wrapLeft('In: ' . $handoff['confirmation_note']);
   }
 }
 $printer->feed(2);

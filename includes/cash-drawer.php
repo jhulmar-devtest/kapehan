@@ -11,6 +11,13 @@ function getOpenCashDrawer(PDO $db, bool $forUpdate = false): ?array
   return $drawer ?: null;
 }
 
+function cashDrawerHasPendingHandoff(PDO $db, int $drawerId): bool
+{
+  $stmt = $db->prepare("SELECT 1 FROM cash_drawer_handoffs WHERE drawer_day_id=? AND status='pending' LIMIT 1");
+  $stmt->execute([$drawerId]);
+  return (bool)$stmt->fetchColumn();
+}
+
 function cashDrawerExpectedAmount(PDO $db, int $drawerId, float $openingAmount, ?string $asOf = null): float
 {
   $paymentSql = "SELECT COALESCE(SUM(p.amount_paid - p.change_given), 0)
@@ -62,10 +69,12 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   $drawer['expected_now'] = cashDrawerExpectedAmount($db, $drawerId, (float)$drawer['opening_amount'], $endAt);
 
   $stmt = $db->prepare(
-    "SELECT h.*, c.full_name AS cashier_name, source.full_name AS handed_from_name
+    "SELECT h.*, c.full_name AS cashier_name, source.full_name AS handed_from_name,
+            receiver.full_name AS confirmed_by_name
      FROM cash_drawer_handoffs h
      JOIN cashiers c ON c.id = h.recorded_by
      JOIN cashiers source ON source.id = h.handed_from_cashier_id
+     LEFT JOIN cashiers receiver ON receiver.id = h.confirmed_by
      WHERE h.drawer_day_id = ? ORDER BY h.recorded_at"
   );
   $stmt->execute([$drawerId]);
@@ -82,11 +91,11 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   $stmt = $db->prepare(
     "SELECT s.login_at, s.logout_at, c.full_name AS cashier_name
      FROM cashier_sessions s JOIN cashiers c ON c.id = s.cashier_id
-     WHERE s.login_at <= ? AND (s.logout_at IS NULL OR s.logout_at >= ?)
-       AND DATE(s.login_at) = ?
+     WHERE s.login_at >= ? AND s.login_at <= ?
+       AND (s.logout_at IS NULL OR s.logout_at >= ?)
      ORDER BY s.login_at"
   );
-  $stmt->execute([$endAt, $drawer['opened_at'], $drawer['business_date']]);
+  $stmt->execute([$drawer['business_date'] . ' 00:00:00', $endAt, $drawer['opened_at']]);
   $drawer['cashier_sessions'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return $drawer;
 }
