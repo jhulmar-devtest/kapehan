@@ -390,7 +390,7 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     /* ── Spotlight (hybrid pinned + auto-picked highlight strip) ── */
     .spotlight-section {
-      margin-top: 24px;
+      margin-bottom: 24px;
       padding: 22px 22px 26px;
       border-radius: var(--radius-xl);
       background: linear-gradient(135deg, var(--secondary-color) 0%, var(--secondary-light) 100%);
@@ -522,7 +522,7 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     @media (max-width: 640px) {
       .spotlight-section {
-        margin-top: 16px;
+        margin-bottom: 16px;
         border-radius: var(--radius-lg);
         padding: 18px 16px 20px;
       }
@@ -804,14 +804,109 @@ $storeClose = getSetting('store_close_time', '20:00');
     }
 
 
-    @media (max-width:768px) {
+    @media (max-width: 768px) {
+      .container {
+        padding-inline: 16px;
+      }
+
+      .header-inner {
+        height: auto;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding-block: 10px;
+      }
+
+      .logo {
+        order: 1;
+      }
+
+      .header-actions {
+        order: 2;
+        gap: 8px;
+      }
 
       .header-search {
-        display: none;
+        display: flex;
+        order: 3;
+        width: 100%;
+        flex: 1 0 100%;
+        min-width: 0;
+        padding: 10px 14px;
+        font-size: .95rem;
+      }
+
+      .category-scroll {
+        padding-block: 8px;
+      }
+
+      .cat-pill {
+        padding: 9px 14px;
+        font-size: .82rem;
+      }
+
+      main.container {
+        padding-block: 18px 88px;
+      }
+
+      .cat-section {
+        margin-bottom: 30px;
+      }
+
+      .cat-section-title {
+        font-size: 1.65rem;
+        margin-bottom: 14px;
       }
 
       .menu-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .menu-card-img {
+        height: 132px;
+      }
+
+      .menu-card-body {
+        padding: 12px 42px 13px 12px;
+      }
+
+      .menu-card-name {
+        font-size: .88rem;
+        line-height: 1.3;
+      }
+
+      .menu-card-price {
+        font-size: .9rem;
+      }
+
+      .menu-card-add {
+        width: 30px;
+        height: 30px;
+        right: 8px;
+        bottom: 8px;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .container {
+        padding-inline: 12px;
+      }
+
+      .menu-grid {
+        gap: 9px;
+      }
+
+      .menu-card-img {
+        height: 112px;
+      }
+
+      .menu-card-body {
+        padding-left: 10px;
+        padding-top: 10px;
+      }
+
+      .menu-card-name {
+        font-size: .82rem;
       }
     }
   </style>
@@ -839,10 +934,10 @@ $storeClose = getSetting('store_close_time', '20:00');
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
       </a>
 
-      <div class="header-search">
+      <form class="header-search" role="search" action="<?= APP_URL ?>/menu.php" method="GET">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="menuSearch" placeholder="Search the menu...">
-      </div>
+        <input type="search" id="menuSearch" name="q" aria-label="Search the menu" placeholder="Search the menu..." value="<?= e($_GET['q'] ?? '') ?>">
+      </form>
 
       <div class="header-actions">
         <?php if ($loggedIn): ?>
@@ -1156,10 +1251,6 @@ $storeClose = getSetting('store_close_time', '20:00');
       btn.addEventListener('click', () => {
         document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const cat = btn.dataset.cat;
-        document.querySelectorAll('.cat-section').forEach(sec => {
-          sec.style.display = (cat === 'all' || sec.dataset.cat === cat) ? '' : 'none';
-        });
         document.getElementById('menuSearch').value = '';
         filterSearch();
       });
@@ -1167,21 +1258,24 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     function filterSearch() {
       const term = document.getElementById('menuSearch').value.trim().toLowerCase();
+      const selectedCategory = document.querySelector('.cat-pill.active')?.dataset.cat || 'all';
       let anyVisible = false;
       document.querySelectorAll('.menu-card').forEach(card => {
-        const match = !term || card.dataset.name.includes(term);
+        const categoryMatch = selectedCategory === 'all' || card.dataset.cat === selectedCategory;
+        const match = term ? card.dataset.name.includes(term) : categoryMatch;
         card.style.display = match ? '' : 'none';
         if (match) anyVisible = true;
       });
-      if (term) {
-        document.querySelectorAll('.cat-section').forEach(sec => sec.style.display = '');
-        document.getElementById('noResults').style.display = anyVisible ? 'none' : 'block';
-      } else {
-        document.getElementById('noResults').style.display = 'none';
-        document.querySelector('.cat-pill.active').click();
-      }
+      document.querySelectorAll('.cat-section').forEach(section => {
+        const sectionMatches = [...section.querySelectorAll('.menu-card')].some(card => card.style.display !== 'none');
+        section.style.display = sectionMatches ? '' : 'none';
+      });
+      const spotlight = document.querySelector('.spotlight-section');
+      if (spotlight) spotlight.style.display = term ? 'none' : '';
+      document.getElementById('noResults').style.display = anyVisible ? 'none' : 'block';
     }
     document.getElementById('menuSearch').addEventListener('input', filterSearch);
+    if (document.getElementById('menuSearch').value.trim()) filterSearch();
 
     /* ── Cart, checkout, and toast logic now lives in assets/js/cart-drawer.js
        (shared with orders.php / account.php) — loaded at the end of this

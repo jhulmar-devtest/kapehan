@@ -185,7 +185,7 @@ function renderOrderTimeline(string $status): string {
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
-  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/account-shell.css') ?>">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
   <style>
     /* ── Page-specific styles ── */
@@ -342,6 +342,90 @@ function renderOrderTimeline(string $status): string {
       resize: vertical;
       min-height: 70px;
     }
+
+    @media (max-width: 600px) {
+      .order-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        margin-right: -4px;
+        padding: 0 4px 5px 0;
+        scrollbar-width: none;
+      }
+
+      .order-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .order-tab {
+        flex: 0 0 auto;
+        padding: 9px 14px;
+        font-size: .82rem;
+      }
+
+      .order-row {
+        gap: 10px;
+        padding: 16px 0;
+      }
+
+      .order-row-top {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .order-icon {
+        width: 42px;
+        height: 42px;
+        font-size: 17px;
+      }
+
+      .order-title {
+        font-size: .94rem;
+        overflow-wrap: anywhere;
+      }
+
+      .order-meta,
+      .order-date {
+        font-size: .8rem;
+        line-height: 1.45;
+      }
+
+      .order-side {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 10px;
+        text-align: left;
+      }
+
+      .order-total {
+        font-size: 1rem;
+      }
+
+      .order-side > .badge {
+        justify-self: end;
+      }
+
+      .order-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+      }
+
+      .order-actions .btn {
+        min-height: 40px;
+      }
+
+      .empty-state {
+        padding: 44px 12px;
+      }
+
+      .star-row {
+        min-height: 44px;
+        align-items: center;
+      }
+    }
   </style>
 </head>
 
@@ -352,10 +436,10 @@ function renderOrderTimeline(string $status): string {
       <a href="<?= APP_URL ?>/menu.php" class="logo">
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
       </a>
-      <div class="header-search">
+      <form class="header-search" role="search" action="<?= APP_URL ?>/menu.php" method="GET">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" placeholder="Search the menu...">
-      </div>
+        <input type="search" name="q" aria-label="Search the menu" placeholder="Search the menu...">
+      </form>
       <div class="header-actions">
         <div class="user-menu">
           <button class="user-menu-btn" onclick="toggleUserMenu()">

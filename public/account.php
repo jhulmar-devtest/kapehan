@@ -119,7 +119,7 @@ $ordersUrl = APP_URL . '/orders.php';
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
-  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/account-shell.css') ?>">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
   <style>
     /* ── Page-specific styles only — shared header/sidebar/subnav now live in account-shell.css ── */
@@ -133,14 +133,16 @@ $ordersUrl = APP_URL . '/orders.php';
     }
 
     .profile-card-title {
-      font-size: 20px;
+      font-size: clamp(1.2rem, 2vw, 1.4rem);
       font-weight: 800;
+      line-height: 1.3;
       margin-bottom: 2px;
     }
 
     .profile-card-sub {
-      font-size: 13.5px;
+      font-size: .9rem;
       color: var(--text-muted);
+      line-height: 1.5;
       margin-bottom: 24px;
     }
 
@@ -317,42 +319,60 @@ $ordersUrl = APP_URL . '/orders.php';
     }
 
     @media (max-width:760px) {
-      .header-search {
-        display: none;
-      }
-
-      .account-layout {
-        flex-direction: column;
-      }
-
-      .account-sidebar {
+      .profile-card {
         width: 100%;
-        display: flex;
-        gap: 4px;
-        padding: 8px;
-      }
-
-      .account-nav-item {
-        flex: 1;
-        flex-direction: column;
-        font-size: 12px;
-        gap: 6px;
-        text-align: center;
-      }
-
-      .account-nav-item.logout {
-        border-top: none;
-        padding-top: 12px;
+        padding: 22px;
       }
 
       .profile-row {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 6px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 12px;
+        padding: 14px 0;
       }
 
       .profile-row-label {
-        flex: none;
+        grid-column: 1 / -1;
+        flex: initial;
+        font-size: .74rem;
+      }
+
+      .profile-row-main {
+        min-width: 0;
+        gap: 8px;
+      }
+
+      .profile-row-value {
+        font-size: .9rem;
+        overflow-wrap: anywhere;
+      }
+
+      .profile-row-input {
+        max-width: none;
+      }
+
+      .save-bar {
+        justify-content: stretch;
+      }
+
+      .save-bar .btn {
+        flex: 1;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .profile-card {
+        padding: 18px;
+      }
+
+      .profile-card-title {
+        font-size: 1.2rem;
+      }
+
+      .profile-card-sub {
+        font-size: .86rem;
+        margin-bottom: 18px;
       }
     }
   </style>
@@ -366,10 +386,10 @@ $ordersUrl = APP_URL . '/orders.php';
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
       </a>
 
-      <div class="header-search">
+      <form class="header-search" role="search" action="<?= APP_URL ?>/menu.php" method="GET">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" placeholder="Search the menu...">
-      </div>
+        <input type="search" name="q" aria-label="Search the menu" placeholder="Search the menu...">
+      </form>
 
       <div class="header-actions">
         <div class="user-menu">
