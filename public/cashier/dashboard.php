@@ -38,6 +38,11 @@ layoutHeader('Dashboard');
   </div>
 </div>
 
+<div style="display:flex;align-items:center;gap:7px;color:var(--text-muted);font-size:.76rem;margin:-8px 0 16px">
+  <i class="fa-solid fa-arrows-rotate" style="color:var(--status-ready)" aria-hidden="true"></i>
+  <span>Updated <?= date('g:i:s A') ?> · refreshes every 30 seconds while this tab is open</span>
+</div>
+
 <div class="stats-grid">
   <div class="stat-card stat-red">
     <div class="stat-icon red"><i class="fa-solid fa-peso-sign"></i></div>
@@ -118,4 +123,36 @@ layoutHeader('Dashboard');
   <i class="fa-solid fa-circle-info"></i>
   <div>Always verify the student's <strong>physical school ID</strong> before marking any pre-order as <strong>Claimed</strong>.</div>
 </div>
+<script>
+  (() => {
+    const refreshDelay = 30000;
+    const scrollKey = `cashier-dashboard-scroll:${location.pathname}${location.search}`;
+
+    try {
+      const savedScrollY = sessionStorage.getItem(scrollKey);
+      if (savedScrollY !== null) {
+        sessionStorage.removeItem(scrollKey);
+        requestAnimationFrame(() => window.scrollTo(0, Number(savedScrollY) || 0));
+      }
+    } catch (_) {
+      // Storage can be unavailable in restricted browser contexts; refresh still works.
+    }
+
+    const scheduleRefresh = () => window.setTimeout(() => {
+      if (document.visibilityState !== 'visible') {
+        scheduleRefresh();
+        return;
+      }
+
+      try {
+        sessionStorage.setItem(scrollKey, String(window.scrollY));
+      } catch (_) {
+        // Do not block the data refresh if storage is unavailable.
+      }
+      window.location.reload();
+    }, refreshDelay);
+
+    scheduleRefresh();
+  })();
+</script>
 <?php layoutFooter(); ?>

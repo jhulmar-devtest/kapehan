@@ -306,7 +306,25 @@ layoutHeader('Sales', '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart
     font-size: 13.5px;
     white-space: nowrap;
   }
+
+  .sales-refresh-note {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-muted);
+    font-size: .76rem;
+    margin: -8px 0 16px;
+  }
+
+  .sales-refresh-note i {
+    color: var(--status-ready);
+  }
 </style>
+
+<div class="sales-refresh-note">
+  <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+  <span>Updated <?= date('g:i:s A') ?> · refreshes every 30 seconds while this tab is open</span>
+</div>
 
 <div class="stats-grid">
   <div class="stat-card stat-red">
@@ -514,5 +532,38 @@ layoutHeader('Sales', '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart
       },
     },
   });
+</script>
+<script>
+  (() => {
+    const refreshDelay = 30000;
+    const scrollKey = `admin-sales-scroll:${location.pathname}${location.search}`;
+
+    // Keep the admin at the same part of the report after an automatic refresh.
+    try {
+      const savedScrollY = sessionStorage.getItem(scrollKey);
+      if (savedScrollY !== null) {
+        sessionStorage.removeItem(scrollKey);
+        requestAnimationFrame(() => window.scrollTo(0, Number(savedScrollY) || 0));
+      }
+    } catch (_) {
+      // Storage can be unavailable in restricted browser contexts; refresh still works.
+    }
+
+    const scheduleRefresh = () => window.setTimeout(() => {
+      if (document.visibilityState !== 'visible') {
+        scheduleRefresh();
+        return;
+      }
+
+      try {
+        sessionStorage.setItem(scrollKey, String(window.scrollY));
+      } catch (_) {
+        // Do not block the data refresh if storage is unavailable.
+      }
+      window.location.reload();
+    }, refreshDelay);
+
+    scheduleRefresh();
+  })();
 </script>
 <?php layoutFooter(); ?>
