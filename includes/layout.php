@@ -60,6 +60,7 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
     $nav .= navItem('fa-chart-line',   'Sales',      $appUrl . '/admin/sales.php',     $pageTitle);
     $nav .= navItem('fa-mug-hot',      'Ordering',   $appUrl . '/admin/ordering.php',  $pageTitle);
     $nav .= navItem('fa-boxes-stacked', 'Inventory',  $appUrl . '/admin/inventory.php', $pageTitle);
+    $nav .= navItem('fa-flask',        'Recipes',    $appUrl . '/admin/recipes.php',   $pageTitle);
     $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
     $nav .= '<div class="nav-section-label">System</div>';
   } elseif ($role === ROLE_CASHIER) {

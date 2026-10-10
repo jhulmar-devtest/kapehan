@@ -24,8 +24,8 @@ verifyCsrf();
 
 $name    = sanitizeString($_POST['name'] ?? '', 120);
 $unit    = sanitizeString($_POST['unit'] ?? '', 20);
-$qty     = round((float) ($_POST['quantity_on_hand'] ?? 0), 2);
-$reorder = round((float) ($_POST['reorder_level'] ?? 0), 2);
+$qty     = round((float) ($_POST['quantity_on_hand'] ?? 0), 3);
+$reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
 $cost    = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
 
 if (empty($name) || empty($unit)) {

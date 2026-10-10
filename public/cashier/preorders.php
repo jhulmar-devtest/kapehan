@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 $currentUser = currentUserId();
@@ -42,25 +43,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
   }
 
   if (in_array($status, $allowed, true)) {
-    // Update status - keep lock if status is "preparing" OR "ready", clear otherwise
-    if ($status === STATUS_PREPARING || $status === STATUS_READY) {
-      // Keep the lock for preparing status, refresh expiry
-      $db->prepare("UPDATE orders SET status=?,cashier_id=?,lock_expire_at=DATE_ADD(NOW(),INTERVAL 15 MINUTE) WHERE id=?")
-        ->execute([$status, $currentUser, $oid]);
-    } else {
-      // Clear lock for other statuses (ready, claimed, cancelled)
-      $db->prepare("UPDATE orders SET status=?,cashier_id=?,locked_by=NULL,locked_at=NULL,lock_expire_at=NULL WHERE id=?")
-        ->execute([$status, $currentUser, $oid]);
+    try {
+      $db->beginTransaction();
+      $orderStmt = $db->prepare("SELECT id FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
+      $orderStmt->execute([$oid]);
+      if (!$orderStmt->fetchColumn()) throw new RuntimeException('This pre-order could not be found.');
+
+      // Update status - keep lock if status is "preparing" OR "ready", clear otherwise.
+      if ($status === STATUS_PREPARING || $status === STATUS_READY) {
+        $db->prepare("UPDATE orders SET status=?,cashier_id=?,lock_expire_at=DATE_ADD(NOW(),INTERVAL 15 MINUTE) WHERE id=?")
+          ->execute([$status, $currentUser, $oid]);
+      } else {
+        $db->prepare("UPDATE orders SET status=?,cashier_id=?,locked_by=NULL,locked_at=NULL,lock_expire_at=NULL WHERE id=?")
+          ->execute([$status, $currentUser, $oid]);
+      }
+
+      if ($status === STATUS_PREPARING) {
+        // The customer-submitted GCash reference remains pending until the
+        // cashier confirms it. Deduct ingredients in this same transaction.
+        $db->prepare(
+          "UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?"
+        )->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
+        deductInventoryForOrder($db, $oid, ROLE_CASHIER, $currentUser);
+      }
+
+      $db->commit();
+      auditLog(ROLE_CASHIER, $currentUser, "status_{$status}", 'orders', $oid);
+      flash('global', "Order updated to: {$status}.", 'success');
+    } catch (Throwable $e) {
+      if ($db->inTransaction()) $db->rollBack();
+      error_log('Pre-order status update failed: ' . $e->getMessage());
+      flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Could not update this order. Please try again.', 'error');
     }
-    if ($status === STATUS_PREPARING) {
-      // The customer-submitted GCash reference remains pending until the
-      // cashier confirms it in the existing Start Preparing confirmation.
-      $db->prepare(
-        "UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?"
-      )->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
-    }
-    auditLog(ROLE_CASHIER, $currentUser, "status_{$status}", 'orders', $oid);
-    flash('global', "Order updated to: {$status}.", 'success');
   }
   redirect(APP_URL . '/cashier/preorders.php');
 }

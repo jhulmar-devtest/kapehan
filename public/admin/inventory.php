@@ -6,11 +6,8 @@
 // cups, etc.), flags anything under its reorder level, and logs
 // every restock/waste adjustment to inventory_log for a paper trail.
 //
-// This does NOT yet auto-deduct stock when an order is claimed —
-// that hook (deductInventoryForOrder(), tied to product_ingredients)
-// is described in the rebuild guide but needs product-to-ingredient
-// recipes defined first, which is its own follow-up task once you've
-// decided which products should consume which raw items.
+// Product recipes are managed on admin/recipes.php. Recipe quantities are
+// deducted for walk-in sales and when a pre-order enters preparation.
 // ============================================================
 
 require_once __DIR__ . '/../../config/init.php';
@@ -22,8 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_item'])) {
   verifyCsrf();
   $name  = sanitizeString($_POST['name'] ?? '', 120);
   $unit  = sanitizeString($_POST['unit'] ?? '', 20);
-  $qty   = round((float) ($_POST['quantity_on_hand'] ?? 0), 2);
-  $reorder = round((float) ($_POST['reorder_level'] ?? 0), 2);
+  $qty   = round((float) ($_POST['quantity_on_hand'] ?? 0), 3);
+  $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
   $cost  = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
 
   if (empty($name) || empty($unit)) {
@@ -49,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust_item'])) {
   verifyCsrf();
   $id     = (int) ($_POST['item_id'] ?? 0);
   $reason = in_array($_POST['reason'] ?? '', ['restock', 'waste', 'correction'], true) ? $_POST['reason'] : 'correction';
-  $amount = round((float) ($_POST['amount'] ?? 0), 2);
+  $amount = round((float) ($_POST['amount'] ?? 0), 3);
   // Supplier only makes sense for a restock — ignored for waste/correction either way.
   $supplier = $reason === 'restock' ? sanitizeString($_POST['supplier'] ?? '', 150) : null;
   if ($supplier === '') $supplier = null;
@@ -80,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
   $id = (int) ($_POST['item_id'] ?? 0);
   $name = sanitizeString($_POST['name'] ?? '', 120);
   $unit = sanitizeString($_POST['unit'] ?? '', 20);
-  $reorder = round((float) ($_POST['reorder_level'] ?? 0), 2);
+  $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
   $cost = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
   if ($id && !empty($name) && !empty($unit)) {
     $db->prepare(
@@ -107,6 +104,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
     redirect(APP_URL . '/admin/inventory.php');
   }
 
+  $stmt = $db->prepare('SELECT COUNT(*) FROM product_ingredients WHERE inventory_item_id = ?');
+  $stmt->execute([$id]);
+  if ((int) $stmt->fetchColumn() > 0) {
+    flash('global', 'This item is used in one or more product recipes. Remove it from those recipes before deleting it.', 'error');
+    redirect(APP_URL . '/admin/inventory.php');
+  }
+
   $db->prepare("DELETE FROM inventory_items WHERE id = ?")->execute([$id]);
   auditLog(ROLE_ADMIN, currentUserId(), 'delete_inventory_item', 'inventory_items', $id);
   flash('global', 'Item deleted.', 'success');
@@ -117,8 +121,10 @@ $items = $db->query("SELECT * FROM inventory_items ORDER BY name")->fetchAll();
 $lowStockCount = count(array_filter($items, fn($i) => (float) $i['quantity_on_hand'] <= (float) $i['reorder_level']));
 
 $recentLog = $db->query(
-  "SELECT l.*, i.name AS item_name, i.unit
-   FROM inventory_log l JOIN inventory_items i ON l.inventory_item_id = i.id
+  "SELECT l.*, i.name AS item_name, i.unit, o.order_number
+   FROM inventory_log l
+   JOIN inventory_items i ON l.inventory_item_id = i.id
+   LEFT JOIN orders o ON o.id = l.order_id
    ORDER BY l.created_at DESC LIMIT 12"
 )->fetchAll();
 
@@ -141,7 +147,7 @@ foreach ($restockRows as $r) {
   $restockByItem[(int) $r['inventory_item_id']][] = [
     'date'     => date('M j, Y', strtotime($r['created_at'])),
     'supplier' => $r['supplier'] ?: '—',
-    'qty'      => number_format((float) $r['change_amount'], 2),
+    'qty'      => number_format((float) $r['change_amount'], 3),
   ];
 }
 
@@ -253,6 +259,7 @@ layoutHeader('Inventory');
     <div class="page-header-sub"><?= count($items) ?> item<?= count($items) !== 1 ? 's' : '' ?> tracked</div>
   </div>
   <div class="page-header-actions">
+    <a href="<?= APP_URL ?>/admin/recipes.php" class="btn btn-ghost"><i class="fa-solid fa-flask"></i> Product Recipes</a>
     <button class="btn btn-primary" onclick="openAddItemModal()"><i class="fa-solid fa-plus"></i> Add Item</button>
   </div>
 </div>
@@ -292,10 +299,10 @@ layoutHeader('Inventory');
                     <?= e($it['name']) ?>
                   </button>
                 </td>
-                <td><?= number_format((float) $it['quantity_on_hand'], 2) ?> <?= e($it['unit']) ?>
+                <td><?= number_format((float) $it['quantity_on_hand'], 3) ?> <?= e($it['unit']) ?>
                   <?php if ($low): ?><span class="badge badge-cancelled" style="margin-left:6px">Low</span><?php endif; ?>
                 </td>
-                <td><?= number_format((float) $it['reorder_level'], 2) ?> <?= e($it['unit']) ?></td>
+                <td><?= number_format((float) $it['reorder_level'], 3) ?> <?= e($it['unit']) ?></td>
                 <td><?= peso($it['cost_per_unit']) ?></td>
                 <td style="white-space:nowrap">
                   <button class="btn btn-sm btn-outline" title="View Details" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'><i class="fa-solid fa-eye"></i></button>
@@ -327,9 +334,9 @@ layoutHeader('Inventory');
           <div class="log-item">
             <strong><?= e($log['item_name']) ?></strong>
             <span class="<?= $log['change_amount'] >= 0 ? 'log-change-pos' : 'log-change-neg' ?>">
-              <?= $log['change_amount'] >= 0 ? '+' : '' ?><?= number_format((float) $log['change_amount'], 2) ?> <?= e($log['unit']) ?>
+              <?= $log['change_amount'] >= 0 ? '+' : '' ?><?= number_format((float) $log['change_amount'], 3) ?> <?= e($log['unit']) ?>
             </span>
-            <div style="color:var(--text-muted)"><?= e(ucfirst($log['reason'])) ?> &middot; <?= date('M j, g:i A', strtotime($log['created_at'])) ?></div>
+            <div style="color:var(--text-muted)"><?= e(ucfirst($log['reason'])) ?><?= !empty($log['order_number']) ? ' · Order ' . e($log['order_number']) : '' ?> &middot; <?= date('M j, g:i A', strtotime($log['created_at'])) ?></div>
           </div>
       <?php endforeach;
       endif; ?>
@@ -350,8 +357,8 @@ layoutHeader('Inventory');
       </p>
       <div class="form-group"><label class="form-label">Name</label><input type="text" id="new-item-name" class="form-control" required placeholder="e.g. Fresh Milk"></div>
       <div class="form-group"><label class="form-label">Unit</label><input type="text" id="new-item-unit" class="form-control" required placeholder="g, kg, ml, L, pcs"></div>
-      <div class="form-group"><label class="form-label">Starting Quantity</label><input type="number" step="0.01" id="new-item-qty" class="form-control" value="0"></div>
-      <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.01" id="new-item-reorder" class="form-control" value="0"></div>
+      <div class="form-group"><label class="form-label">Starting Quantity</label><input type="number" step="0.001" id="new-item-qty" class="form-control" value="0"></div>
+      <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" id="new-item-reorder" class="form-control" value="0"></div>
       <div class="form-group">
         <label class="form-label">Cost per Unit (₱)</label>
         <input type="number" step="0.01" id="new-item-cost" class="form-control" value="0"
@@ -387,7 +394,7 @@ layoutHeader('Inventory');
             <option value="correction">Correction (+/-)</option>
           </select>
         </div>
-        <div class="form-group"><label class="form-label">Quantity</label><input type="number" step="0.01" name="amount" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">Quantity</label><input type="number" step="0.001" name="amount" class="form-control" required></div>
         <div class="form-group" id="adjust-supplier-wrap">
           <label class="form-label">Supplier <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
           <input type="text" name="supplier" class="form-control" placeholder="e.g. Supplier A">
@@ -416,7 +423,7 @@ layoutHeader('Inventory');
       <div class="modal-body">
         <div class="form-group"><label class="form-label">Name</label><input type="text" name="name" id="edit-item-name" class="form-control" required></div>
         <div class="form-group"><label class="form-label">Unit</label><input type="text" name="unit" id="edit-item-unit" class="form-control" required></div>
-        <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.01" name="reorder_level" id="edit-item-reorder" class="form-control"></div>
+        <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" name="reorder_level" id="edit-item-reorder" class="form-control"></div>
         <div class="form-group"><label class="form-label">Cost per Unit (₱)</label><input type="number" step="0.01" name="cost_per_unit" id="edit-item-cost" class="form-control"></div>
       </div>
       <div class="modal-footer">
@@ -525,8 +532,8 @@ layoutHeader('Inventory');
 
   function openDetailsModal(item, restockHistory) {
     document.getElementById('details-modal-title').textContent = item.name;
-    document.getElementById('details-stock').textContent = parseFloat(item.quantity_on_hand).toFixed(2) + ' ' + item.unit;
-    document.getElementById('details-reorder').textContent = parseFloat(item.reorder_level).toFixed(2) + ' ' + item.unit;
+    document.getElementById('details-stock').textContent = parseFloat(item.quantity_on_hand).toFixed(3) + ' ' + item.unit;
+    document.getElementById('details-reorder').textContent = parseFloat(item.reorder_level).toFixed(3) + ' ' + item.unit;
     document.getElementById('details-cost').textContent = '₱' + parseFloat(item.cost_per_unit).toFixed(2);
 
     const body = document.getElementById('details-restock-body');

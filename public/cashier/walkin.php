@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/cash-drawer.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 
@@ -113,6 +114,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $db->prepare("INSERT INTO payments (order_id,drawer_day_id,payment_method,amount_paid,change_given,reference_number,payment_status,paid_at) VALUES (?,?,?,?,?,?,?,NOW())")
         ->execute([$orderId, $drawerDayId, $payMethod, $cash, $change, $gcashRef, PAY_STATUS_PAID]);
       $paymentId = (int)$db->lastInsertId();
+
+      // Walk-in orders are paid and handed over immediately, so deduct their
+      // configured recipe quantities as part of the same transaction.
+      deductInventoryForOrder($db, $orderId, ROLE_CASHIER, currentUserId());
 
       // Denominations only apply to cash payments
       if ($payMethod === 'cash' && !empty($denoms)) {

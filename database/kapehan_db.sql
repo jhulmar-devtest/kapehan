@@ -594,8 +594,8 @@ CREATE TABLE `inventory_items` (
   `id` int UNSIGNED NOT NULL,
   `name` varchar(120) NOT NULL,
   `unit` varchar(20) NOT NULL COMMENT 'g, kg, ml, L, pcs',
-  `quantity_on_hand` decimal(10,2) NOT NULL DEFAULT '0.00',
-  `reorder_level` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `quantity_on_hand` decimal(12,3) NOT NULL DEFAULT '0.000',
+  `reorder_level` decimal(12,3) NOT NULL DEFAULT '0.000',
   `cost_per_unit` decimal(10,2) NOT NULL DEFAULT '0.00',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -617,12 +617,25 @@ INSERT INTO `inventory_items` (`id`, `name`, `unit`, `quantity_on_hand`, `reorde
 CREATE TABLE `inventory_log` (
   `id` int UNSIGNED NOT NULL,
   `inventory_item_id` int UNSIGNED NOT NULL,
-  `change_amount` decimal(10,2) NOT NULL COMMENT 'negative = deduction, positive = restock',
+  `change_amount` decimal(12,3) NOT NULL COMMENT 'negative = deduction, positive = restock',
   `reason` varchar(30) NOT NULL COMMENT 'sale, restock, waste, correction',
   `order_id` int UNSIGNED DEFAULT NULL,
   `actor_role` varchar(20) DEFAULT NULL,
   `actor_id` int UNSIGNED DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `inventory_order_deductions`
+--
+
+CREATE TABLE `inventory_order_deductions` (
+  `order_id` int UNSIGNED NOT NULL,
+  `actor_role` varchar(20) DEFAULT NULL,
+  `actor_id` int UNSIGNED DEFAULT NULL,
+  `processed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
@@ -1068,6 +1081,7 @@ CREATE TABLE `product_ingredients` (
   `id` int UNSIGNED NOT NULL,
   `product_id` int UNSIGNED NOT NULL,
   `inventory_item_id` int UNSIGNED NOT NULL,
+  `size_label` varchar(30) NOT NULL DEFAULT '',
   `qty_per_unit` decimal(10,3) NOT NULL COMMENT 'amount consumed per 1 unit sold'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -1268,6 +1282,12 @@ ALTER TABLE `inventory_log`
   ADD KEY `inventory_item_id` (`inventory_item_id`);
 
 --
+-- Indexes for table `inventory_order_deductions`
+--
+ALTER TABLE `inventory_order_deductions`
+  ADD PRIMARY KEY (`order_id`);
+
+--
 -- Indexes for table `login_attempts`
 --
 ALTER TABLE `login_attempts`
@@ -1343,7 +1363,8 @@ ALTER TABLE `product_addons`
 ALTER TABLE `product_ingredients`
   ADD PRIMARY KEY (`id`),
   ADD KEY `product_id` (`product_id`),
-  ADD KEY `inventory_item_id` (`inventory_item_id`);
+  ADD KEY `inventory_item_id` (`inventory_item_id`),
+  ADD KEY `idx_product_ingredients_variant` (`product_id`,`size_label`,`inventory_item_id`);
 
 --
 -- Indexes for table `product_ratings`
@@ -1547,6 +1568,12 @@ ALTER TABLE `categories`
 --
 ALTER TABLE `inventory_log`
   ADD CONSTRAINT `inventory_log_ibfk_1` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `inventory_order_deductions`
+--
+ALTER TABLE `inventory_order_deductions`
+  ADD CONSTRAINT `fk_inventory_deduction_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `orders`
