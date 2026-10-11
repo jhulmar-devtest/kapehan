@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_CASHIER);
 require_once __DIR__ . '/ThermalPrinter.php';
 
@@ -47,6 +48,7 @@ $stmt = $db->prepare(
 );
 $stmt->execute([$orderId]);
 $items = $stmt->fetchAll();
+$loyaltyEntries = loyaltyHistoryForOrder($db, $orderId);
 
 // ── Config ────────────────────────────────────────────────────────────
 // In config/init.php:
@@ -118,6 +120,13 @@ $chg   = (float)($order['change_given'] ?? 0);
 $p->amount('Subtotal', $total);
 $p->sep('-');
 $p->amount('TOTAL', $total, true);
+foreach ($loyaltyEntries as $entry) {
+  if ($entry['entry_type'] === 'redeem') {
+    $p->row('Redeemed', number_format(abs((int)$entry['points_delta'])) . ' pts / P' . number_format((float)$entry['amount_value'], 2));
+  } elseif ($entry['entry_type'] === 'earn') {
+    $p->row('Points earned', '+' . (int)$entry['points_delta']);
+  }
+}
 $p->feed(1);
 
 // ── PAYMENT ───────────────────────────────────────────────────────────

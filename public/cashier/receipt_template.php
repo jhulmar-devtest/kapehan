@@ -59,6 +59,14 @@
       <span>TOTAL</span><span><?= peso($order['total_amount']) ?></span>
     </div>
 
+    <?php foreach (($loyaltyEntries ?? []) as $loyaltyEntry): ?>
+      <?php if ($loyaltyEntry['entry_type'] === 'redeem'): ?>
+        <div class="rcpt-total-row"><span class="rcpt-total-lbl">Points redeemed</span><span class="rcpt-total-val"><?= number_format(abs((int)$loyaltyEntry['points_delta'])) ?> pts (<?= peso($loyaltyEntry['amount_value']) ?> off)</span></div>
+      <?php elseif ($loyaltyEntry['entry_type'] === 'earn'): ?>
+        <div class="rcpt-total-row"><span class="rcpt-total-lbl">Points earned</span><span class="rcpt-total-val">+<?= number_format((int)$loyaltyEntry['points_delta']) ?> pts</span></div>
+      <?php endif; ?>
+    <?php endforeach; ?>
+
     <?php if (strtolower($order['payment_method'] ?? '') === 'cash'): ?>
       <div class="rcpt-total-row">
         <span class="rcpt-total-lbl">Cash Received</span>

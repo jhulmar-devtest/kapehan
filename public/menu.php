@@ -15,12 +15,15 @@
 // ============================================================
 
 require_once __DIR__ . '/../config/init.php';
+require_once __DIR__ . '/../includes/loyalty.php';
 
 $role       = currentRole(); // null for guests
 $loggedIn   = isLoggedIn() && in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true);
 
 // ---- Products: flat categories, no parent grouping (items 4 & 5) ----
 $db = Database::getInstance();
+$loyaltyReady = loyaltyLedgerAvailable($db);
+$loyaltyBalance = $loggedIn ? loyaltyPointsBalance($db, $role, (int) currentUserId()) : 0;
 $products = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id,
           COALESCE(ROUND(AVG(pr.rating),1), 0) AS avg_rating,
@@ -1097,6 +1100,17 @@ $storeClose = getSetting('store_close_time', '20:00');
         <p id="pickupSlotMessage" class="cart-hint" role="status" style="font-size:12px;color:var(--text-muted);margin:6px 0 0"></p>
         <input class="field-input" id="cartNotes" placeholder="Notes (optional)" style="margin-top:10px">
 
+        <div class="loyalty-cart-option">
+          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyBalance >= 100 ? '' : 'disabled' ?>> Redeem points</label>
+          <span id="loyaltyCartHint"><?= $loyaltyReady ? $loyaltyBalance . ' points available · 100 points = ₱10 off' : 'Points will be available after the loyalty database migration is applied.' ?></span>
+        </div>
+        <div class="cart-total-row loyalty-subtotal-row" id="cartSubtotalRow" style="margin-top:12px">
+          <span>Subtotal</span><span id="cartSubtotal">₱0.00</span>
+        </div>
+        <div class="cart-total-row loyalty-discount-row" id="cartLoyaltyDiscountRow" hidden>
+          <span>Loyalty discount</span><span id="cartLoyaltyDiscount">−₱0.00</span>
+        </div>
+
         <div class="cart-total-row" style="margin-top:16px">
           <span>Total</span><span id="cartTotal">\u20b10.00</span>
         </div>
@@ -1115,6 +1129,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         <div class="confirm-row"><span>Account name</span><strong id="gcashPaymentName" style="text-align:right;overflow-wrap:anywhere"><?= e(gcashPaymentName() ?: 'Name not configured') ?></strong></div>
         <div class="confirm-row"><span>GCash number</span><strong id="gcashPaymentNumber" style="text-align:right;overflow-wrap:anywhere"><?= e(gcashPaymentNumber() ?: 'Number not configured') ?></strong></div>
         <div class="confirm-row total"><span>Amount</span><span id="paymentAmount"></span></div>
+        <div class="confirm-row" id="paymentLoyaltyRow" hidden><span>Points discount</span><span id="paymentLoyaltyDiscount"></span></div>
       </div>
       <?php if (gcashPaymentNumber() === '' || gcashPaymentName() === ''): ?>
         <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
@@ -1224,6 +1239,8 @@ $storeClose = getSetting('store_close_time', '20:00');
         <div class="confirm-row"><span>Order number</span><span id="confOrderNo"></span></div>
         <div class="confirm-row"><span>Pickup</span><span id="confPickup"></span></div>
         <div class="confirm-row"><span>Payment</span><span id="confPayment"></span></div>
+        <div class="confirm-row" id="confPointsRedeemedRow" hidden><span>Points redeemed</span><span id="confPointsRedeemed"></span></div>
+        <div class="confirm-row" id="confPointsEarnedRow" hidden><span>Points after pickup</span><span id="confPointsEarned"></span></div>
         <div class="confirm-row total"><span>Total</span><span id="confTotal"></span></div>
       </div>
       <div class="confirm-actions">
@@ -1236,6 +1253,8 @@ $storeClose = getSetting('store_close_time', '20:00');
   <script>
     const APP_URL = '<?= APP_URL ?>';
     const IS_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
+    window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
+    window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;
     if (!IS_LOGGED_IN) {
       sessionStorage.removeItem('shop_cart');
     }

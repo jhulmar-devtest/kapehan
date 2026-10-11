@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 
@@ -33,6 +34,7 @@ $stmt = $db->prepare(
 );
 $stmt->execute([$orderId]);
 $items = $stmt->fetchAll();
+$loyaltyEntries = loyaltyHistoryForOrder($db, $orderId);
 
 ob_start();
 include __DIR__ . '/receipt_styles.php';

@@ -1310,6 +1310,27 @@ ALTER TABLE `orders`
   ADD KEY `fk_order_faculty` (`faculty_id`);
 
 --
+-- Table structure for table `loyalty_points_ledger`
+--
+CREATE TABLE `loyalty_points_ledger` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customer_type` enum('student','faculty') NOT NULL,
+  `customer_id` int UNSIGNED NOT NULL,
+  `order_id` int UNSIGNED DEFAULT NULL,
+  `entry_type` enum('earn','redeem','earn_reversal','redeem_reversal','adjustment') NOT NULL,
+  `points_delta` int NOT NULL,
+  `amount_value` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `actor_type` varchar(20) NOT NULL DEFAULT 'system',
+  `actor_id` int UNSIGNED DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_loyalty_order_entry` (`order_id`,`entry_type`),
+  KEY `idx_loyalty_customer_history` (`customer_type`,`customer_id`,`created_at`),
+  CONSTRAINT `fk_loyalty_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
 -- Indexes for table `order_details`
 --
 ALTER TABLE `order_details`

@@ -106,10 +106,32 @@ function renderCartSidebar() {
       )
       .join("");
   }
-  const total = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
+  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
+  const loyaltyCheckbox = document.getElementById("redeemLoyaltyCheckbox");
+  if (loyaltyCheckbox) {
+    const eligible = Number(window.LOYALTY_BALANCE || 0) >= 100 && subtotal >= 10;
+    loyaltyCheckbox.disabled = !eligible;
+    if (!eligible) loyaltyCheckbox.checked = false;
+  }
+  const redemption = getCartLoyaltyRedemption(subtotal);
+  const total = subtotal - redemption.discount;
+  const subtotalEl = document.getElementById("cartSubtotal");
+  if (subtotalEl) subtotalEl.textContent = "₱" + subtotal.toFixed(2);
+  const discountRow = document.getElementById("cartLoyaltyDiscountRow");
+  if (discountRow) discountRow.hidden = redemption.discount <= 0;
+  const discountEl = document.getElementById("cartLoyaltyDiscount");
+  if (discountEl) discountEl.textContent = "−₱" + redemption.discount.toFixed(2);
   const totalEl = document.getElementById("cartTotal");
   if (totalEl) totalEl.textContent = "\u20b1" + total.toFixed(2);
   loadPickupSlots();
+}
+
+function getCartLoyaltyRedemption(amount) {
+  const checkbox = document.getElementById("redeemLoyaltyCheckbox");
+  const balance = Number(window.LOYALTY_BALANCE || 0);
+  if (!checkbox?.checked || balance < 100) return { points: 0, discount: 0 };
+  const blocks = Math.min(Math.floor(balance / 100), Math.floor(Math.round(amount * 100) / 1000));
+  return { points: blocks * 100, discount: blocks * 10 };
 }
 
 function cartChangeQty(lineId, d) {
@@ -275,8 +297,13 @@ function proceedToPayment() {
     showToast("warning", "Pickup times must be at least 5 minutes from now. Choose another time.");
     return;
   }
-  document.getElementById("paymentAmount").textContent =
-    "₱" + cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0).toFixed(2);
+  const subtotal = cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0);
+  const redemption = getCartLoyaltyRedemption(subtotal);
+  document.getElementById("paymentAmount").textContent = "₱" + (subtotal - redemption.discount).toFixed(2);
+  const loyaltyRow = document.getElementById("paymentLoyaltyRow");
+  if (loyaltyRow) loyaltyRow.hidden = redemption.discount <= 0;
+  const loyaltyDiscount = document.getElementById("paymentLoyaltyDiscount");
+  if (loyaltyDiscount) loyaltyDiscount.textContent = `−₱${redemption.discount.toFixed(2)} (${redemption.points} points)`;
   document.getElementById("refNo").value = "";
   document.getElementById("paymentModal").hidden = false;
 }
@@ -309,6 +336,7 @@ function submitOrder() {
     notes: document.getElementById("cartNotes").value.trim(),
     pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
+    redeem_points: !!document.getElementById("redeemLoyaltyCheckbox")?.checked,
   };
   placeBtn.disabled = true;
   placeBtn.textContent = "Submitting…";
@@ -324,6 +352,12 @@ function submitOrder() {
     .then((res) => {
       if (res.ok) {
         saveCart([]);
+        const redeemCheckbox = document.getElementById("redeemLoyaltyCheckbox");
+        if (redeemCheckbox) redeemCheckbox.checked = false;
+        if (Number.isFinite(Number(res.loyalty_balance))) window.LOYALTY_BALANCE = Number(res.loyalty_balance);
+        const loyaltyHint = document.getElementById("loyaltyCartHint");
+        if (loyaltyHint) loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · 100 points = ₱10 off`;
+        if (redeemCheckbox) redeemCheckbox.disabled = Number(window.LOYALTY_BALANCE || 0) < 100;
         closePaymentModal();
         closeCart();
         openConfirmModal(res, { pickupLabel, pickupDate });
@@ -356,6 +390,14 @@ function openConfirmModal(res, meta) {
   document.getElementById("confPayment").textContent = "GCash — pending verification";
   document.getElementById("confTotal").textContent =
     "\u20b1" + Number(res.total).toFixed(2);
+  const redeemedRow = document.getElementById("confPointsRedeemedRow");
+  if (redeemedRow) redeemedRow.hidden = !(Number(res.points_redeemed) > 0);
+  const redeemedEl = document.getElementById("confPointsRedeemed");
+  if (redeemedEl) redeemedEl.textContent = `${res.points_redeemed} points (₱${Number(res.loyalty_discount || 0).toFixed(2)} off)`;
+  const earnedRow = document.getElementById("confPointsEarnedRow");
+  if (earnedRow) earnedRow.hidden = !(Number(res.points_expected_after_pickup) > 0);
+  const earnedEl = document.getElementById("confPointsEarned");
+  if (earnedEl) earnedEl.textContent = `${res.points_expected_after_pickup} points`;
   document.getElementById("confirmModal").hidden = false;
 }
 
@@ -393,6 +435,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (messageEl) messageEl.textContent = "Pickup is available today only.";
     updateProceedButton();
   });
+  document.getElementById("redeemLoyaltyCheckbox")?.addEventListener("change", renderCartSidebar);
   // Refresh while the drawer is open. If the selection is still the automatic
   // ASAP choice, it advances as time passes; an explicitly chosen time stays put.
   window.setInterval(() => {

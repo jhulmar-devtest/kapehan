@@ -8,6 +8,7 @@
  * POST body: qr_data=<scanned string>
  */
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_CASHIER);
 
 header('Content-Type: application/json');
@@ -100,12 +101,34 @@ if ($order['status'] !== 'ready') {
   exit;
 }
 
-// Mark as claimed
-$db->prepare(
-  "UPDATE orders
-     SET status='claimed', cashier_id=?, locked_by=NULL, locked_at=NULL, lock_expire_at=NULL, updated_at=NOW()
-     WHERE id=?"
-)->execute([$cashierId, $orderId]);
+// Claim and award points atomically; the order row lock protects against two
+// cashiers scanning the same QR at the same time.
+try {
+  $db->beginTransaction();
+  $claimLock = $db->prepare(
+    "SELECT o.status, p.payment_status FROM orders o LEFT JOIN payments p ON p.order_id = o.id WHERE o.id = ? FOR UPDATE"
+  );
+  $claimLock->execute([$orderId]);
+  $claimState = $claimLock->fetch(PDO::FETCH_ASSOC);
+  if (!$claimState || $claimState['status'] !== STATUS_READY || $claimState['payment_status'] !== PAY_STATUS_PAID) {
+    $db->rollBack();
+    echo json_encode(['success' => false, 'message' => 'This order is not ready and paid for handover. Scan again to refresh its status.']);
+    exit;
+  }
+  $db->prepare(
+    "UPDATE orders
+       SET status='claimed', cashier_id=?, locked_by=NULL, locked_at=NULL, lock_expire_at=NULL, updated_at=NOW()
+       WHERE id=?"
+  )->execute([$cashierId, $orderId]);
+  $pointsAwarded = loyaltyAwardOrder($db, $orderId, ROLE_CASHIER, $cashierId);
+  $db->commit();
+} catch (Throwable $e) {
+  if ($db->inTransaction()) $db->rollBack();
+  error_log('QR claim loyalty update failed: ' . $e->getMessage());
+  http_response_code(500);
+  echo json_encode(['success' => false, 'message' => 'Could not complete the handover. Please try again.']);
+  exit;
+}
 
 // Audit log
 auditLog(ROLE_CASHIER, $cashierId, 'status_claimed', 'orders', $orderId);
@@ -113,5 +136,6 @@ auditLog(ROLE_CASHIER, $cashierId, 'status_claimed', 'orders', $orderId);
 echo json_encode([
   'success' => true,
   'message' => 'Order claimed successfully!',
+  'points_awarded' => $pointsAwarded,
   'order'   => $order,
 ]);

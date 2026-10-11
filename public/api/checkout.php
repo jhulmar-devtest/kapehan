@@ -9,6 +9,7 @@
 // ============================================================
 
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 header('Content-Type: application/json');
 
 if (!isLoggedIn() || !in_array(currentRole(), [ROLE_STUDENT, ROLE_FACULTY], true)) {
@@ -29,6 +30,7 @@ $ref         = sanitizeString($data['reference_no'] ?? '', 100);
 $notes       = sanitizeString($data['notes'] ?? '', 500);
 $pickupDate  = sanitizeString($data['pickup_date'] ?? '', 10);
 $pickupTime  = sanitizeString($data['pickup_time'] ?? '', 10);
+$redeemPoints = filter_var($data['redeem_points'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
 // Pickup is same-day only. Validate the chosen slot itself rather than
 // rejecting orders just because the current time is outside store hours.
@@ -130,6 +132,19 @@ $db->beginTransaction();
 try {
   $studentId = $role === ROLE_STUDENT ? currentUserId() : null;
   $facultyId = $role === ROLE_FACULTY ? currentUserId() : null;
+  $customerId = (int) currentUserId();
+  $redemption = ['points' => 0, 'discount' => 0.0];
+  if ($redeemPoints) {
+    $accountConfig = loyaltyAccountConfig($role);
+    $accountLock = $db->prepare('SELECT id FROM ' . $accountConfig['table'] . ' WHERE id = ? AND is_active = 1 FOR UPDATE');
+    $accountLock->execute([$customerId]);
+    if (!$accountLock->fetchColumn()) throw new RuntimeException('Your account cannot redeem points right now.');
+    $redemption = loyaltyRedemptionFor(loyaltyPointsBalance($db, $role, $customerId), $total);
+    if ($redemption['points'] < LOYALTY_REDEEM_POINTS_PER_BLOCK) {
+      throw new RuntimeException('You need at least 100 points and ₱10 in the order to redeem.');
+    }
+  }
+  $total = round($total - $redemption['discount'], 2);
 
   // generateOrderNumber() counts today's orders and adds 1 — under
   // concurrent checkouts (a lunch rush, or a customer and a cashier
@@ -173,6 +188,8 @@ try {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
 
+  $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId);
+
   $db->commit();
   auditLog($role, currentUserId(), 'place_preorder', 'orders', $orderId);
 
@@ -180,11 +197,15 @@ try {
     'ok'           => true,
     'order_number' => $orderNo,
     'total'        => $total,
+    'points_redeemed' => $redemptionResult['points'],
+    'loyalty_discount' => $redemptionResult['discount'],
+    'loyalty_balance' => $redemptionResult['balance'],
+    'points_expected_after_pickup' => loyaltyPointsFromSpend($total),
     'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",
   ]);
 } catch (\Throwable $e) {
   $db->rollBack();
   error_log('checkout failed: ' . $e->getMessage());
-  http_response_code(500);
-  echo json_encode(['ok' => false, 'message' => 'Order failed. Please try again.']);
+  http_response_code($e instanceof RuntimeException ? 422 : 500);
+  echo json_encode(['ok' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.']);
 }

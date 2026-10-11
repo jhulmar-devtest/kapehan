@@ -12,6 +12,7 @@
 // ============================================================
 
 require_once __DIR__ . '/../config/init.php';
+require_once __DIR__ . '/../includes/loyalty.php';
 requireRole(ROLE_STUDENT, ROLE_FACULTY);
 
 $db   = Database::getInstance();
@@ -26,6 +27,10 @@ $user = $stmt->fetch();
 if (!$user) {
   redirect(APP_URL . '/logout.php');
 }
+
+$loyaltyReady = loyaltyLedgerAvailable($db);
+$loyaltyBalance = loyaltyPointsBalance($db, $role, $userId);
+$loyaltyEntries = loyaltyHistory($db, $role, $userId, 30);
 
 // ---- Update profile fields ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
@@ -260,6 +265,33 @@ $ordersUrl = APP_URL . '/orders.php';
       display: inline-block;
     }
 
+    .loyalty-panel {
+      margin-top: 28px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .loyalty-balance {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      margin: 14px 0 20px;
+      border-radius: 14px;
+      color: #fff;
+      background: linear-gradient(120deg, #5f351e, #a46a3b);
+    }
+
+    .loyalty-balance strong { display: block; font-size: 1.65rem; line-height: 1.1; }
+    .loyalty-balance span { display: block; font-size: .82rem; opacity: .88; margin-top: 4px; }
+    .loyalty-history { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    .loyalty-history th, .loyalty-history td { padding: 11px 8px; text-align: left; border-bottom: 1px solid var(--border-color); }
+    .loyalty-history th { color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+    .loyalty-history .points-plus { color: #18794e; font-weight: 800; white-space: nowrap; }
+    .loyalty-history .points-minus { color: #b42318; font-weight: 800; white-space: nowrap; }
+    .loyalty-history-wrap { overflow-x: auto; }
+
     /* ── Password modal ── */
     .modal-overlay {
       position: fixed;
@@ -491,6 +523,49 @@ $ordersUrl = APP_URL . '/orders.php';
         <span class="change-pw-link" onclick="document.getElementById('pwModal').hidden=false">
           <i class="fa-solid fa-key"></i> Change Password
         </span>
+
+        <section class="loyalty-panel" aria-labelledby="loyaltyHeading">
+          <div class="profile-card-title" id="loyaltyHeading" style="font-size:1.1rem"><i class="fa-solid fa-star" style="color:#a46a3b"></i> Loyalty Points</div>
+          <div class="profile-card-sub" style="margin-bottom:0"><?= $loyaltyReady ? 'Earn 1 point for every ₱10 you pay. Redeem 100 points for ₱10 off a future order.' : 'Loyalty points will be available after the database migration is applied.' ?></div>
+          <div class="loyalty-balance">
+            <div><strong><?= number_format($loyaltyBalance) ?></strong><span>available points</span></div>
+            <i class="fa-solid fa-mug-hot" style="font-size:1.8rem;opacity:.85" aria-hidden="true"></i>
+          </div>
+          <div style="font-weight:800;margin-bottom:8px">Points activity</div>
+          <?php if (!$loyaltyEntries): ?>
+            <p class="text-muted" style="font-size:.86rem">No points activity yet. Points from pre-orders are added after the cashier marks the order claimed.</p>
+          <?php else: ?>
+            <div class="loyalty-history-wrap">
+              <table class="loyalty-history">
+                <thead><tr><th>Activity</th><th>Date</th><th>Points</th></tr></thead>
+                <tbody>
+                  <?php foreach ($loyaltyEntries as $entry):
+                    $labels = [
+                      'earn' => 'Order earned',
+                      'redeem' => 'Redeemed at checkout',
+                      'earn_reversal' => 'Earned points reversed',
+                      'redeem_reversal' => 'Redeemed points restored',
+                      'adjustment' => 'Points adjustment',
+                    ];
+                    $delta = (int) $entry['points_delta'];
+                  ?>
+                    <tr>
+                      <td>
+                        <strong><?= e($labels[$entry['entry_type']] ?? 'Points activity') ?></strong>
+                        <div class="text-muted" style="font-size:.76rem">
+                          <?= e($entry['order_number'] ? 'Order ' . $entry['order_number'] : ($entry['note'] ?? '')) ?>
+                          <?php if ($entry['entry_type'] === 'redeem' || $entry['entry_type'] === 'redeem_reversal'): ?> · <?= peso($entry['amount_value']) ?><?php endif; ?>
+                        </div>
+                      </td>
+                      <td><?= date('M j, Y g:i A', strtotime($entry['created_at'])) ?></td>
+                      <td class="<?= $delta >= 0 ? 'points-plus' : 'points-minus' ?>"><?= $delta > 0 ? '+' : '' ?><?= number_format($delta) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
+        </section>
       </div>
     </div>
   </main>

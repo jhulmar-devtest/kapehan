@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/cash-drawer.php';
 require_once __DIR__ . '/../../includes/inventory.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 
@@ -14,6 +15,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $denomsRaw    = json_decode($_POST['denominations'] ?? '{}', true) ?: [];
   $discountType = sanitizeString($_POST['discount_type'] ?? 'none');
   if (!in_array($discountType, ['none', 'pwd', 'senior'])) $discountType = 'none';
+  $loyaltyType = sanitizeString($_POST['loyalty_customer_type'] ?? '');
+  $loyaltyIdentifier = sanitizeString($_POST['loyalty_customer_identifier'] ?? '', 30);
+  $redeemPoints = ($_POST['redeem_points'] ?? '') === '1';
+  if ($loyaltyType !== '' && !in_array($loyaltyType, [ROLE_STUDENT, ROLE_FACULTY], true)) $loyaltyType = '';
+  if ($loyaltyIdentifier === '') $loyaltyType = '';
+  if ($redeemPoints && $loyaltyType === '') {
+    flash('global', 'Look up a student or faculty account before redeeming points.', 'error');
+    redirect(APP_URL . '/cashier/walkin.php');
+  }
 
   // Validate GCash reference
   if ($payMethod === 'GCash' && empty($gcashRef)) {
@@ -64,18 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   }
   $total = round($subtotal - $discountAmount, 2);
 
-  // For GCash, amount paid = exact total, change = 0
-  if ($payMethod === 'GCash') {
-    $cash   = $total;
-    $change = 0;
-  } else {
-    if ($allOk && $cash < $total) {
-      flash('global', 'Cash received is less than the total.', 'error');
-      $allOk = false;
-    }
-    $change = $allOk ? round($cash - $total, 2) : 0;
-  }
-
   if ($allOk) {
     $db->beginTransaction();
     try {
@@ -87,6 +85,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       if (cashDrawerHasPendingHandoff($db, $drawerDayId)) {
         throw new RuntimeException('Walk-in payments are paused until the incoming cashier confirms or disputes the pending handoff.');
       }
+      $customer = null;
+      $customerId = null;
+      if ($loyaltyType !== '') {
+        $customer = loyaltyFindAccount($db, $loyaltyType, $loyaltyIdentifier, true);
+        if (!$customer) throw new RuntimeException('That student or faculty account could not be found or is inactive. Please look it up again.');
+        $customerId = (int) $customer['id'];
+      }
+      $redemption = ['points' => 0, 'discount' => 0.0];
+      if ($redeemPoints) {
+        $customerBalance = loyaltyPointsBalance($db, $loyaltyType, $customerId);
+        $redemption = loyaltyRedemptionFor($customerBalance, $total);
+        if ($redemption['points'] < LOYALTY_REDEEM_POINTS_PER_BLOCK) {
+          throw new RuntimeException('This account no longer has enough points, or the total is too low to redeem.');
+        }
+      }
+      $total = round($total - $redemption['discount'], 2);
+      if ($payMethod === 'GCash') {
+        $cash = $total;
+        $change = 0;
+      } else {
+        if ($cash < $total) throw new RuntimeException('Cash received is less than the total after points redemption.');
+        $change = round($cash - $total, 2);
+      }
       // See api/checkout.php for why this retries: generateOrderNumber()
       // is count-then-insert, which can collide under concurrent cashiers
       // ringing up orders at the same moment — exactly the situation a
@@ -96,8 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
         $orderNo = generateOrderNumber();
         try {
-          $db->prepare("INSERT INTO orders (order_number,order_type,status,cashier_id,total_amount) VALUES (?,?,?,?,?)")
-            ->execute([$orderNo, ORDER_WALKIN, STATUS_CLAIMED, currentUserId(), $total]);
+          $studentId = $customer && $loyaltyType === ROLE_STUDENT ? $customerId : null;
+          $facultyId = $customer && $loyaltyType === ROLE_FACULTY ? $customerId : null;
+          $db->prepare("INSERT INTO orders (order_number,order_type,status,cashier_id,student_id,faculty_id,total_amount) VALUES (?,?,?,?,?,?,?)")
+            ->execute([$orderNo, ORDER_WALKIN, STATUS_CLAIMED, currentUserId(), $studentId, $facultyId, $total]);
           break; // success
         } catch (\PDOException $e) {
           if ($e->getCode() === '23000' && $attempt < $maxAttempts) {
@@ -114,6 +137,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $db->prepare("INSERT INTO payments (order_id,drawer_day_id,payment_method,amount_paid,change_given,reference_number,payment_status,paid_at) VALUES (?,?,?,?,?,?,?,NOW())")
         ->execute([$orderId, $drawerDayId, $payMethod, $cash, $change, $gcashRef, PAY_STATUS_PAID]);
       $paymentId = (int)$db->lastInsertId();
+
+      if ($customer) {
+        loyaltyRedeemForOrder($db, $loyaltyType, $customerId, $orderId, $total + $redemption['discount'], $redeemPoints, ROLE_CASHIER, (int) currentUserId());
+        loyaltyAwardOrder($db, $orderId, ROLE_CASHIER, (int) currentUserId());
+      }
 
       // Walk-in orders are paid and handed over immediately, so deduct their
       // configured recipe quantities as part of the same transaction.
@@ -1528,6 +1556,9 @@ layoutHeader('Walk-in POS', '');
   <input type="hidden" name="discount_type" id="discount-type-data">
   <input type="hidden" name="pay_method" id="pay-method-data">
   <input type="hidden" name="gcash_reference" id="gcash-ref-data">
+  <input type="hidden" name="loyalty_customer_type" id="loyalty-type-data">
+  <input type="hidden" name="loyalty_customer_identifier" id="loyalty-identifier-data">
+  <input type="hidden" name="redeem_points" id="redeem-points-data" value="0">
 </form>
 
 <div class="pos-wrap">
@@ -1675,6 +1706,10 @@ layoutHeader('Walk-in POS', '');
           <span class="lbl" id="tot-discount-lbl">Discount (20%)</span>
           <span class="val discount" id="tot-discount">−₱0.00</span>
         </div>
+        <div class="pos-totals-line" id="tot-loyalty-row" style="display:none">
+          <span class="lbl" id="tot-loyalty-lbl">Loyalty discount</span>
+          <span class="val discount" id="tot-loyalty">−₱0.00</span>
+        </div>
         <div class="pos-totals-line total-final">
           <span class="lbl">Total</span>
           <span class="val" id="pos-total">₱0.00</span>
@@ -1687,6 +1722,20 @@ layoutHeader('Walk-in POS', '');
           <button class="discount-pill pwd" data-dtype="pwd" onclick="setDiscount('pwd')">PWD</button>
           <button class="discount-pill senior" data-dtype="senior" onclick="setDiscount('senior')">Senior</button>
         </div>
+      </div>
+      <div class="loyalty-pos-box" style="padding:12px;border:1px solid var(--border-color);border-radius:12px;margin-top:12px">
+        <strong style="display:block;margin-bottom:8px">Customer loyalty points</strong>
+        <div style="display:flex;gap:7px">
+          <select id="loyalty-customer-type" class="form-control" style="max-width:115px">
+            <option value="student">Student</option><option value="faculty">Faculty</option>
+          </select>
+          <input id="loyalty-customer-identifier" class="form-control" placeholder="School ID" maxlength="30" style="min-width:0;flex:1">
+          <button type="button" class="btn btn-secondary" id="loyalty-lookup-button" onclick="lookupLoyaltyCustomer()">Find</button>
+        </div>
+        <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
+          <input type="checkbox" id="pos-redeem-points" disabled> Redeem 100 points for ₱10 off
+        </label>
       </div>
     </div>
 
@@ -1784,6 +1833,7 @@ layoutHeader('Walk-in POS', '');
 </div>
 
 <script>
+  const POS_APP_URL = '<?= APP_URL ?>';
   const posProductImages = <?php
                             $images = [];
                             foreach ($allProducts as $p) {
@@ -1807,23 +1857,98 @@ layoutHeader('Walk-in POS', '');
   let cart = {};
   let _discountType = 'none';
   let _payMethod = 'cash'; // 'cash' or 'GCash'
+  let _loyaltyCustomer = null;
 
   function getSubtotal() {
     return Object.values(cart).reduce((s, i) => s + i.price * i.qty, 0);
   }
 
   function getFinancials(subtotal) {
-    const vat = subtotal * 12 / 112;
-    const vatExcl = subtotal - vat;
-    const discount = _discountType !== 'none' ? vatExcl * 0.20 : 0;
-    const total = subtotal - discount;
+    const vat = Math.round(subtotal * 12 / 112 * 100) / 100;
+    const vatExcl = Math.round((subtotal - vat) * 100) / 100;
+    const discount = _discountType !== 'none' ? Math.round(vatExcl * 0.20 * 100) / 100 : 0;
+    const afterPrivilege = Math.round((subtotal - discount) * 100) / 100;
+    const redeemBox = document.getElementById('pos-redeem-points');
+    const balanceBlocks = Math.floor((_loyaltyCustomer?.balance || 0) / 100);
+    const amountBlocks = Math.floor(Math.round(afterPrivilege * 100) / 1000);
+    const loyaltyBlocks = redeemBox?.checked && _loyaltyCustomer ? Math.min(balanceBlocks, amountBlocks) : 0;
+    const loyaltyPoints = loyaltyBlocks * 100;
+    const loyaltyDiscount = loyaltyBlocks * 10;
+    const total = Math.round((afterPrivilege - loyaltyDiscount) * 100) / 100;
     return {
       subtotal,
       vat,
       discount,
+      loyaltyPoints,
+      loyaltyDiscount,
       total
     };
   }
+
+  async function lookupLoyaltyCustomer() {
+    const button = document.getElementById('loyalty-lookup-button');
+    const type = document.getElementById('loyalty-customer-type').value;
+    const identifier = document.getElementById('loyalty-customer-identifier').value.trim();
+    const result = document.getElementById('loyalty-customer-result');
+    const redeem = document.getElementById('pos-redeem-points');
+    if (!identifier) {
+      result.textContent = 'Enter a student or faculty ID first.';
+      return;
+    }
+    button.disabled = true;
+    button.textContent = 'Finding…';
+    _loyaltyCustomer = null;
+    redeem.checked = false;
+    redeem.disabled = true;
+    renderCart();
+    try {
+      const response = await fetch(`${POS_APP_URL}/api/loyalty-customer-lookup.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ customer_type: type, identifier })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
+      _loyaltyCustomer = data.account;
+      result.textContent = `${data.account.name} · ${data.account.balance} points available`;
+      redeem.disabled = data.account.balance < 100;
+      redeem.title = data.account.balance < 100 ? 'At least 100 points are needed to redeem.' : '';
+    } catch (error) {
+      result.textContent = error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Find';
+      renderCart();
+    }
+  }
+
+  document.getElementById('loyalty-customer-identifier').addEventListener('input', () => {
+    _loyaltyCustomer = null;
+    const redeem = document.getElementById('pos-redeem-points');
+    redeem.checked = false;
+    redeem.disabled = true;
+    document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its ID.';
+    renderCart();
+  });
+  document.getElementById('loyalty-customer-type').addEventListener('change', () => {
+    _loyaltyCustomer = null;
+    const redeem = document.getElementById('pos-redeem-points');
+    redeem.checked = false;
+    redeem.disabled = true;
+    document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its type.';
+    renderCart();
+  });
+  document.getElementById('pos-redeem-points').addEventListener('change', () => {
+    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < 100) {
+      document.getElementById('pos-redeem-points').checked = false;
+      document.getElementById('loyalty-customer-result').textContent = 'A minimum ₱10 balance is needed to redeem points on this order.';
+    }
+    renderCart();
+    if (_payMethod === 'cash') calcChange(); else onGcashRefInput();
+  });
 
   function setDiscount(type) {
     _discountType = type;
@@ -1934,7 +2059,12 @@ layoutHeader('Walk-in POS', '');
     });
     el.innerHTML = html;
 
-    const fin = getFinancials(getSubtotal());
+    let fin = getFinancials(getSubtotal());
+    const redeemControl = document.getElementById('pos-redeem-points');
+    if (redeemControl.checked && fin.loyaltyPoints < 100) {
+      redeemControl.checked = false;
+      fin = getFinancials(getSubtotal());
+    }
     document.getElementById('pos-totals-block').style.display = '';
     document.getElementById('tot-subtotal').textContent = '₱' + fin.subtotal.toFixed(2);
     document.getElementById('tot-vat').textContent = '₱' + fin.vat.toFixed(2);
@@ -1947,6 +2077,10 @@ layoutHeader('Walk-in POS', '');
     } else {
       discRow.style.display = 'none';
     }
+    const loyaltyRow = document.getElementById('tot-loyalty-row');
+    loyaltyRow.style.display = fin.loyaltyDiscount > 0 ? '' : 'none';
+    document.getElementById('tot-loyalty-lbl').textContent = `Loyalty discount (${fin.loyaltyPoints} points)`;
+    document.getElementById('tot-loyalty').textContent = '−₱' + fin.loyaltyDiscount.toFixed(2);
     document.getElementById('pos-total').textContent = '₱' + fin.total.toFixed(2);
     document.getElementById('pos-process-btn').disabled = !cashDrawerOpen;
 
@@ -2147,6 +2281,9 @@ layoutHeader('Walk-in POS', '');
     document.getElementById('cart-data').value = JSON.stringify(items);
     document.getElementById('pay-method-data').value = _payMethod;
     document.getElementById('discount-type-data').value = _discountType;
+    document.getElementById('loyalty-type-data').value = _loyaltyCustomer?.type || '';
+    document.getElementById('loyalty-identifier-data').value = _loyaltyCustomer?.identifier || '';
+    document.getElementById('redeem-points-data').value = document.getElementById('pos-redeem-points').checked ? '1' : '0';
 
     closeCashModal();
     document.getElementById('order-form').submit();

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
+require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 $currentUser = currentUserId();
@@ -65,6 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
           "UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?"
         )->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
         deductInventoryForOrder($db, $oid, ROLE_CASHIER, $currentUser);
+      }
+
+      if ($status === STATUS_CLAIMED) {
+        loyaltyAwardOrder($db, $oid, ROLE_CASHIER, $currentUser);
+      } elseif ($status === STATUS_CANCELLED) {
+        loyaltyReverseOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
 
       $db->commit();
@@ -675,6 +682,10 @@ layoutHeader('Pre-orders', '');
     <div class="page-header-sub"><?= count($orders) ?> active · <?= $counts['ready'] ?> ready to claim</div>
   </div>
   <div class="page-header-actions">
+    <span id="queue-refresh-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)">Auto refresh in 45s</span>
+    <button type="button" class="btn btn-outline" id="queue-refresh-button" onclick="refreshPreordersNow()" aria-label="Refresh pre-orders now">
+      <i class="fa-solid fa-rotate-right"></i> Refresh
+    </button>
     <button type="button" class="btn btn-outline" onclick="openQueueQrModal()">
       <i class="fa-solid fa-qrcode"></i> Scan QR to find order
     </button>
@@ -1305,15 +1316,50 @@ layoutHeader('Pre-orders', '');
   setInterval(updateCountdowns, 1000);
   updateCountdowns();
 
-  /* ── Auto-refresh (safe here, no active inputs) ── */
-  let refreshTimer = setTimeout(() => location.reload(), 45000);
+  /* ── Auto-refresh the queue without interrupting cashier actions ── */
+  const queueRefreshInterval = 45000;
+  let queueRefreshAt = Date.now() + queueRefreshInterval;
+  let queueLastInteractionAt = Date.now();
 
-  // Reset the timer on any button click so we don't refresh mid-action
-  document.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => location.reload(), 45000);
-    });
+  function deferQueueRefresh() {
+    queueLastInteractionAt = Date.now();
+    queueRefreshAt = queueLastInteractionAt + queueRefreshInterval;
+  }
+
+  function queueHasActiveWork() {
+    const qrModal = document.getElementById('queue-qr-modal');
+    const activeElement = document.activeElement;
+    const focusInField = activeElement && activeElement.matches('input, textarea, select, [contenteditable="true"]');
+    const anotherModalOpen = document.querySelector('.modal-overlay:not(.hidden):not([hidden])');
+    return isSubmitting || Boolean(queueQrStream) || Boolean(qrModal && !qrModal.classList.contains('hidden')) || Boolean(anotherModalOpen) || Boolean(focusInField);
+  }
+
+  function refreshPreordersNow() {
+    if (queueHasActiveWork()) {
+      const status = document.getElementById('queue-refresh-status');
+      if (status) status.textContent = 'Finish the active action before refreshing';
+      deferQueueRefresh();
+      return;
+    }
+    window.location.reload();
+  }
+
+  ['pointerdown', 'keydown', 'input', 'change'].forEach(eventName => {
+    document.addEventListener(eventName, deferQueueRefresh, true);
   });
+
+  setInterval(() => {
+    const status = document.getElementById('queue-refresh-status');
+    const remaining = Math.max(0, Math.ceil((queueRefreshAt - Date.now()) / 1000));
+    if (remaining > 0) {
+      if (status) status.textContent = `Auto refresh in ${remaining}s`;
+      return;
+    }
+    if (document.visibilityState !== 'visible' || Date.now() - queueLastInteractionAt < 5000 || queueHasActiveWork()) {
+      if (status) status.textContent = 'Refresh waiting for the current action to finish';
+      return;
+    }
+    window.location.reload();
+  }, 1000);
 </script>
 <?php layoutFooter(); ?>
