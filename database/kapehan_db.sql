@@ -639,6 +639,33 @@ CREATE TABLE `inventory_order_deductions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
+-- Table structure for table `inventory_order_reservations`
+--
+
+CREATE TABLE `inventory_order_reservations` (
+  `order_id` int UNSIGNED NOT NULL,
+  `inventory_item_id` int UNSIGNED NOT NULL,
+  `reserved_quantity` decimal(12,3) NOT NULL,
+  `actor_role` varchar(20) DEFAULT NULL,
+  `actor_id` int UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`order_id`,`inventory_item_id`),
+  KEY `idx_inventory_reservation_item` (`inventory_item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `inventory_order_restorations`
+--
+
+CREATE TABLE `inventory_order_restorations` (
+  `order_id` int UNSIGNED NOT NULL,
+  `actor_role` varchar(20) DEFAULT NULL,
+  `actor_id` int UNSIGNED DEFAULT NULL,
+  `restored_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
 -- Dumping data for table `inventory_log`
 --
 
@@ -1595,6 +1622,16 @@ ALTER TABLE `inventory_log`
 --
 ALTER TABLE `inventory_order_deductions`
   ADD CONSTRAINT `fk_inventory_deduction_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for tables `inventory_order_reservations` and `inventory_order_restorations`
+--
+ALTER TABLE `inventory_order_reservations`
+  ADD CONSTRAINT `fk_inventory_reservation_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_inventory_reservation_item` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE;
+
+ALTER TABLE `inventory_order_restorations`
+  ADD CONSTRAINT `fk_inventory_restoration_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `orders`

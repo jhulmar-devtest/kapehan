@@ -16,6 +16,7 @@
 
 require_once __DIR__ . '/../config/init.php';
 require_once __DIR__ . '/../includes/loyalty.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 $role       = currentRole(); // null for guests
 $loggedIn   = isLoggedIn() && in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true);
@@ -43,19 +44,28 @@ $products = $db->query(
    ORDER BY c.sort_order, p.name"
 )->fetchAll();
 
+$stockAvailability = inventoryProductAvailabilityMap($db, array_column($products, 'id'));
+$products = array_values(array_filter($products, static fn($product) => $stockAvailability[(int) $product['id']] ?? true));
+
 $spotlightProducts = getSpotlightProducts(5);
+$availableProductIds = array_fill_keys(array_map(static fn($product) => (int) $product['id'], $products), true);
+$spotlightProducts = array_values(array_filter($spotlightProducts, static fn($product) => isset($availableProductIds[(int) $product['id']])));
 
 $soldArr = array_column($products, 'total_sold');
 rsort($soldArr);
 $bestSellerThreshold = ($soldArr[0] ?? 0) > 0 ? ($soldArr[min(4, count($soldArr) - 1)] ?? 1) : PHP_INT_MAX;
 
 // Flat, leaf-only categories that actually have products — no parent rows rendered (item 5)
-$categories = $db->query(
-  "SELECT c.* FROM categories c
-    WHERE c.name != 'Add-ons'
-      AND EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.id AND p.is_available = 1)
-    ORDER BY c.sort_order, c.name"
-)->fetchAll();
+$productCategoryIds = array_values(array_unique(array_map(static fn($product) => (int) $product['cat_id'], $products)));
+if ($productCategoryIds) {
+  $categoryStmt = $db->prepare(
+    "SELECT c.* FROM categories c WHERE c.name != 'Add-ons' AND c.id IN (" . implode(',', array_fill(0, count($productCategoryIds), '?')) . ') ORDER BY c.sort_order, c.name'
+  );
+  $categoryStmt->execute($productCategoryIds);
+  $categories = $categoryStmt->fetchAll();
+} else {
+  $categories = [];
+}
 
 // Size options — editable via admin, falls back to the old constant if table is empty
 $sizeOptions = [];

@@ -11,6 +11,7 @@
 // ============================================================
 
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
 $db = Database::getInstance();
 
@@ -118,7 +119,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
 }
 
 $items = $db->query("SELECT * FROM inventory_items ORDER BY name")->fetchAll();
-$lowStockCount = count(array_filter($items, fn($i) => (float) $i['quantity_on_hand'] <= (float) $i['reorder_level']));
+$stockSnapshot = inventoryStockSnapshot($db, array_column($items, 'id'));
+foreach ($items as &$item) {
+  $stock = $stockSnapshot[(int) $item['id']] ?? ['reserved' => 0, 'available' => (float) $item['quantity_on_hand']];
+  $item['reserved_quantity'] = $stock['reserved'];
+  $item['available_quantity'] = $stock['available'];
+}
+unset($item);
+$lowStockCount = count(array_filter($items, fn($i) => (float) $i['available_quantity'] <= (float) $i['reorder_level']));
 
 $recentLog = $db->query(
   "SELECT l.*, i.name AS item_name, i.unit, o.order_number
@@ -291,7 +299,7 @@ layoutHeader('Inventory');
               <td colspan="5" style="text-align:center;padding:30px;color:var(--text-muted)">No inventory items yet.</td>
             </tr>
             <?php else: foreach ($items as $it):
-              $low = (float) $it['quantity_on_hand'] <= (float) $it['reorder_level'];
+              $low = (float) $it['available_quantity'] <= (float) $it['reorder_level'];
             ?>
               <tr style="<?= $low ? 'background:#fdecea' : '' ?>">
                 <td>
@@ -299,7 +307,12 @@ layoutHeader('Inventory');
                     <?= e($it['name']) ?>
                   </button>
                 </td>
-                <td><?= number_format((float) $it['quantity_on_hand'], 3) ?> <?= e($it['unit']) ?>
+                <td>
+                  <?= number_format((float) $it['quantity_on_hand'], 3) ?> <?= e($it['unit']) ?> on hand
+                  <div class="text-muted" style="font-size:11px;margin-top:3px">
+                    <?= number_format(max(0, (float) $it['available_quantity']), 3) ?> <?= e($it['unit']) ?> available for new orders
+                    <?php if ((float) $it['reserved_quantity'] > 0): ?> · <?= number_format((float) $it['reserved_quantity'], 3) ?> <?= e($it['unit']) ?> held for pre-orders<?php endif; ?>
+                  </div>
                   <?php if ($low): ?><span class="badge badge-cancelled" style="margin-left:6px">Low</span><?php endif; ?>
                 </td>
                 <td><?= number_format((float) $it['reorder_level'], 3) ?> <?= e($it['unit']) ?></td>

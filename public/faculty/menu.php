@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_FACULTY);
 $db = Database::getInstance();
 
@@ -23,6 +24,11 @@ $products = $db->query(
      GROUP BY p.id, c.name, c.id, c.parent_id, cp.name, cp.id, c.sort_order
      ORDER BY c.sort_order, p.name"
 )->fetchAll();
+$stockAvailability = inventoryProductAvailabilityMap($db, array_column($products, 'id'));
+foreach ($products as &$product) {
+  if ($product['is_available'] && !($stockAvailability[(int) $product['id']] ?? true)) $product['is_available'] = 0;
+}
+unset($product);
 
 $soldArr2 = array_column($products, 'total_sold');
 rsort($soldArr2);

@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/loyalty.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 header('Content-Type: application/json');
 
 if (!isLoggedIn() || !in_array(currentRole(), [ROLE_STUDENT, ROLE_FACULTY], true)) {
@@ -178,6 +179,8 @@ try {
   foreach ($details as $d) {
     $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
   }
+
+  reserveInventoryForOrder($db, $orderId, $role, (int) currentUserId());
 
   // The submitted reference is customer-provided and must be verified by
   // cashier staff before it is recorded as paid.

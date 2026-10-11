@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
 
 $db = Database::getInstance();
@@ -398,6 +399,7 @@ if ($catFilter > 0) {
 $stmt = $db->prepare("SELECT p.*, c.name AS cat_name FROM products p JOIN categories c ON p.category_id=c.id $where ORDER BY c.sort_order, p.name");
 $stmt->execute($params);
 $products = $stmt->fetchAll();
+$stockAvailability = inventoryProductAvailabilityMap($db, array_column($products, 'id'));
 
 // Load category tree: parents first, then children grouped under them
 $allCats = $db->query(
@@ -570,6 +572,11 @@ layoutHeader('Ordering');
                       <input type="checkbox" onchange="handleToggle(this)" <?= $p['is_available'] ? 'checked' : '' ?>>
                       <span class="switch-slider"></span>
                     </label>
+                    <?php if ($p['is_available'] && !($stockAvailability[(int) $p['id']] ?? true)): ?>
+                      <div class="text-muted" style="font-size:11px;margin-top:4px">Automatically unavailable · recipe stock is short</div>
+                    <?php elseif (!$p['is_available']): ?>
+                      <div class="text-muted" style="font-size:11px;margin-top:4px">Manually paused</div>
+                    <?php endif; ?>
                   </form>
                 </td>
               </tr>

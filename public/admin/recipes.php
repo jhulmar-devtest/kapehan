@@ -136,6 +136,7 @@ layoutHeader('Recipes');
   <div>
     Enter how much of each inventory item goes into <strong>one serving</strong>, using the same unit as the inventory record.
     For example, if milk is stocked in liters, enter <strong>0.180</strong> for 180 ml. Fractions are supported to three decimal places.
+    Products without a recipe remain orderable and do not use stock tracking. Recipe-linked products become unavailable when none of their active sizes can be made with available stock. Online pre-orders hold their ingredients until preparation or cancellation; restocking can make an unavailable product orderable again.
   </div>
 </div>
 

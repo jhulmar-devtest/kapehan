@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_STUDENT);
 $db = Database::getInstance();
 
@@ -92,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
       foreach ($details as $d) {
         $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
       }
+      reserveInventoryForOrder($db, $orderId, ROLE_STUDENT, (int) currentUserId());
       $db->prepare("INSERT INTO payments (order_id,payment_method,amount_paid,payment_status,reference_number,paid_at) VALUES (?,?,?,?,?,NOW())")
         ->execute([$orderId, $method, $total, PAY_STATUS_PAID, $ref]);
       $db->commit();

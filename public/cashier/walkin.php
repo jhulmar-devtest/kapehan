@@ -191,6 +191,11 @@ $allProducts = $db->query(
    WHERE c.name != 'Add-ons'
    ORDER BY c.sort_order, p.name"
 )->fetchAll();
+$stockAvailability = inventoryProductAvailabilityMap($db, array_column($allProducts, 'id'));
+foreach ($allProducts as &$product) {
+  if ($product['is_available'] && !($stockAvailability[(int) $product['id']] ?? true)) $product['is_available'] = 0;
+}
+unset($product);
 
 // Threshold logic: Calculate top-5 best sellers 
 $soldCounts = array_column($allProducts, 'total_sold');

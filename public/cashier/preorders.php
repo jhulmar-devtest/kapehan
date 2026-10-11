@@ -72,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         loyaltyAwardOrder($db, $oid, ROLE_CASHIER, $currentUser);
       } elseif ($status === STATUS_CANCELLED) {
         loyaltyReverseOrder($db, $oid, ROLE_CASHIER, $currentUser);
+        restoreInventoryForCancelledOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
 
       $db->commit();
