@@ -1617,7 +1617,7 @@ layoutHeader('Order Now', '');
     addons.forEach(addon => {
       html += `
         <label class="cm-addon-row">
-          <input type="checkbox" class="cm-addon-cb" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="recalcModal()">
+          <input type="checkbox" class="cm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="recalcModal()">
           <div class="cm-addon-check"><i class="fa-solid fa-check"></i></div>
           <span class="cm-addon-name">${e(addon.name)}</span>
           <span class="cm-addon-price">+\u20b1${parseFloat(addon.price).toFixed(2)}</span>
@@ -1653,10 +1653,12 @@ layoutHeader('Order Now', '');
     const notes = document.getElementById('cm-notes').value.trim();
 
     const chosenAddons = [];
+    const chosenAddonIds = [];
     let addonTotal = 0;
     if (_modal.hasAddons && _modal.addons.length > 0) {
       document.querySelectorAll('.cm-addon-cb:checked').forEach(cb => {
         chosenAddons.push(cb.dataset.name);
+        chosenAddonIds.push(parseInt(cb.dataset.id, 10));
         addonTotal += parseFloat(cb.dataset.price);
       });
     }
@@ -1682,6 +1684,10 @@ layoutHeader('Order Now', '');
       name: _modal.name,
       price: finalPrice,
       note,
+      customNote: notes,
+      size,
+      sugar,
+      addon_ids: chosenAddonIds,
       qty: 0
     };
     cart[key].qty += qty;

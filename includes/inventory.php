@@ -27,6 +27,61 @@ function inventoryReservationSchemaAvailable(PDO $db): bool
   return $available;
 }
 
+function inventoryAddonSchemaAvailable(PDO $db): bool
+{
+  static $available = null;
+  if ($available === null) {
+    try {
+      $available = (bool) $db->query("SHOW TABLES LIKE 'addon_ingredients'")->fetchColumn();
+    } catch (Throwable $e) {
+      $available = false;
+    }
+  }
+  return $available;
+}
+
+function inventoryOrderAddonSnapshotSchemaAvailable(PDO $db): bool
+{
+  static $available = null;
+  if ($available === null) {
+    try {
+      $available = (bool) $db->query("SHOW TABLES LIKE 'order_detail_addons'")->fetchColumn()
+        && (bool) $db->query("SHOW TABLES LIKE 'order_detail_addon_ingredients'")->fetchColumn();
+    } catch (Throwable $e) {
+      $available = false;
+    }
+  }
+  return $available;
+}
+
+/** Availability for optional add-ons; unlinked add-ons remain untracked. */
+function inventoryAddonAvailabilityMap(PDO $db, array $addonIds): array
+{
+  $addonIds = array_values(array_unique(array_filter(array_map('intval', $addonIds))));
+  if (!$addonIds || !inventoryAddonSchemaAvailable($db)) return array_fill_keys($addonIds, true);
+  $stmt = $db->prepare(
+    'SELECT addon_id, inventory_item_id, qty_per_unit FROM addon_ingredients
+      WHERE addon_id IN (' . implode(',', array_fill(0, count($addonIds), '?')) . ')'
+  );
+  $stmt->execute($addonIds);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  $availability = array_fill_keys($addonIds, false);
+  if (!$rows) return $availability;
+  $stock = inventoryStockSnapshot($db, array_column($rows, 'inventory_item_id'));
+  $hasRecipe = [];
+  foreach ($rows as $row) {
+    $addonId = (int) $row['addon_id'];
+    $itemId = (int) $row['inventory_item_id'];
+    if (!isset($availability[$addonId])) continue;
+    if (!isset($hasRecipe[$addonId])) $availability[$addonId] = true;
+    $hasRecipe[$addonId] = true;
+    if (!isset($stock[$itemId]) || $stock[$itemId]['available'] + 0.000001 < (float) $row['qty_per_unit']) {
+      $availability[$addonId] = false;
+    }
+  }
+  return $availability;
+}
+
 /** Return the default recipe with size-specific ingredients overriding it. */
 function inventoryRecipeForProduct(PDO $db, int $productId, string $sizeLabel = ''): array
 {
@@ -50,6 +105,8 @@ function inventoryRequirementsForDetails(PDO $db, array $details): array
   $sizeLabels = inventorySizeLabels($db);
   $recipeCache = [];
   $trackedProductCache = [];
+  $addonCache = [];
+  $addonRecipeCache = [];
   $usage = [];
   foreach ($details as $detail) {
     $productId = (int) ($detail['product_id'] ?? 0);
@@ -74,6 +131,68 @@ function inventoryRequirementsForDetails(PDO $db, array $details): array
     }
     foreach ($recipeCache[$cacheKey] as $itemId => $amountPerUnit) {
       $usage[$itemId] = ($usage[$itemId] ?? 0.0) + ((float) $amountPerUnit * $quantity);
+    }
+
+    $hasAddonSnapshot = false;
+    $detailId = (int) ($detail['id'] ?? 0);
+    if ($detailId > 0 && inventoryOrderAddonSnapshotSchemaAvailable($db)) {
+      $snapshotStmt = $db->prepare(
+        'SELECT i.inventory_item_id, i.qty_per_addon, a.quantity_per_product
+           FROM order_detail_addons a
+           JOIN order_detail_addon_ingredients i ON i.order_detail_addon_id = a.id
+          WHERE a.order_detail_id = ?'
+      );
+      $snapshotStmt->execute([$detailId]);
+      $snapshots = $snapshotStmt->fetchAll(PDO::FETCH_ASSOC);
+      if ($snapshots) {
+        $hasAddonSnapshot = true;
+        foreach ($snapshots as $snapshot) {
+          $itemId = (int) $snapshot['inventory_item_id'];
+          $usage[$itemId] = ($usage[$itemId] ?? 0.0)
+            + ((float) $snapshot['qty_per_addon'] * (float) $snapshot['quantity_per_product'] * $quantity);
+        }
+      }
+    }
+
+    if (!$hasAddonSnapshot && $note !== '') {
+      $addonSegment = '';
+      foreach (preg_split('/\s(?:·|-|–)\s/u', $note) as $part) {
+        if (preg_match('/^\s*\+/u', $part)) { $addonSegment = trim($part); break; }
+      }
+      if ($addonSegment !== '') {
+        if (!inventoryAddonSchemaAvailable($db)) {
+          throw new RuntimeException('Add-on inventory tracking is not set up yet. Apply the add-on inventory migration, then try again.');
+        }
+        if (!array_key_exists($productId, $addonCache)) {
+          $choices = $db->prepare(
+            "SELECT a.id, a.name FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
+              WHERE pa.product_id = ? AND a.status = 'active'"
+          );
+          $choices->execute([$productId]);
+          $addonCache[$productId] = [];
+          foreach ($choices->fetchAll(PDO::FETCH_ASSOC) as $choice) {
+            $addonCache[$productId][(string) $choice['name']] = (int) $choice['id'];
+          }
+        }
+        preg_match_all('/(?:^|,\s*)\+([^,]+)/u', $addonSegment, $matches);
+        foreach ($matches[1] ?? [] as $rawName) {
+          $addonName = trim($rawName);
+          if ($addonName === '' || !isset($addonCache[$productId][$addonName])) continue;
+          $addonId = $addonCache[$productId][$addonName];
+          if (!array_key_exists($addonId, $addonRecipeCache)) {
+            $addonStmt = $db->prepare('SELECT inventory_item_id, qty_per_unit FROM addon_ingredients WHERE addon_id = ?');
+            $addonStmt->execute([$addonId]);
+            $addonRecipeCache[$addonId] = $addonStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$addonRecipeCache[$addonId]) {
+              throw new RuntimeException('Inventory use has not been set up for the ' . $addonName . ' add-on. Please contact the administrator.');
+            }
+          }
+          foreach ($addonRecipeCache[$addonId] as $addonIngredient) {
+            $itemId = (int) $addonIngredient['inventory_item_id'];
+            $usage[$itemId] = ($usage[$itemId] ?? 0.0) + ((float) $addonIngredient['qty_per_unit'] * $quantity);
+          }
+        }
+      }
     }
   }
   foreach ($usage as $itemId => $amount) $usage[$itemId] = round($amount, 3);
@@ -180,7 +299,7 @@ function inventoryProductAvailabilityMap(PDO $db, array $productIds): array
 
 function inventoryOrderRequirements(PDO $db, int $orderId): array
 {
-  $stmt = $db->prepare('SELECT product_id, quantity, customization_note FROM order_details WHERE order_id = ?');
+  $stmt = $db->prepare('SELECT id, product_id, quantity, customization_note FROM order_details WHERE order_id = ?');
   $stmt->execute([$orderId]);
   return inventoryRequirementsForDetails($db, $stmt->fetchAll(PDO::FETCH_ASSOC));
 }
@@ -232,14 +351,15 @@ function deductInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int 
     $stmt->execute([$orderId]);
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) $reservedForOrder[(int) $row['inventory_item_id']] = (float) $row['reserved_quantity'];
   }
-  $usage = $reservedForOrder ?: inventoryOrderRequirements($db, $orderId);
+  $usage = inventoryOrderRequirements($db, $orderId);
   $stock = inventoryStockSnapshot($db, array_keys($usage), true);
   foreach ($usage as $itemId => $required) {
     if (!isset($stock[$itemId])) throw new RuntimeException('An inventory item in this product recipe no longer exists.');
     $available = $stock[$itemId]['on_hand'] - $stock[$itemId]['reserved'];
     if ($reservedForOrder) {
-      if ($stock[$itemId]['on_hand'] + 0.000001 < $stock[$itemId]['reserved']) {
-        throw new RuntimeException('Reserved stock for ' . $stock[$itemId]['name'] . ' is short. Restock it before preparing this order.');
+      $thisOrderReserved = $reservedForOrder[$itemId] ?? 0.0;
+      if ($thisOrderReserved + $available + 0.000001 < $required) {
+        throw new RuntimeException('Not enough ' . $stock[$itemId]['name'] . ' to prepare this order. Restock it before preparing this order.');
       }
     } elseif ($available + 0.000001 < $required) {
       throw new RuntimeException(sprintf(

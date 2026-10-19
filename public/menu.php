@@ -1436,6 +1436,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         size: _cm.hasSizes ? SIZES[_cm.sizeIdx].label : null,
         sugar: _cm.hasSugar ? SUGAR_LEVELS[_cm.sugarIdx] : null,
         addons: addonNames,
+        addon_ids: [..._cm.selectedAddons],
         unit_price: cmUnitPrice(),
         qty: _cm.qty,
         note: document.getElementById('cmNote').value.trim(),

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 
 if (!in_array(currentRole(), [ROLE_CASHIER, ROLE_STUDENT, ROLE_FACULTY])) {
   http_response_code(403);
@@ -34,6 +35,8 @@ try {
     ");
   $stmt->execute([$productId]);
   $addons = $stmt->fetchAll();
+  $availability = inventoryAddonAvailabilityMap($db, array_column($addons, 'id'));
+  $addons = array_values(array_filter($addons, static fn($addon) => $availability[(int) $addon['id']] ?? true));
 
   echo json_encode([
     'success' => true,

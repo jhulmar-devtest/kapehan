@@ -84,12 +84,26 @@ values forward into your own `secrets.php`.
 ## Database migrations
 
 New schema changes go in `database/migrations/` as a new dated `.sql` file
-(e.g. `2026_10_05_add_something.sql`), **and** get mirrored into
-`database/kapehan_db.sql` so a fresh clone+import always has the full
-schema in one step. If you already have the database set up and pull a
-change that includes a new migration file, just run that one file against
-your existing database — don't re-import the whole dump (you'd lose your
-local data).
+and are mirrored in `database/kapehan_db.sql` for fresh installs. The
+`database/migrate.php` CLI runner records each migration and its checksum in
+`schema_migrations`:
+
+```sh
+php database/migrate.php status
+php database/migrate.php apply
+```
+
+Fresh imports include the schema and migration history. Existing databases
+created before migration tracking was added should first be checked to ensure
+they already include the older migrations, then run these once:
+
+```sh
+php database/migrate.php baseline-existing
+php database/migrate.php apply
+```
+
+The baseline command checks for expected tables before recording history.
+Never re-import the full dump into a database with local order or inventory data.
 
 ## Working together on this repo
 

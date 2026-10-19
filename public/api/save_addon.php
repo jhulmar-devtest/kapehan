@@ -1,8 +1,7 @@
 <?php
 /**
- * Save Add-on API Endpoint
- * POST: Insert new add-on
- * Returns: JSON response
+ * Retired endpoint: add-ons must be created through Inventory so they have
+ * a stock item and a usage quantity before they can be assigned to products.
  */
 require_once __DIR__ . '/../../config/init.php';
 requireRole(ROLE_ADMIN);
@@ -16,40 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 verifyCsrf();
-
-$name = sanitizeString($_POST['name'] ?? '');
-$price = round((float)($_POST['price'] ?? 0), 2);
-
-// Validation
-if (empty($name)) {
-  http_response_code(400);
-  echo json_encode(['success' => false, 'error' => 'Add-on name is required']);
-  exit;
-}
-
-if ($price < 0) {
-  http_response_code(400);
-  echo json_encode(['success' => false, 'error' => 'Price cannot be negative']);
-  exit;
-}
-
-try {
-  $db = Database::getInstance();
-  $db->prepare("INSERT INTO addons (name, price, status) VALUES (?, ?, 'active')")
-    ->execute([$name, $price]);
-
-  $addonId = (int)$db->lastInsertId();
-
-  auditLog(ROLE_ADMIN, currentUserId(), 'create_addon', 'addons', $addonId);
-
-  echo json_encode([
-    'success' => true,
-    'addon_id' => $addonId,
-    'name' => $name,
-    'price' => $price
-  ]);
-} catch (\Throwable $e) {
-  error_log("Save add-on error: " . $e->getMessage());
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Failed to save add-on']);
-}
+http_response_code(410);
+echo json_encode([
+  'success' => false,
+  'error' => 'Add-ons must be created from Inventory and linked to a stock item.'
+]);

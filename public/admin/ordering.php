@@ -433,7 +433,7 @@ layoutHeader('Ordering');
 <div class="page-header">
   <div>
     <div class="page-header-title">Ordering</div>
-    <div class="page-header-sub">Manage what's for sale: products, add-ons, and size pricing</div>
+    <div class="page-header-sub">Manage products and size pricing; view add-ons and set them up in Inventory</div>
   </div>
 </div>
 <?php showFlash('global'); ?>
@@ -967,41 +967,6 @@ layoutHeader('Ordering');
   </div>
 </div>
 
-<!-- ===================== ADD ADD-ON MODAL ===================== -->
-<div class="modal-overlay hidden" id="add-addon-modal" style="z-index:1100">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">
-        <i class="fa-solid fa-plus"></i> Add New Add-on
-      </div>
-      <button class="modal-close" onclick="closeAddAddonModal()"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-
-    <div class="modal-body">
-      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem">
-        Adding several? This stays open after each save so you can keep going — click Done when you're finished.
-      </p>
-      <div class="form-group">
-        <label class="form-label">Add-on Name <span style="color:var(--status-cancelled)">*</span></label>
-        <input type="text" id="new-addon-name" class="form-control" placeholder="e.g. Extra Shot, Cheese, Pearl">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Price (₱) <span style="color:var(--status-cancelled)">*</span></label>
-        <input type="number" id="new-addon-price" class="form-control" min="0" step="0.50" placeholder="0.00"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();saveNewAddon();}">
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" onclick="closeAddAddonModal()">Done</button>
-      <button type="button" class="btn btn-primary" onclick="saveNewAddon()">
-        <i class="fa-solid fa-floppy-disk"></i> Save &amp; Add Another
-      </button>
-    </div>
-  </div>
-</div>
-
 <!-- ===================== ADD-ONS LIST MODAL ===================== -->
 <div class="modal-overlay hidden" id="addons-list-modal">
   <div class="modal" style="max-width:800px;width:95vw;">
@@ -1013,14 +978,9 @@ layoutHeader('Ordering');
     </div>
 
     <div class="modal-body">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <p style="font-size:0.85rem;color:var(--text-muted);margin:0">
-          Create and manage add-ons that can be assigned to products.
-        </p>
-        <button type="button" class="btn btn-sm btn-primary" onclick="openAddAddonModal()">
-          <i class="fa-solid fa-plus"></i> Add Add-on
-        </button>
-      </div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 1rem">
+        Add-ons are created and stocked in <a href="<?= APP_URL ?>/admin/inventory.php" style="font-weight:600">Inventory</a>. Assign them to compatible products from each product’s Manage Add-ons button.
+      </p>
 
       <div id="addons-list-table" style="overflow-x:auto">
         <table class="data-table">
@@ -1028,8 +988,8 @@ layoutHeader('Ordering');
             <tr>
               <th>Name</th>
               <th>Price</th>
+              <th>Stock item / portion</th>
               <th>Status</th>
-              <th style="width:100px">Actions</th>
             </tr>
           </thead>
           <tbody id="addons-list-body">
@@ -1287,10 +1247,7 @@ layoutHeader('Ordering');
           container.innerHTML = `
             <div style="text-align:center;padding:2rem;color:var(--text-muted)">
               <i class="fa-solid fa-inbox" style="font-size:2rem;opacity:0.3;margin-bottom:0.5rem"></i>
-              <div style="font-size:0.85rem">No add-ons available yet.</div>
-              <button type="button" class="btn btn-sm btn-primary" style="margin-top:0.5rem" onclick="closeManageAddonsModal();openAddAddonModal()">
-                <i class="fa-solid fa-plus"></i> Create First Add-on
-              </button>
+              <div style="font-size:0.85rem">No stocked add-ons are available. Set one up from Inventory first.</div>
             </div>
           `;
           return;
@@ -1349,66 +1306,6 @@ layoutHeader('Ordering');
       });
   }
 
-  function openAddAddonModal() {
-    document.getElementById('new-addon-name').value = '';
-    document.getElementById('new-addon-price').value = '';
-    document.getElementById('add-addon-modal').classList.remove('hidden');
-  }
-
-  function closeAddAddonModal() {
-    document.getElementById('add-addon-modal').classList.add('hidden');
-  }
-
-  document.getElementById('add-addon-modal').addEventListener('click', function(e) {
-    if (e.target === this) closeAddAddonModal();
-  });
-
-  function saveNewAddon() {
-    const name = document.getElementById('new-addon-name').value.trim();
-    const price = parseFloat(document.getElementById('new-addon-price').value) || 0;
-
-    if (!name) {
-      showToast('Please enter an add-on name', 'warning');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('price', price);
-    formData.append('csrf_token', '<?= csrfToken() ?>');
-
-    fetch('<?= APP_URL ?>/api/save_addon.php', {
-        method: 'POST',
-        body: formData
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          showToast('Add-on "' + name + '" added — add another or close when done');
-          // Stay open and reset for the next one, instead of closing —
-          // adding several add-ons in a row (Extra Shot, Pearl, Cheese...)
-          // shouldn't mean reopening this modal every single time.
-          document.getElementById('new-addon-name').value = '';
-          document.getElementById('new-addon-price').value = '';
-          document.getElementById('new-addon-name').focus();
-          // If manage addons modal is open, refresh it
-          if (!document.getElementById('manage-addons-modal').classList.contains('hidden')) {
-            loadManageAddonsList(currentEditProductId);
-          }
-          // If addons list modal is open, refresh it
-          if (!document.getElementById('addons-list-modal').classList.contains('hidden')) {
-            loadAddonsList();
-          }
-        } else {
-          showToast('Failed to save: ' + (data.error || 'Unknown error'), 'error');
-        }
-      })
-      .catch(err => {
-        console.error('Save failed:', err);
-        showToast('Failed to save add-on', 'error');
-      });
-  }
-
   function openAddonsListModal() {
     document.getElementById('addons-list-modal').classList.remove('hidden');
     loadAddonsList();
@@ -1441,7 +1338,7 @@ layoutHeader('Ordering');
             <tr>
               <td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)">
                 <i class="fa-solid fa-inbox" style="font-size:2rem;opacity:0.3;margin-bottom:0.5rem"></i>
-                <div style="font-size:0.85rem">No add-ons yet. Click "Add Add-on" to create one.</div>
+                <div style="font-size:0.85rem">No stocked add-ons yet. Add them from Inventory.</div>
               </td>
             </tr>
           `;
@@ -1454,12 +1351,8 @@ layoutHeader('Ordering');
             <tr>
               <td><strong>${e(addon.name)}</strong></td>
               <td>₱${parseFloat(addon.price).toFixed(2)}</td>
+              <td>${e(addon.inventory_name || '—')} <span style="color:var(--text-muted)">(${parseFloat(addon.qty_per_unit || 0).toFixed(3)} ${e(addon.inventory_unit || '')})</span></td>
               <td><span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(5,150,105,0.1);color:var(--status-ready);padding:2px 8px;border-radius:var(--radius-full)">${addon.status}</span></td>
-              <td>
-                <button type="button" class="btn btn-sm btn-ghost" onclick="toggleAddonStatus(${addon.id}, '${addon.status}')" title="${addon.status === 'active' ? 'Deactivate' : 'Activate'}">
-                  <i class="fa-solid fa-${addon.status === 'active' ? 'pause' : 'play'}"></i>
-                </button>
-              </td>
             </tr>
           `;
         });
@@ -1471,31 +1364,6 @@ layoutHeader('Ordering');
       });
   }
 
-  function toggleAddonStatus(addonId, currentStatus) {
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    const formData = new FormData();
-    formData.append('addon_id', addonId);
-    formData.append('status', newStatus);
-    formData.append('csrf_token', '<?= csrfToken() ?>');
-
-    fetch('<?= APP_URL ?>/api/toggle_addon_status.php', {
-        method: 'POST',
-        body: formData
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          showToast('Add-on ' + (newStatus === 'active' ? 'activated' : 'deactivated'));
-          loadAddonsList(); // refresh the list
-        } else {
-          showToast('Failed: ' + (data.error || 'Unknown error'), 'error');
-        }
-      })
-      .catch(err => {
-        console.error('Toggle failed:', err);
-        showToast('Failed to update status', 'error');
-      });
-  }
 </script>
 
 <script>

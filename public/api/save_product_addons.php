@@ -42,6 +42,18 @@ try {
   $db = Database::getInstance();
   $db->beginTransaction();
 
+  if (!empty($addonIds)) {
+    $placeholders = implode(',', array_fill(0, count($addonIds), '?'));
+    $valid = $db->prepare("SELECT COUNT(DISTINCT a.id) FROM addons a INNER JOIN addon_ingredients ai ON ai.addon_id=a.id WHERE a.status='active' AND a.id IN ($placeholders)");
+    $valid->execute(array_values($addonIds));
+    if ((int) $valid->fetchColumn() !== count(array_unique($addonIds))) {
+      $db->rollBack();
+      http_response_code(400);
+      echo json_encode(['success' => false, 'error' => 'Every selected add-on must be active and linked to inventory']);
+      exit;
+    }
+  }
+
   // Delete existing assignments for this product
   $db->prepare("DELETE FROM product_addons WHERE product_id = ?")
     ->execute([$productId]);

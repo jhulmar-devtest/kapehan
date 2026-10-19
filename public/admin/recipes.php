@@ -13,7 +13,6 @@ $products = $db->query(
 )->fetchAll(PDO::FETCH_ASSOC);
 $inventoryItems = $db->query('SELECT id, name, unit, quantity_on_hand FROM inventory_items ORDER BY name')
   ->fetchAll(PDO::FETCH_ASSOC);
-
 $selectedProductId = (int) ($_POST['product_id'] ?? $_GET['product_id'] ?? ($products[0]['id'] ?? 0));
 $selectedProduct = null;
 foreach ($products as $product) {

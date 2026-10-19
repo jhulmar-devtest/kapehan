@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/cash-drawer.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 require_once __DIR__ . '/../../includes/loyalty.php';
+require_once __DIR__ . '/../../includes/order-pricing.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 
@@ -48,20 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $details  = [];
   $allOk    = true;
   foreach ($items as $item) {
-    $stmt = $db->prepare("SELECT id,name,price FROM products WHERE id=? AND is_available=1");
-    $stmt->execute([(int)$item['product_id']]);
-    $prod = $stmt->fetch();
-    if (!$prod) {
-      flash('global', 'A selected product is no longer available.', 'error');
+    try {
+      $line = priceOrderLine($db, is_array($item) ? $item : []);
+    } catch (RuntimeException $e) {
+      flash('global', $e->getMessage(), 'error');
       $allOk = false;
       break;
     }
-    $qty   = max(1, (int)$item['qty']);
-    $price = isset($item['price']) && $item['price'] > 0 ? round((float)$item['price'], 2) : (float)$prod['price'];
-    $sub   = $price * $qty;
-    $subtotal += $sub;
-    $note  = sanitizeString($item['note'] ?? '', 300);
-    $details[] = ['product_id' => $prod['id'], 'qty' => $qty, 'price' => $price, 'sub' => $sub, 'note' => $note];
+    $subtotal += $line['sub'];
+    $details[] = $line;
   }
 
   // VAT is already included in price (VAT-inclusive), so VAT = subtotal * 12/112
@@ -133,6 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $stmt = $db->prepare("INSERT INTO order_details (order_id,product_id,quantity,price_at_time,subtotal,customization_note) VALUES (?,?,?,?,?,?)");
       foreach ($details as $d) {
         $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
+        saveOrderLineAddonSnapshots($db, (int) $db->lastInsertId(), $d['addons']);
       }
       $db->prepare("INSERT INTO payments (order_id,drawer_day_id,payment_method,amount_paid,change_given,reference_number,payment_status,paid_at) VALUES (?,?,?,?,?,?,?,NOW())")
         ->execute([$orderId, $drawerDayId, $payMethod, $cash, $change, $gcashRef, PAY_STATUS_PAID]);
@@ -203,6 +200,7 @@ rsort($soldCounts);
 $bestSellerThreshold = $soldCounts[min(4, count($soldCounts) - 1)] ?? 0;
 
 $allCats = $db->query("SELECT * FROM categories WHERE name != 'Add-ons' ORDER BY sort_order")->fetchAll();
+$posSizeOptions = $db->query("SELECT label, price_adjustment FROM size_options WHERE is_active = 1 ORDER BY sort_order, label")->fetchAll(PDO::FETCH_ASSOC);
 $catsByParent = [];
 foreach ($allCats as $cat) {
   if ($cat['parent_id']) $catsByParent[$cat['parent_id']][] = $cat;
@@ -2261,8 +2259,11 @@ layoutHeader('Walk-in POS', '');
     const items = Object.values(cart).map(item => ({
       product_id: item.productId,
       qty: item.qty,
-      price: item.price,
-      note: item.note || ''
+      displayed_price: item.price,
+      size: item.size || '',
+      sugar: item.sugar || '',
+      addon_ids: item.addonIds || [],
+      note: item.customNote || ''
     }));
 
     if (_payMethod === 'cash') {
@@ -2828,7 +2829,7 @@ layoutHeader('Walk-in POS', '');
       <div id="pm-section-size">
         <div class="pm-section-label">Size</div>
         <div class="pm-size-group">
-          <?php foreach ([['16oz', 0], ['22oz', SIZE_22OZ_UPCHARGE]] as [$sz, $adj]): ?>
+          <?php foreach ($posSizeOptions as $sizeOption): $sz = $sizeOption['label']; $adj = (float) $sizeOption['price_adjustment']; ?>
             <button class="pm-size-btn" onclick="document.querySelectorAll('.pm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');posRecalc();">
               <span class="pm-size-name"><?= $sz ?></span>
               <span class="pm-size-adj"><?= $adj > 0 ? '+₱' . $adj : ($adj < 0 ? '−₱' . abs($adj) : 'Base') ?></span>
@@ -2873,13 +2874,7 @@ layoutHeader('Walk-in POS', '');
 </div>
 
 <script>
-  const POS_SIZES = [{
-    label: '16oz',
-    adj: 0
-  }, {
-    label: '22oz',
-    adj: +<?= SIZE_22OZ_UPCHARGE ?>
-  }];
+  const POS_SIZES = <?= json_encode(array_map(static fn($s) => ['label' => $s['label'], 'adj' => (float) $s['price_adjustment']], $posSizeOptions), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const POS_SUGAR = ['Full Sugar', 'Less Sugar', '50% Sugar', 'No Sugar'];
 
   let _pos = {
@@ -2964,7 +2959,7 @@ layoutHeader('Walk-in POS', '');
     let html = '<div class="pm-addon-grid">';
     addons.forEach(addon => {
       html += `<label class="pm-addon-row">
-        <input type="checkbox" class="pm-addon-cb" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="posRecalc()">
+        <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="posRecalc()">
         <div class="pm-addon-check"><i class="fa-solid fa-check"></i></div>
         <span class="pm-addon-name">${e(addon.name)}</span>
         <span class="pm-addon-price">+₱${parseFloat(addon.price).toFixed(2)}</span>
@@ -3031,10 +3026,12 @@ layoutHeader('Walk-in POS', '');
     const notes = document.getElementById('pm-notes').value.trim();
 
     const chosenAddons = [];
+    const chosenAddonIds = [];
     let addonTotal = 0;
     if (_pos.hasAddons && _pos.addons.length > 0) {
       document.querySelectorAll('.pm-addon-cb:checked').forEach(cb => {
         chosenAddons.push(cb.dataset.name);
+        chosenAddonIds.push(parseInt(cb.dataset.id, 10));
         addonTotal += parseFloat(cb.dataset.price);
       });
     }
@@ -3059,6 +3056,10 @@ layoutHeader('Walk-in POS', '');
       name: _pos.name,
       price: finalPrice,
       note,
+      customNote: notes,
+      size,
+      sugar,
+      addonIds: chosenAddonIds,
       qty: 0
     };
     cart[key].qty += qty;

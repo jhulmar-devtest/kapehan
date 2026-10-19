@@ -15,19 +15,24 @@ $productId = isset($_GET['product_id']) ? (int)$_GET['product_id'] : null;
 try {
   if ($productId) {
     $stmt = $db->prepare("
-            SELECT a.id, a.name, a.price, a.status,
+            SELECT a.id, a.name, a.price, a.status, i.name AS inventory_name, i.unit AS inventory_unit, ai.qty_per_unit,
                    CASE WHEN pa.product_id IS NOT NULL THEN 1 ELSE 0 END AS is_checked
             FROM addons a
+            INNER JOIN addon_ingredients ai ON ai.addon_id = a.id
+            INNER JOIN inventory_items i ON i.id = ai.inventory_item_id
             LEFT JOIN product_addons pa ON a.id = pa.addon_id AND pa.product_id = ?
+            WHERE a.status = 'active'
             ORDER BY a.name
         ");
     $stmt->execute([$productId]);
     $addons = $stmt->fetchAll();
   } else {
     $stmt = $db->query("
-            SELECT id, name, price, status
-            FROM addons
-            ORDER BY name
+            SELECT a.id, a.name, a.price, a.status, i.name AS inventory_name, i.unit AS inventory_unit, ai.qty_per_unit
+            FROM addons a
+            INNER JOIN addon_ingredients ai ON ai.addon_id = a.id
+            INNER JOIN inventory_items i ON i.id = ai.inventory_item_id
+            ORDER BY a.name
         ");
     $addons = $stmt->fetchAll();
   }
@@ -39,6 +44,9 @@ try {
       'name'       => $a['name'],
       'price'      => (float)$a['price'],
       'status'     => $a['status'],
+      'inventory_name' => $a['inventory_name'] ?? null,
+      'inventory_unit' => $a['inventory_unit'] ?? null,
+      'qty_per_unit' => isset($a['qty_per_unit']) ? (float)$a['qty_per_unit'] : null,
       'is_checked' => isset($a['is_checked']) ? (bool)$a['is_checked'] : null,
     ], $addons)
   ]);

@@ -15,33 +15,6 @@ require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
 $db = Database::getInstance();
 
-// ---- Add new item ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_item'])) {
-  verifyCsrf();
-  $name  = sanitizeString($_POST['name'] ?? '', 120);
-  $unit  = sanitizeString($_POST['unit'] ?? '', 20);
-  $qty   = round((float) ($_POST['quantity_on_hand'] ?? 0), 3);
-  $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
-  $cost  = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
-
-  if (empty($name) || empty($unit)) {
-    flash('global', 'Name and unit are required.', 'error');
-  } else {
-    $db->prepare(
-      "INSERT INTO inventory_items (name, unit, quantity_on_hand, reorder_level, cost_per_unit) VALUES (?, ?, ?, ?, ?)"
-    )->execute([$name, $unit, $qty, $reorder, $cost]);
-    $newId = (int) $db->lastInsertId();
-    if ($qty > 0) {
-      $db->prepare(
-        "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, actor_role, actor_id) VALUES (?, ?, 'restock', ?, ?)"
-      )->execute([$newId, $qty, ROLE_ADMIN, currentUserId()]);
-    }
-    auditLog(ROLE_ADMIN, currentUserId(), 'create_inventory_item', 'inventory_items', $newId);
-    flash('global', 'Inventory item added.', 'success');
-  }
-  redirect(APP_URL . '/admin/inventory.php');
-}
-
 // ---- Adjust stock (restock / waste / correction) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust_item'])) {
   verifyCsrf();
@@ -81,10 +54,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
   $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
   $cost = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
   if ($id && !empty($name) && !empty($unit)) {
-    $db->prepare(
-      "UPDATE inventory_items SET name=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=?"
-    )->execute([$name, $unit, $reorder, $cost, $id]);
-    flash('global', 'Item details updated.', 'success');
+    $isAddon = ($_POST['is_addon'] ?? '') === '1';
+    $addonName = sanitizeString($_POST['addon_name'] ?? '', 120);
+    $addonPrice = round((float) ($_POST['addon_price'] ?? 0), 2);
+    $addonQty = round((float) ($_POST['addon_quantity_per_unit'] ?? 0), 3);
+
+    if ($isAddon && ($addonName === '' || $addonPrice < 0 || $addonQty <= 0)) {
+      flash('global', 'Add-on name, a non-negative price, and a usage quantity above zero are required.', 'error');
+      redirect(APP_URL . '/admin/inventory.php');
+    }
+
+    try {
+      $db->beginTransaction();
+      $db->prepare("UPDATE inventory_items SET name=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=?")
+        ->execute([$name, $unit, $reorder, $cost, $id]);
+
+      $existing = $db->prepare("SELECT a.id FROM addons a JOIN addon_ingredients ai ON ai.addon_id = a.id WHERE ai.inventory_item_id = ? ORDER BY a.id LIMIT 1");
+      $existing->execute([$id]);
+      $addonId = (int) ($existing->fetchColumn() ?: 0);
+
+      if ($isAddon) {
+        $duplicate = $db->prepare('SELECT COUNT(*) FROM addons WHERE name = ? AND id <> ?');
+        $duplicate->execute([$addonName, $addonId]);
+        if ((int) $duplicate->fetchColumn() > 0) {
+          $db->rollBack();
+          flash('global', 'An add-on with that name already exists. Edit its inventory item instead.', 'error');
+          redirect(APP_URL . '/admin/inventory.php');
+        }
+        if ($addonId) {
+          $db->prepare("UPDATE addons SET name=?, price=?, status='active' WHERE id=?")
+            ->execute([$addonName, $addonPrice, $addonId]);
+          $db->prepare("DELETE FROM addon_ingredients WHERE addon_id=?")->execute([$addonId]);
+        } else {
+          $db->prepare("INSERT INTO addons (name, price, status) VALUES (?, ?, 'active')")
+            ->execute([$addonName, $addonPrice]);
+          $addonId = (int) $db->lastInsertId();
+        }
+        $db->prepare("INSERT INTO addon_ingredients (addon_id, inventory_item_id, qty_per_unit) VALUES (?, ?, ?)")
+          ->execute([$addonId, $id, $addonQty]);
+      } elseif ($addonId) {
+        // Keep the mapping and product assignments so the add-on can be restored later.
+        $db->prepare("UPDATE addons SET status='inactive' WHERE id=?")->execute([$addonId]);
+      }
+
+      $db->commit();
+      auditLog(ROLE_ADMIN, currentUserId(), 'edit_inventory_item', 'inventory_items', $id);
+      flash('global', 'Item details updated.', 'success');
+    } catch (\Throwable $e) {
+      if ($db->inTransaction()) $db->rollBack();
+      error_log('Edit inventory/add-on error: ' . $e->getMessage());
+      flash('global', 'Could not update item and add-on settings.', 'error');
+    }
   }
   redirect(APP_URL . '/admin/inventory.php');
 }
@@ -105,6 +125,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
     redirect(APP_URL . '/admin/inventory.php');
   }
 
+  $stmt = $db->prepare("SELECT COUNT(*) FROM addon_ingredients ai JOIN addons a ON a.id=ai.addon_id WHERE ai.inventory_item_id = ? AND a.status='active'");
+  $stmt->execute([$id]);
+  if ((int) $stmt->fetchColumn() > 0) {
+    flash('global', 'This item supplies an add-on. Turn off the add-on in Edit Item before deleting its inventory item.', 'error');
+    redirect(APP_URL . '/admin/inventory.php');
+  }
+
   $stmt = $db->prepare('SELECT COUNT(*) FROM product_ingredients WHERE inventory_item_id = ?');
   $stmt->execute([$id]);
   if ((int) $stmt->fetchColumn() > 0) {
@@ -119,11 +146,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
 }
 
 $items = $db->query("SELECT * FROM inventory_items ORDER BY name")->fetchAll();
+$addonMappings = $db->query("SELECT ai.inventory_item_id, ai.qty_per_unit, a.id AS addon_id, a.name AS addon_name, a.price AS addon_price, a.status AS addon_status FROM addon_ingredients ai JOIN addons a ON a.id=ai.addon_id ORDER BY a.id")->fetchAll();
+$addonByItem = [];
+foreach ($addonMappings as $mapping) {
+  $addonByItem[(int) $mapping['inventory_item_id']] = $mapping;
+}
 $stockSnapshot = inventoryStockSnapshot($db, array_column($items, 'id'));
 foreach ($items as &$item) {
   $stock = $stockSnapshot[(int) $item['id']] ?? ['reserved' => 0, 'available' => (float) $item['quantity_on_hand']];
   $item['reserved_quantity'] = $stock['reserved'];
   $item['available_quantity'] = $stock['available'];
+  $item['addon'] = $addonByItem[(int) $item['id']] ?? null;
 }
 unset($item);
 $lowStockCount = count(array_filter($items, fn($i) => (float) $i['available_quantity'] <= (float) $i['reorder_level']));
@@ -306,6 +339,7 @@ layoutHeader('Inventory');
                   <button type="button" class="inv-item-link" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'>
                     <?= e($it['name']) ?>
                   </button>
+                  <?php if (!empty($it['addon'])): ?><span class="badge <?= $it['addon']['addon_status'] === 'active' ? 'badge-ready' : 'badge-cancelled' ?>" style="margin-left:6px"><?= $it['addon']['addon_status'] === 'active' ? 'Add-on' : 'Add-on paused' ?>: <?= e($it['addon']['addon_name']) ?></span><?php endif; ?>
                 </td>
                 <td>
                   <?= number_format((float) $it['quantity_on_hand'], 3) ?> <?= e($it['unit']) ?> on hand
@@ -377,6 +411,16 @@ layoutHeader('Inventory');
         <input type="number" step="0.01" id="new-item-cost" class="form-control" value="0"
           onkeydown="if(event.key==='Enter'){event.preventDefault();saveNewInventoryItem();}">
       </div>
+      <hr style="border:0;border-top:1px solid var(--border-color);margin:1rem 0">
+      <label style="display:flex;align-items:center;gap:0.6rem;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="new-item-is-addon" onchange="toggleAddonFields('new')"> Also offer as a customer add-on
+      </label>
+      <div id="new-addon-fields" style="display:none;margin-top:1rem">
+        <p class="text-muted" style="font-size:.8rem;margin-bottom:.75rem">The selected amount is deducted from this same inventory item whenever a customer orders the add-on.</p>
+        <div class="form-group"><label class="form-label">Add-on Name</label><input type="text" id="new-addon-name" class="form-control" placeholder="e.g. Extra shot"></div>
+        <div class="form-group"><label class="form-label">Customer Price (₱)</label><input type="number" min="0" step="0.50" id="new-addon-price" class="form-control" value="0"></div>
+        <div class="form-group"><label class="form-label">Inventory used per add-on</label><input type="number" min="0.001" step="0.001" id="new-addon-qty" class="form-control" value="0.010"><small class="text-muted">Measured in the inventory unit above.</small></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-ghost" onclick="closeAddItemModal()">Done</button>
@@ -438,6 +482,16 @@ layoutHeader('Inventory');
         <div class="form-group"><label class="form-label">Unit</label><input type="text" name="unit" id="edit-item-unit" class="form-control" required></div>
         <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" name="reorder_level" id="edit-item-reorder" class="form-control"></div>
         <div class="form-group"><label class="form-label">Cost per Unit (₱)</label><input type="number" step="0.01" name="cost_per_unit" id="edit-item-cost" class="form-control"></div>
+        <hr style="border:0;border-top:1px solid var(--border-color);margin:1rem 0">
+        <label style="display:flex;align-items:center;gap:0.6rem;font-weight:600;cursor:pointer">
+          <input type="checkbox" name="is_addon" id="edit-item-is-addon" value="1" onchange="toggleAddonFields('edit')"> Also offer as a customer add-on
+        </label>
+        <div id="edit-addon-fields" style="display:none;margin-top:1rem">
+          <p class="text-muted" style="font-size:.8rem;margin-bottom:.75rem">The selected amount is deducted from this same inventory item whenever a customer orders the add-on. Turning this off hides the add-on but keeps its stock and product assignments.</p>
+          <div class="form-group"><label class="form-label">Add-on Name</label><input type="text" name="addon_name" id="edit-addon-name" class="form-control"></div>
+          <div class="form-group"><label class="form-label">Customer Price (₱)</label><input type="number" min="0" step="0.50" name="addon_price" id="edit-addon-price" class="form-control" value="0"></div>
+          <div class="form-group"><label class="form-label">Inventory used per add-on (<span id="edit-addon-unit"></span>)</label><input type="number" min="0.001" step="0.001" name="addon_quantity_per_unit" id="edit-addon-qty" class="form-control" value="0.010"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="closeEditItemModal()">Cancel</button>
@@ -496,6 +550,11 @@ layoutHeader('Inventory');
     inventoryItemsAddedThisSession = false;
     ['new-item-name', 'new-item-unit'].forEach(id => document.getElementById(id).value = '');
     ['new-item-qty', 'new-item-reorder', 'new-item-cost'].forEach(id => document.getElementById(id).value = '0');
+    document.getElementById('new-item-is-addon').checked = false;
+    document.getElementById('new-addon-name').value = '';
+    document.getElementById('new-addon-price').value = '0';
+    document.getElementById('new-addon-qty').value = '0.010';
+    toggleAddonFields('new');
     document.getElementById('add-item-modal').classList.remove('hidden');
   }
 
@@ -522,6 +581,10 @@ layoutHeader('Inventory');
     formData.append('quantity_on_hand', document.getElementById('new-item-qty').value || 0);
     formData.append('reorder_level', document.getElementById('new-item-reorder').value || 0);
     formData.append('cost_per_unit', document.getElementById('new-item-cost').value || 0);
+    formData.append('is_addon', document.getElementById('new-item-is-addon').checked ? '1' : '0');
+    formData.append('addon_name', document.getElementById('new-addon-name').value.trim());
+    formData.append('addon_price', document.getElementById('new-addon-price').value || 0);
+    formData.append('addon_quantity_per_unit', document.getElementById('new-addon-qty').value || 0);
     formData.append('csrf_token', '<?= csrfToken() ?>');
 
     fetch('<?= APP_URL ?>/api/save_inventory_item.php', { method: 'POST', body: formData })
@@ -532,6 +595,11 @@ layoutHeader('Inventory');
           showToast('"' + name + '" added — add another or click Done');
           ['new-item-name', 'new-item-unit'].forEach(id => document.getElementById(id).value = '');
           ['new-item-qty', 'new-item-reorder', 'new-item-cost'].forEach(id => document.getElementById(id).value = '0');
+          document.getElementById('new-item-is-addon').checked = false;
+          document.getElementById('new-addon-name').value = '';
+          document.getElementById('new-addon-price').value = '0';
+          document.getElementById('new-addon-qty').value = '0.010';
+          toggleAddonFields('new');
           document.getElementById('new-item-name').focus();
         } else {
           showToast('Failed to save: ' + (data.error || 'Unknown error'), 'error');
@@ -587,7 +655,19 @@ layoutHeader('Inventory');
     document.getElementById('edit-item-unit').value = item.unit;
     document.getElementById('edit-item-reorder').value = item.reorder_level;
     document.getElementById('edit-item-cost').value = item.cost_per_unit;
+    const addon = item.addon || null;
+    document.getElementById('edit-item-is-addon').checked = !!addon && addon.addon_status === 'active';
+    document.getElementById('edit-addon-name').value = addon ? addon.addon_name : item.name;
+    document.getElementById('edit-addon-price').value = addon ? addon.addon_price : '0';
+    document.getElementById('edit-addon-qty').value = addon ? addon.qty_per_unit : '0.010';
+    document.getElementById('edit-addon-unit').textContent = item.unit;
+    toggleAddonFields('edit');
     document.getElementById('edit-item-modal').classList.remove('hidden');
+  }
+
+  function toggleAddonFields(prefix) {
+    const checked = document.getElementById(prefix + '-item-is-addon').checked;
+    document.getElementById(prefix + '-addon-fields').style.display = checked ? 'block' : 'none';
   }
 
   function closeEditItemModal() {

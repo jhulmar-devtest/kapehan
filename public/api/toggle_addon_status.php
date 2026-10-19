@@ -22,6 +22,15 @@ if ($addonId < 1 || !in_array($status, ['active', 'inactive'])) {
 
 try {
   $db = Database::getInstance();
+  if ($status === 'active') {
+    $check = $db->prepare("SELECT COUNT(*) FROM addon_ingredients WHERE addon_id = ?");
+    $check->execute([$addonId]);
+    if ((int) $check->fetchColumn() === 0) {
+      http_response_code(400);
+      echo json_encode(['success' => false, 'error' => 'Link this add-on to an inventory item before activating it']);
+      exit;
+    }
+  }
   $db->prepare("UPDATE addons SET status = ? WHERE id = ?")
     ->execute([$status, $addonId]);
   auditLog(ROLE_ADMIN, currentUserId(), 'toggle_addon_status', 'addons', $addonId);

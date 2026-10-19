@@ -11,6 +11,7 @@
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/loyalty.php';
 require_once __DIR__ . '/../../includes/inventory.php';
+require_once __DIR__ . '/../../includes/order-pricing.php';
 header('Content-Type: application/json');
 
 if (!isLoggedIn() || !in_array(currentRole(), [ROLE_STUDENT, ROLE_FACULTY], true)) {
@@ -79,58 +80,39 @@ if (empty($ref)) {
   exit;
 }
 
-// Validate pickup slot isn't full (per date+time, not just time)
-try {
-  $slotStmt = $db->prepare(
-    "SELECT COUNT(*) FROM orders
-      WHERE pickup_date = ? AND pickup_time = ?
-        AND status IN ('pending','preparing','ready')"
-  );
-  $slotStmt->execute([$pickupDate, $pickupTime]);
-  if ((int) $slotStmt->fetchColumn() >= (int) getSetting('pickup_slot_capacity', '6')) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'reason' => 'slot_full', 'message' => 'That pickup time just filled up. Please choose another time.']);
-    exit;
-  }
-} catch (\Throwable $e) {
-  error_log('slot check failed: ' . $e->getMessage());
-}
-
-// Build order lines from the client-side cart, re-pricing nothing we don't trust
-// (product existence/availability IS re-checked; the size/addon price math sent
-// by the client is trusted because it was computed from the same DB moments ago —
-// for extra safety you can re-derive it server-side using product_id + size_id + addon_ids).
+// Catalog prices, size adjustments and add-ons are re-read from the database.
 $total = 0;
 $details = [];
-foreach ($items as $item) {
-  // Client-side cart stores this as `productId` (camelCase); accept both so
-  // a naming drift here can never silently zero-out every item again.
-  $pid = (int) ($item['product_id'] ?? $item['productId'] ?? 0);
-  $stmt = $db->prepare("SELECT id, name, price FROM products WHERE id = ? AND is_available = 1");
-  $stmt->execute([$pid]);
-  $prod = $stmt->fetch();
-  if (!$prod) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => "\"{$item['name']}\" is no longer available."]);
-    exit;
+try {
+  foreach ($items as $item) {
+    $line = priceOrderLine($db, is_array($item) ? $item : []);
+    $total += $line['sub'];
+    $details[] = $line;
   }
-  $qty   = max(1, (int) ($item['qty'] ?? 1));
-  $price = isset($item['unit_price']) && $item['unit_price'] > 0 ? round((float) $item['unit_price'], 2) : (float) $prod['price'];
-  $sub   = $price * $qty;
-  $total += $sub;
-
-  $noteParts = [];
-  if (!empty($item['size']))  $noteParts[] = $item['size'];
-  if (!empty($item['sugar'])) $noteParts[] = $item['sugar'];
-  if (!empty($item['addons'])) $noteParts[] = '+' . implode(', +', $item['addons']);
-  if (!empty($item['note']))  $noteParts[] = $item['note'];
-  $note = sanitizeString(implode(' - ', $noteParts), 300);
-
-  $details[] = ['product_id' => $prod['id'], 'qty' => $qty, 'price' => $price, 'sub' => $sub, 'note' => $note];
+} catch (RuntimeException $e) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'message' => $e->getMessage()]);
+  exit;
 }
 
 $db->beginTransaction();
 try {
+  // The per-slot row serializes concurrent checkouts for the same pickup
+  // time. The count and insert now happen while holding this row lock.
+  $db->prepare(
+    'INSERT INTO pickup_slot_locks (pickup_date, pickup_time) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP'
+  )->execute([$pickupDate, $pickupTime]);
+  $slotLock = $db->prepare('SELECT pickup_date FROM pickup_slot_locks WHERE pickup_date = ? AND pickup_time = ? FOR UPDATE');
+  $slotLock->execute([$pickupDate, $pickupTime]);
+  $slotStmt = $db->prepare(
+    "SELECT COUNT(*) FROM orders WHERE pickup_date = ? AND pickup_time = ? AND status IN ('pending','preparing','ready')"
+  );
+  $slotStmt->execute([$pickupDate, $pickupTime]);
+  if ((int) $slotStmt->fetchColumn() >= (int) getSetting('pickup_slot_capacity', '6')) {
+    throw new RuntimeException('That pickup time just filled up. Please choose another time.');
+  }
+
   $studentId = $role === ROLE_STUDENT ? currentUserId() : null;
   $facultyId = $role === ROLE_FACULTY ? currentUserId() : null;
   $customerId = (int) currentUserId();
@@ -178,6 +160,7 @@ try {
   );
   foreach ($details as $d) {
     $stmt->execute([$orderId, $d['product_id'], $d['qty'], $d['price'], $d['sub'], $d['note']]);
+    saveOrderLineAddonSnapshots($db, (int) $db->lastInsertId(), $d['addons']);
   }
 
   reserveInventoryForOrder($db, $orderId, $role, (int) currentUserId());
