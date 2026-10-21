@@ -46,11 +46,12 @@
     margin-bottom: 14px;
   }
 
-  .rcpt-icon {
-    font-size: 26px;
-    color: var(--primary-color, #c0392b);
-    margin-bottom: 6px;
-    line-height: 1;
+  .rcpt-logo {
+    display: block;
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    margin: 0 auto 8px;
   }
 
   .rcpt-shop-name {

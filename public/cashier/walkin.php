@@ -91,9 +91,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $redemption = ['points' => 0, 'discount' => 0.0];
       if ($redeemPoints) {
         $customerBalance = loyaltyPointsBalance($db, $loyaltyType, $customerId);
-        $redemption = loyaltyRedemptionFor($customerBalance, $total);
-        if ($redemption['points'] < LOYALTY_REDEEM_POINTS_PER_BLOCK) {
-          throw new RuntimeException('This account no longer has enough points, or the total is too low to redeem.');
+        $loyaltyRules = loyaltyRules($db);
+        $redemption = loyaltyRedemptionFor($db, $customerBalance, $total);
+        if ($redemption['points'] < $loyaltyRules['redeem_points']) {
+          throw new RuntimeException($customerBalance < $loyaltyRules['redeem_points']
+            ? 'This account no longer has enough points to redeem.'
+            : 'The order total must be at least ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' to redeem points.');
         }
       }
       $total = round($total - $redemption['discount'], 2);
@@ -171,6 +174,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   }
 }
 
+$loyaltyRules = loyaltyRules($db);
+
 // Fetch all products, explicitly selecting parent_id and attaching total_sold via the summary view
 $allProducts = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id,
@@ -180,7 +185,8 @@ $allProducts = $db->query(
                SELECT 1 FROM product_addons pa 
                JOIN addons a ON pa.addon_id = a.id 
                WHERE pa.product_id = p.id AND a.status = 'active'
-           ) THEN 1 ELSE 0 END AS has_addons
+           ) THEN 1 ELSE 0 END AS has_addons,
+           EXISTS (SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id) AS has_inventory
    FROM products p
    JOIN categories c  ON p.category_id = c.id
    LEFT JOIN categories cp ON c.parent_id = cp.id
@@ -1635,13 +1641,14 @@ layoutHeader('Walk-in POS', '');
           data-avail="<?= $p['is_available'] ? '1' : '0' ?>"
           <?php if ($p['is_available']):
             $hasOptions = $p['has_sizes'] || $p['has_sugar'] || $p['has_addons'];
-            $onclick = $hasOptions
+            $useModal = $hasOptions || $p['has_inventory'];
+            $onclick = $useModal
               ? "openPosModal({$p['id']}, " . htmlspecialchars(json_encode($p['name'])) . ", {$p['price']}, " . htmlspecialchars(json_encode($p['image_path'] ?? '')) . ", " . (int)$p['has_sizes'] . ", " . (int)$p['has_sugar'] . ", " . (int)$p['has_addons'] . ")"
               : "quickAddToCart({$p['id']}, " . htmlspecialchars(json_encode($p['name'])) . ", {$p['price']})";
           ?>
           role="button"
           tabindex="0"
-          aria-label="<?= $hasOptions ? 'Customize ' . e($p['name']) : 'Add ' . e($p['name']) ?>, <?= peso($p['price']) ?>"
+          aria-label="<?= $useModal ? 'Customize ' . e($p['name']) : 'Add ' . e($p['name']) ?>, <?= peso($p['price']) ?>"
           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
           onclick="<?= $onclick ?>"
           <?php endif; ?>>
@@ -1737,7 +1744,7 @@ layoutHeader('Walk-in POS', '');
         </div>
         <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
-          <input type="checkbox" id="pos-redeem-points" disabled> Redeem 100 points for ₱10 off
+          <input type="checkbox" id="pos-redeem-points" disabled> Redeem <?= number_format($loyaltyRules['redeem_points']) ?> points for ₱<?= number_format($loyaltyRules['discount_cents'] / 100, 2) ?> off
         </label>
       </div>
     </div>
@@ -1866,17 +1873,38 @@ layoutHeader('Walk-in POS', '');
     return Object.values(cart).reduce((s, i) => s + i.price * i.qty, 0);
   }
 
+  function posProductStockCap(productId) {
+    const caps = Object.values(cart)
+      .filter(item => Number(item.productId) === Number(productId) && item.stockMax !== null && item.stockMax !== undefined && Number.isFinite(Number(item.stockMax)))
+      .map(item => Number(item.stockMax));
+    return caps.length ? Math.min(...caps) : null;
+  }
+
+  function posProductQuantity(productId) {
+    return Object.values(cart).filter(item => Number(item.productId) === Number(productId)).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  }
+
+  function posLineMax(item) {
+    const cap = posProductStockCap(item.productId);
+    return cap === null ? 999 : Math.max(1, cap - posProductQuantity(item.productId) + Number(item.qty || 0));
+  }
+
+  function posCanIncrement(item) {
+    const cap = posProductStockCap(item.productId);
+    return cap === null || posProductQuantity(item.productId) < cap;
+  }
+
   function getFinancials(subtotal) {
     const vat = Math.round(subtotal * 12 / 112 * 100) / 100;
     const vatExcl = Math.round((subtotal - vat) * 100) / 100;
     const discount = _discountType !== 'none' ? Math.round(vatExcl * 0.20 * 100) / 100 : 0;
     const afterPrivilege = Math.round((subtotal - discount) * 100) / 100;
     const redeemBox = document.getElementById('pos-redeem-points');
-    const balanceBlocks = Math.floor((_loyaltyCustomer?.balance || 0) / 100);
-    const amountBlocks = Math.floor(Math.round(afterPrivilege * 100) / 1000);
-    const loyaltyBlocks = redeemBox?.checked && _loyaltyCustomer ? Math.min(balanceBlocks, amountBlocks) : 0;
-    const loyaltyPoints = loyaltyBlocks * 100;
-    const loyaltyDiscount = loyaltyBlocks * 10;
+    const pointsRequired = <?= (int) $loyaltyRules['redeem_points'] ?>;
+    const discountValue = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
+    const eligible = (_loyaltyCustomer?.balance || 0) >= pointsRequired && afterPrivilege >= discountValue;
+    const loyaltyPoints = redeemBox?.checked && eligible ? pointsRequired : 0;
+    const loyaltyDiscount = loyaltyPoints ? discountValue : 0;
     const total = Math.round((afterPrivilege - loyaltyDiscount) * 100) / 100;
     return {
       subtotal,
@@ -1917,8 +1945,8 @@ layoutHeader('Walk-in POS', '');
       if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
       _loyaltyCustomer = data.account;
       result.textContent = `${data.account.name} · ${data.account.balance} points available`;
-      redeem.disabled = data.account.balance < 100;
-      redeem.title = data.account.balance < 100 ? 'At least 100 points are needed to redeem.' : '';
+      redeem.disabled = data.account.balance < <?= (int) $loyaltyRules['redeem_points'] ?>;
+      redeem.title = data.account.balance < <?= (int) $loyaltyRules['redeem_points'] ?> ? 'At least <?= number_format($loyaltyRules['redeem_points']) ?> points are needed to redeem.' : '';
     } catch (error) {
       result.textContent = error.message;
     } finally {
@@ -1945,9 +1973,9 @@ layoutHeader('Walk-in POS', '');
     renderCart();
   });
   document.getElementById('pos-redeem-points').addEventListener('change', () => {
-    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < 100) {
+    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < <?= (int) $loyaltyRules['redeem_points'] ?>) {
       document.getElementById('pos-redeem-points').checked = false;
-      document.getElementById('loyalty-customer-result').textContent = 'A minimum ₱10 balance is needed to redeem points on this order.';
+      document.getElementById('loyalty-customer-result').textContent = 'The order must be at least ₱<?= number_format($loyaltyRules['discount_cents'] / 100, 2) ?> to redeem points.';
     }
     renderCart();
     if (_payMethod === 'cash') calcChange(); else onGcashRefInput();
@@ -2049,9 +2077,9 @@ layoutHeader('Walk-in POS', '');
         '<div class="pos-item-unit-price">₱' + item.price.toFixed(2) + ' each</div>' +
         '<div class="pos-item-stepper">' +
         '<button class="pos-qty-btn minus" onclick="updateQty(\'' + key + '\',-1)">−</button>' +
-        '<input class="pos-qty-input" type="number" min="1" max="999" value="' + item.qty + '" ' +
+        '<input class="pos-qty-input" type="number" min="1" max="' + posLineMax(item) + '" value="' + item.qty + '" ' +
         'onchange="setQty(\'' + key + '\',this.value)" onclick="this.select()">' +
-        '<button class="pos-qty-btn" onclick="updateQty(\'' + key + '\',1)">+</button>' +
+        '<button class="pos-qty-btn" ' + (posCanIncrement(item) ? '' : 'disabled') + ' onclick="updateQty(\'' + key + '\',1)">+</button>' +
         '</div>' +
         '</div>' +
         '<div class="pos-item-right">' +
@@ -2064,7 +2092,7 @@ layoutHeader('Walk-in POS', '');
 
     let fin = getFinancials(getSubtotal());
     const redeemControl = document.getElementById('pos-redeem-points');
-    if (redeemControl.checked && fin.loyaltyPoints < 100) {
+    if (redeemControl.checked && fin.loyaltyPoints < <?= (int) $loyaltyRules['redeem_points'] ?>) {
       redeemControl.checked = false;
       fin = getFinancials(getSubtotal());
     }
@@ -2096,6 +2124,7 @@ layoutHeader('Walk-in POS', '');
 
   function updateQty(key, delta) {
     if (!cart[key]) return;
+    if (delta > 0 && !posCanIncrement(cart[key])) return;
     const nextQty = cart[key].qty + delta;
     if (nextQty <= 0) {
       confirmRemoveItem(key);
@@ -2112,7 +2141,7 @@ layoutHeader('Walk-in POS', '');
       confirmRemoveItem(key);
       return;
     }
-    cart[key].qty = qty;
+    cart[key].qty = Math.min(qty, posLineMax(cart[key]));
     renderCart();
   }
 
@@ -2826,11 +2855,12 @@ layoutHeader('Walk-in POS', '');
       <button class="pm-close-btn" onclick="closePosModal()"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="pm-body">
+      <div id="pm-stock-info" role="status" aria-live="polite" style="display:none;padding:10px 12px;border-radius:10px;font-size:.8rem;font-weight:700"></div>
       <div id="pm-section-size">
         <div class="pm-section-label">Size</div>
         <div class="pm-size-group">
           <?php foreach ($posSizeOptions as $sizeOption): $sz = $sizeOption['label']; $adj = (float) $sizeOption['price_adjustment']; ?>
-            <button class="pm-size-btn" onclick="document.querySelectorAll('.pm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');posRecalc();">
+            <button class="pm-size-btn" onclick="document.querySelectorAll('.pm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');posRecalc();posUpdateStockEstimate();">
               <span class="pm-size-name"><?= $sz ?></span>
               <span class="pm-size-adj"><?= $adj > 0 ? '+₱' . $adj : ($adj < 0 ? '−₱' . abs($adj) : 'Base') ?></span>
             </button>
@@ -2858,11 +2888,11 @@ layoutHeader('Walk-in POS', '');
     </div>
     <div class="pm-footer">
       <div class="pm-qty-ctrl">
-        <button class="pm-qty-btn" onclick="const i=document.getElementById('pm-qty');i.value=Math.max(1,parseInt(i.value||1)-1);posRecalc();">−</button>
+        <button class="pm-qty-btn" id="pm-qty-minus" onclick="posChangeQty(-1)">−</button>
         <input type="number" id="pm-qty" class="pm-qty-num" value="1" min="1" max="99" oninput="posRecalc()" onclick="this.select()">
-        <button class="pm-qty-btn" onclick="const i=document.getElementById('pm-qty');i.value=Math.min(99,parseInt(i.value||1)+1);posRecalc();">+</button>
+        <button class="pm-qty-btn" id="pm-qty-plus" onclick="posChangeQty(1)">+</button>
       </div>
-      <button class="pm-add-btn" onclick="posAddToCart()">
+      <button class="pm-add-btn" id="pm-add-btn" onclick="posAddToCart()">
         <i class="fa-solid fa-cart-plus"></i> Add to Order
         <div class="pm-price-col">
           <span class="pm-unit-lbl">each <span id="pm-unit"></span></span>
@@ -2877,6 +2907,7 @@ layoutHeader('Walk-in POS', '');
   const POS_SIZES = <?= json_encode(array_map(static fn($s) => ['label' => $s['label'], 'adj' => (float) $s['price_adjustment']], $posSizeOptions), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const POS_SUGAR = ['Full Sugar', 'Less Sugar', '50% Sugar', 'No Sugar'];
 
+  let _posStockRequest = 0;
   let _pos = {
     id: null,
     name: null,
@@ -2885,7 +2916,11 @@ layoutHeader('Walk-in POS', '');
     hasSizes: false,
     hasSugar: false,
     hasAddons: false,
-    addons: []
+    addons: [],
+    stockEstimate: null,
+    stockLoading: false,
+    stockRequest: 0,
+    maxToAdd: null
   };
 
   function openPosModal(id, name, basePrice, imgPath, hasSizes, hasSugar, hasAddons) {
@@ -2897,7 +2932,11 @@ layoutHeader('Walk-in POS', '');
       hasSizes: !!hasSizes,
       hasSugar: !!hasSugar,
       hasAddons: !!hasAddons,
-      addons: []
+      addons: [],
+      stockEstimate: null,
+      stockLoading: true,
+      stockRequest: 0,
+      maxToAdd: null
     };
 
     document.getElementById('pm-section-size').style.display = hasSizes ? '' : 'none';
@@ -2933,9 +2972,11 @@ layoutHeader('Walk-in POS', '');
       fetch(`<?= APP_URL ?>/api/get_product_addons.php?product_id=${id}`)
         .then(r => r.json())
         .then(data => {
+          if (Number(_pos.id) !== Number(id)) return;
           if (data.success && data.addons.length > 0) {
             _pos.addons = data.addons;
             renderAddonsList(data.addons);
+            posUpdateStockEstimate();
           } else {
             document.getElementById('pm-section-addons').style.display = 'none';
           }
@@ -2948,6 +2989,7 @@ layoutHeader('Walk-in POS', '');
     posRecalc();
     document.getElementById('pos-modal').classList.add('open');
     document.body.style.overflow = 'hidden';
+    posUpdateStockEstimate();
   }
 
   function renderAddonsList(addons) {
@@ -2959,7 +3001,7 @@ layoutHeader('Walk-in POS', '');
     let html = '<div class="pm-addon-grid">';
     addons.forEach(addon => {
       html += `<label class="pm-addon-row">
-        <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="posRecalc()">
+        <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="posRecalc();posUpdateStockEstimate()">
         <div class="pm-addon-check"><i class="fa-solid fa-check"></i></div>
         <span class="pm-addon-name">${e(addon.name)}</span>
         <span class="pm-addon-price">+₱${parseFloat(addon.price).toFixed(2)}</span>
@@ -2969,7 +3011,89 @@ layoutHeader('Walk-in POS', '');
     container.innerHTML = html;
   }
 
+  function posCurrentProductQty() {
+    return posProductQuantity(_pos.id);
+  }
+
+  function posModalMaxQty() {
+    return _pos.maxToAdd === null ? 99 : Math.max(0, Math.min(99, _pos.maxToAdd));
+  }
+
+  function posChangeQty(delta) {
+    const input = document.getElementById('pm-qty');
+    const max = posModalMaxQty();
+    input.value = Math.max(1, Math.min(max || 1, (parseInt(input.value, 10) || 1) + delta));
+    posRecalc();
+  }
+
+  async function posUpdateStockEstimate() {
+    const box = document.getElementById('pm-stock-info');
+    const addButton = document.getElementById('pm-add-btn');
+    if (!_pos.id || !box || !addButton) return;
+    const requestId = ++_posStockRequest;
+    _pos.stockRequest = requestId;
+    _pos.stockLoading = true;
+    _pos.stockEstimate = null;
+    _pos.maxToAdd = null;
+    box.style.display = '';
+    box.style.background = 'var(--surface-raised)';
+    box.style.color = 'var(--text-muted)';
+    box.textContent = 'Checking available quantity…';
+    addButton.disabled = true;
+    const params = new URLSearchParams({ product_id: _pos.id });
+    if (_pos.hasSizes) {
+      const sizeIdx = [...document.querySelectorAll('.pm-size-btn')].findIndex(button => button.classList.contains('active'));
+      if (POS_SIZES[sizeIdx]?.label) params.set('size_label', POS_SIZES[sizeIdx].label);
+    }
+    document.querySelectorAll('.pm-addon-cb:checked').forEach(cb => params.append('addon_ids[]', cb.dataset.id));
+    try {
+      const response = await fetch(`${POS_APP_URL}/api/product-stock-estimate.php?${params.toString()}`);
+      const result = await response.json();
+      if (requestId !== _posStockRequest) return;
+      if (!response.ok || !result.success) throw new Error(result.error || 'Stock estimate unavailable.');
+      _pos.stockLoading = false;
+      _pos.stockEstimate = result;
+      if (!result.tracked) {
+        box.style.display = 'none';
+        _pos.maxToAdd = null;
+      } else {
+        const currentQty = posCurrentProductQty();
+        _pos.maxToAdd = Math.max(0, Number(result.max_quantity || 0) - currentQty);
+        Object.values(cart).filter(item => Number(item.productId) === Number(_pos.id)).forEach(item => { item.stockMax = Number(result.max_quantity || 0); });
+        if (Object.keys(cart).length) renderCart();
+        box.style.display = '';
+        if (result.max_quantity < 1) {
+          box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
+          box.style.color = 'var(--status-cancelled, #b42318)';
+          box.textContent = 'Unavailable — estimated quantity: 0';
+        } else if (result.low_stock) {
+          box.style.background = 'var(--status-warning-bg, #fff4d6)';
+          box.style.color = 'var(--status-warning, #8a5a00)';
+          box.textContent = `Low stock — estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_pos.maxToAdd} more can be added` : ''}`;
+        } else {
+          box.style.background = 'var(--surface-raised)';
+          box.style.color = 'var(--text-muted)';
+          box.textContent = `Estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_pos.maxToAdd} more can be added` : ''}`;
+        }
+      }
+      const input = document.getElementById('pm-qty');
+      input.max = posModalMaxQty() || 1;
+      input.value = Math.max(1, Math.min(parseInt(input.value, 10) || 1, posModalMaxQty() || 1));
+      posRecalc();
+    } catch (error) {
+      if (requestId !== _posStockRequest) return;
+      _pos.stockLoading = false;
+      _pos.maxToAdd = 0;
+      box.style.display = '';
+      box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
+      box.style.color = 'var(--status-cancelled, #b42318)';
+      box.textContent = error.message;
+      posRecalc();
+    }
+  }
+
   function closePosModal() {
+    _posStockRequest++;
     document.getElementById('pos-modal').classList.remove('open');
     document.body.style.overflow = '';
   }
@@ -3011,9 +3135,15 @@ layoutHeader('Walk-in POS', '');
     if (_pos.hasAddons && _pos.addons.length > 0)
       document.querySelectorAll('.pm-addon-cb:checked').forEach(cb => addonTotal += parseFloat(cb.dataset.price));
     const unitPrice = _pos.basePrice + sizeAdj + addonTotal;
-    const qty = Math.max(1, parseInt(document.getElementById('pm-qty').value) || 1);
+    const qtyInput = document.getElementById('pm-qty');
+    const qty = Math.max(1, Math.min(posModalMaxQty() || 1, parseInt(qtyInput.value) || 1));
+    qtyInput.value = qty;
+    qtyInput.max = posModalMaxQty() || 1;
     document.getElementById('pm-unit').textContent = '₱' + unitPrice.toFixed(2);
     document.getElementById('pm-total').textContent = '₱' + (unitPrice * qty).toFixed(2);
+    document.getElementById('pm-qty-plus').disabled = _pos.stockLoading || qty >= posModalMaxQty();
+    document.getElementById('pm-qty-minus').disabled = qty <= 1;
+    document.getElementById('pm-add-btn').disabled = _pos.stockLoading || _pos.maxToAdd === 0 || qty > posModalMaxQty();
   }
 
   function posAddToCart() {
@@ -3023,6 +3153,7 @@ layoutHeader('Walk-in POS', '');
     const sizeAdj = _pos.hasSizes ? (POS_SIZES[sizeIdx]?.adj ?? 0) : 0;
     const sugar = _pos.hasSugar ? (POS_SUGAR[sugarIdx] ?? 'Full Sugar') : null;
     const qty = Math.max(1, parseInt(document.getElementById('pm-qty').value) || 1);
+    if (_pos.stockLoading || _pos.maxToAdd === 0 || (_pos.maxToAdd !== null && qty > _pos.maxToAdd)) return;
     const notes = document.getElementById('pm-notes').value.trim();
 
     const chosenAddons = [];
@@ -3060,6 +3191,7 @@ layoutHeader('Walk-in POS', '');
       size,
       sugar,
       addonIds: chosenAddonIds,
+      stockMax: _pos.stockEstimate?.tracked ? Number(_pos.stockEstimate.max_quantity) : null,
       qty: 0
     };
     cart[key].qty += qty;

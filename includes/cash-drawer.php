@@ -60,9 +60,11 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   closeStaleCashierSessions($db);
 
   $stmt = $db->prepare(
-    "SELECT d.*, opener.full_name AS opened_by_name, closer.full_name AS closed_by_name
+    "SELECT d.*, COALESCE(opener.full_name, admin_opener.full_name, 'Administrator') AS opened_by_name,
+            closer.full_name AS closed_by_name
      FROM cash_drawer_days d
-     JOIN cashiers opener ON opener.id = d.opened_by
+     LEFT JOIN cashiers opener ON opener.id = d.opened_by
+     LEFT JOIN admins admin_opener ON admin_opener.id = d.opened_by_admin_id
      LEFT JOIN cashiers closer ON closer.id = d.closed_by
      WHERE d.id = ?"
   );
@@ -104,13 +106,46 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   $stmt->execute([$drawerId]);
   $drawer['movements'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+  $stmt = $db->prepare(
+    "SELECT e.*, c.full_name AS closed_by_name,
+            r.id AS reopen_id, r.reopened_at, r.reason AS reopen_reason,
+            r.expected_amount AS reopen_expected_amount,
+            r.recounted_amount AS reopen_recounted_amount,
+            r.variance AS reopen_variance,
+            COALESCE(rc.full_name, ra.full_name, 'Administrator') AS reopened_by_name
+       FROM cash_drawer_closures e
+       LEFT JOIN cashiers c ON c.id = e.closed_by
+       LEFT JOIN cash_drawer_reopens r ON r.closure_id = e.id
+       LEFT JOIN cashiers rc ON rc.id = r.reopened_by
+       LEFT JOIN admins ra ON ra.id = r.reopened_by_admin_id
+      WHERE e.drawer_day_id = ?
+      ORDER BY e.closed_at DESC, e.id DESC, r.reopened_at DESC"
+  );
+  $stmt->execute([$drawerId]);
+  $drawer['closure_events'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+  $stmt = $db->prepare(
+    "SELECT r.*, COALESCE(c.full_name, a.full_name, 'Administrator') AS reopened_by_name
+       FROM cash_drawer_reopens r
+       LEFT JOIN cashiers c ON c.id = r.reopened_by
+       LEFT JOIN admins a ON a.id = r.reopened_by_admin_id
+      WHERE r.drawer_day_id = ? ORDER BY r.reopened_at DESC, r.id DESC"
+  );
+  $stmt->execute([$drawerId]);
+  $drawer['reopen_events'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
   // The drawer can be closed before the calendar day ends. Keep same-day
   // cashier logins visible in its audit trail, including logins made after
   // close, and label those separately in the report.
   $nextDayAt = date('Y-m-d H:i:s', strtotime($drawer['business_date'] . ' +1 day'));
   $stmt = $db->prepare(
      "SELECT s.login_at, s.logout_at, s.logout_reason,
-            (d.closed_at IS NOT NULL AND s.login_at > d.closed_at) AS after_drawer_close,
+            EXISTS (
+              SELECT 1 FROM cash_drawer_closures e
+              LEFT JOIN cash_drawer_reopens r ON r.closure_id = e.id
+              WHERE e.drawer_day_id = d.id AND s.login_at > e.closed_at
+                AND (r.reopened_at IS NULL OR s.login_at < r.reopened_at)
+            ) AS after_drawer_close,
             c.full_name AS cashier_name
      FROM cashier_sessions s
      JOIN cash_drawer_days d ON d.id = ?

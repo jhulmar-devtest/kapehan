@@ -83,6 +83,9 @@ CREATE TABLE `app_settings` (
 --
 
 INSERT INTO `app_settings` (`setting_key`, `setting_value`) VALUES
+('loyalty_points_per_10_spent', '1'),
+('loyalty_redeem_discount', '10.00'),
+('loyalty_redeem_points', '100'),
 ('max_cash_preorder_amount', '150'),
 ('no_show_strike_limit', '3'),
 ('pickup_slot_capacity', '6'),
@@ -419,7 +422,8 @@ CREATE TABLE `cash_drawer_days` (
   `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `business_date` date NOT NULL,
   `opening_amount` decimal(10,2) NOT NULL,
-  `opened_by` int UNSIGNED NOT NULL,
+  `opened_by` int UNSIGNED DEFAULT NULL,
+  `opened_by_admin_id` int UNSIGNED DEFAULT NULL,
   `opened_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `status` enum('open','closed') NOT NULL DEFAULT 'open',
   `closing_amount` decimal(10,2) DEFAULT NULL,
@@ -431,6 +435,7 @@ CREATE TABLE `cash_drawer_days` (
   UNIQUE KEY `uq_cash_drawer_business_date` (`business_date`),
   KEY `idx_cash_drawer_status` (`status`),
   CONSTRAINT `fk_cash_drawer_opened_by` FOREIGN KEY (`opened_by`) REFERENCES `cashiers` (`id`),
+  CONSTRAINT `fk_cash_drawer_opened_by_admin` FOREIGN KEY (`opened_by_admin_id`) REFERENCES `admins` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_cash_drawer_closed_by` FOREIGN KEY (`closed_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -470,6 +475,40 @@ CREATE TABLE `cash_drawer_movements` (
   KEY `idx_drawer_movement_day_time` (`drawer_day_id`,`created_at`),
   CONSTRAINT `fk_drawer_movement_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_drawer_movement_cashier` FOREIGN KEY (`cashier_id`) REFERENCES `cashiers` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cash_drawer_closures` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `drawer_day_id` int UNSIGNED NOT NULL,
+  `closed_by` int UNSIGNED DEFAULT NULL,
+  `closing_amount` decimal(10,2) NOT NULL,
+  `expected_closing_amount` decimal(10,2) NOT NULL,
+  `variance` decimal(10,2) NOT NULL,
+  `closed_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_drawer_closure_day_time` (`drawer_day_id`,`closed_at`),
+  CONSTRAINT `fk_drawer_closure_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_drawer_closure_cashier` FOREIGN KEY (`closed_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cash_drawer_reopens` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `drawer_day_id` int UNSIGNED NOT NULL,
+  `closure_id` int UNSIGNED NOT NULL,
+  `reopened_by` int UNSIGNED DEFAULT NULL,
+  `reopened_by_admin_id` int UNSIGNED DEFAULT NULL,
+  `reopened_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `reason` varchar(255) NOT NULL,
+  `expected_amount` decimal(10,2) NOT NULL,
+  `recounted_amount` decimal(10,2) NOT NULL,
+  `variance` decimal(10,2) NOT NULL COMMENT 'Recounted cash minus expected cash at reopen',
+  PRIMARY KEY (`id`),
+  KEY `idx_drawer_reopen_day_time` (`drawer_day_id`,`reopened_at`),
+  KEY `idx_drawer_reopen_closure` (`closure_id`),
+  CONSTRAINT `fk_drawer_reopen_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_drawer_reopen_closure` FOREIGN KEY (`closure_id`) REFERENCES `cash_drawer_closures` (`id`),
+  CONSTRAINT `fk_drawer_reopen_cashier` FOREIGN KEY (`reopened_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_drawer_reopen_admin` FOREIGN KEY (`reopened_by_admin_id`) REFERENCES `admins` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --

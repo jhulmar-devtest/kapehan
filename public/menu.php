@@ -24,6 +24,7 @@ $loggedIn   = isLoggedIn() && in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true
 // ---- Products: flat categories, no parent grouping (items 4 & 5) ----
 $db = Database::getInstance();
 $loyaltyReady = loyaltyLedgerAvailable($db);
+$loyaltyRules = loyaltyRules($db);
 $loyaltyBalance = $loggedIn ? loyaltyPointsBalance($db, $role, (int) currentUserId()) : 0;
 $products = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id,
@@ -39,17 +40,25 @@ $products = $db->query(
    JOIN categories c ON p.category_id = c.id
    LEFT JOIN product_ratings pr ON pr.product_id = p.id
    LEFT JOIN order_details od   ON od.product_id  = p.id
-   WHERE c.name != 'Add-ons' AND p.is_available = 1
+   WHERE c.name != 'Add-ons'
    GROUP BY p.id, c.name, c.id, c.sort_order
    ORDER BY c.sort_order, p.name"
 )->fetchAll();
 
 $stockAvailability = inventoryProductAvailabilityMap($db, array_column($products, 'id'));
-$products = array_values(array_filter($products, static fn($product) => $stockAvailability[(int) $product['id']] ?? true));
+foreach ($products as &$product) {
+  $product['is_orderable'] = (bool) $product['is_available'] && ($stockAvailability[(int) $product['id']] ?? true);
+}
+unset($product);
 
 $spotlightProducts = getSpotlightProducts(5);
-$availableProductIds = array_fill_keys(array_map(static fn($product) => (int) $product['id'], $products), true);
-$spotlightProducts = array_values(array_filter($spotlightProducts, static fn($product) => isset($availableProductIds[(int) $product['id']])));
+$orderableById = [];
+foreach ($products as $product) $orderableById[(int) $product['id']] = $product['is_orderable'];
+$spotlightProducts = array_values(array_filter($spotlightProducts, static fn($product) => array_key_exists((int) $product['id'], $orderableById)));
+foreach ($spotlightProducts as &$spotlightProduct) {
+  $spotlightProduct['is_orderable'] = $orderableById[(int) $spotlightProduct['id']] ?? false;
+}
+unset($spotlightProduct);
 
 $soldArr = array_column($products, 'total_sold');
 rsort($soldArr);
@@ -465,6 +474,33 @@ $storeClose = getSetting('store_close_time', '20:00');
       cursor: pointer;
       position: relative;
       transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .spotlight-card.unavailable,
+    .menu-card.unavailable {
+      cursor: default;
+      opacity: .76;
+    }
+
+    .spotlight-card.unavailable:hover,
+    .menu-card.unavailable:hover {
+      transform: none;
+      box-shadow: none;
+    }
+
+    .unavailable-badge {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 2;
+      padding: 6px 11px;
+      border-radius: var(--radius-full);
+      background: #342a26;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: .02em;
     }
 
     .spotlight-card:hover,
@@ -943,7 +979,7 @@ $storeClose = getSetting('store_close_time', '20:00');
 
   <header class="site-header">
     <div class="container header-inner">
-      <a href="<?= APP_URL ?>/menu.php" class="logo">
+      <a href="<?= APP_URL ?>/landing.php" class="logo">
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
       </a>
 
@@ -998,12 +1034,13 @@ $storeClose = getSetting('store_close_time', '20:00');
         </div>
         <div class="spotlight-scroll" id="spotlightScroll">
           <?php foreach ($spotlightProducts as $i => $p): ?>
-            <div class="spotlight-card"
+            <div class="spotlight-card<?= empty($p['is_orderable']) ? ' unavailable' : '' ?>"
               role="button"
-              tabindex="0"
-              aria-label="Add <?= e($p['name']) ?>, <?= peso($p['price']) ?>"
+              tabindex="<?= empty($p['is_orderable']) ? '-1' : '0' ?>"
+              aria-disabled="<?= empty($p['is_orderable']) ? 'true' : 'false' ?>"
+              aria-label="<?= e($p['name']) ?><?= empty($p['is_orderable']) ? ', unavailable' : ', ' . e(peso($p['price'])) ?>"
               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
-              onclick="onCardClick(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name'])) ?>, <?= (float)$p['price'] ?>, <?= htmlspecialchars(json_encode($p['image_path'] ?? '')) ?>, <?= (int)$p['has_sizes'] ?>, <?= (int)$p['has_sugar'] ?>, <?= (int)$p['has_addons'] ?>)">
+              onclick="if(<?= empty($p['is_orderable']) ? 'false' : 'true' ?>) onCardClick(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name'])) ?>, <?= (float)$p['price'] ?>, <?= htmlspecialchars(json_encode($p['image_path'] ?? '')) ?>, <?= (int)$p['has_sizes'] ?>, <?= (int)$p['has_sugar'] ?>, <?= (int)$p['has_addons'] ?>)">
               <div class="spotlight-card-img">
                 <span class="spotlight-rank"><?= $i + 1 ?></span>
                 <?php if (!empty($p['image_path']) && file_exists(UPLOAD_DIR . $p['image_path'])): ?>
@@ -1011,6 +1048,7 @@ $storeClose = getSetting('store_close_time', '20:00');
                 <?php else: ?>
                   <span class="spotlight-card-img-icon"><i class="fa-solid fa-mug-hot"></i></span>
                 <?php endif; ?>
+                <?php if (empty($p['is_orderable'])): ?><span class="unavailable-badge">Unavailable</span><?php endif; ?>
               </div>
               <div class="spotlight-card-body">
                 <div class="spotlight-card-name"><?= e($p['name']) ?></div>
@@ -1036,21 +1074,23 @@ $storeClose = getSetting('store_close_time', '20:00');
           <div class="cat-section-title"><?= e($cat['name']) ?></div>
           <div class="menu-grid">
             <?php foreach ($catProducts as $p): ?>
-              <div class="menu-card"
+              <div class="menu-card<?= empty($p['is_orderable']) ? ' unavailable' : '' ?>"
                 id="card-<?= $p['id'] ?>"
                 data-cat="<?= $p['cat_id'] ?>"
                 data-name="<?= strtolower(e($p['name'])) ?>"
+                aria-disabled="<?= empty($p['is_orderable']) ? 'true' : 'false' ?>"
                 role="button"
-                tabindex="0"
-                aria-label="Add <?= e($p['name']) ?>, <?= peso($p['price']) ?>"
+                tabindex="<?= empty($p['is_orderable']) ? '-1' : '0' ?>"
+                aria-label="<?= e($p['name']) ?><?= empty($p['is_orderable']) ? ', unavailable' : ', ' . e(peso($p['price'])) ?>"
                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
-                onclick="onCardClick(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name'])) ?>, <?= (float)$p['price'] ?>, <?= htmlspecialchars(json_encode($p['image_path'] ?? '')) ?>, <?= (int)$p['has_sizes'] ?>, <?= (int)$p['has_sugar'] ?>, <?= (int)$p['has_addons'] ?>)">
+                onclick="if(<?= empty($p['is_orderable']) ? 'false' : 'true' ?>) onCardClick(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name'])) ?>, <?= (float)$p['price'] ?>, <?= htmlspecialchars(json_encode($p['image_path'] ?? '')) ?>, <?= (int)$p['has_sizes'] ?>, <?= (int)$p['has_sugar'] ?>, <?= (int)$p['has_addons'] ?>)">
                 <div class="menu-card-img">
                   <?php if (!empty($p['image_path']) && file_exists(UPLOAD_DIR . $p['image_path'])): ?>
                     <img src="<?= $imgBase . e($p['image_path']) ?>" alt="<?= e($p['name']) ?>" loading="lazy">
                   <?php else: ?>
                     <span class="menu-card-img-icon"><i class="fa-solid fa-mug-hot"></i></span>
                   <?php endif; ?>
+                  <?php if (empty($p['is_orderable'])): ?><span class="unavailable-badge">Unavailable</span><?php endif; ?>
                   <?php if ($p['total_sold'] >= $bestSellerThreshold && $p['total_sold'] > 0): ?>
                     <div class="best-seller-badge"><i class="fa-solid fa-fire"></i> Best Seller</div>
                   <?php endif; ?>
@@ -1111,8 +1151,8 @@ $storeClose = getSetting('store_close_time', '20:00');
         <input class="field-input" id="cartNotes" placeholder="Notes (optional)" style="margin-top:10px">
 
         <div class="loyalty-cart-option">
-          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyBalance >= 100 ? '' : 'disabled' ?>> Redeem points</label>
-          <span id="loyaltyCartHint"><?= $loyaltyReady ? $loyaltyBalance . ' points available · 100 points = ₱10 off' : 'Points will be available after the loyalty database migration is applied.' ?></span>
+          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyBalance >= $loyaltyRules['redeem_points'] ? '' : 'disabled' ?>> Redeem points</label>
+          <span id="loyaltyCartHint"><?= $loyaltyReady ? number_format($loyaltyBalance) . ' points available · ' . number_format($loyaltyRules['redeem_points']) . ' points = ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' off' : 'Points will be available after the loyalty database migration is applied.' ?></span>
         </div>
         <div class="cart-total-row loyalty-subtotal-row" id="cartSubtotalRow" style="margin-top:12px">
           <span>Subtotal</span><span id="cartSubtotal">₱0.00</span>
@@ -1210,6 +1250,7 @@ $storeClose = getSetting('store_close_time', '20:00');
       <div id="cmImg" style="height:168px;border-radius:14px;background:var(--surface-raised);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px"></div>
       <h3 id="cmName" style="font-size:21px;margin-bottom:6px"></h3>
       <div id="cmPrice" style="color:var(--primary-color);font-weight:700;margin-bottom:16px"></div>
+      <div id="cmStockInfo" role="status" aria-live="polite" hidden style="padding:10px 12px;margin-bottom:14px;border-radius:10px;font-size:13px;font-weight:600"></div>
 
       <div id="cmSizeBlock" hidden>
         <div class="field-label">Size</div>
@@ -1229,11 +1270,11 @@ $storeClose = getSetting('store_close_time', '20:00');
 
       <div style="display:flex;align-items:center;gap:14px;margin-top:18px">
         <div style="display:flex;align-items:center;gap:10px">
-          <button class="qty-btn" onclick="cmChangeQty(-1)">−</button>
+          <button class="qty-btn" id="cmQtyMinus" onclick="cmChangeQty(-1)">−</button>
           <span id="cmQty" style="min-width:20px;text-align:center;font-weight:700">1</span>
-          <button class="qty-btn" onclick="cmChangeQty(1)">+</button>
+          <button class="qty-btn" id="cmQtyPlus" onclick="cmChangeQty(1)">+</button>
         </div>
-        <button class="btn btn-primary" style="flex:1" onclick="confirmAddToCart()">Add to Cart — <span id="cmTotal"></span></button>
+        <button class="btn btn-primary" id="cmAddButton" style="flex:1" onclick="confirmAddToCart()">Add to Cart — <span id="cmTotal"></span></button>
       </div>
     </div>
   </div>
@@ -1264,6 +1305,8 @@ $storeClose = getSetting('store_close_time', '20:00');
     const APP_URL = '<?= APP_URL ?>';
     const IS_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
+    window.LOYALTY_REDEEM_POINTS = <?= (int) $loyaltyRules['redeem_points'] ?>;
+    window.LOYALTY_REDEEM_DISCOUNT = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
     window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;
     if (!IS_LOGGED_IN) {
       sessionStorage.removeItem('shop_cart');
@@ -1321,6 +1364,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     }
 
     /* ── Customize modal ── */
+    let _cmStockRequest = 0;
     let _cm = {
       id: null,
       name: null,
@@ -1332,7 +1376,11 @@ $storeClose = getSetting('store_close_time', '20:00');
       sizeIdx: 0,
       sugarIdx: 0,
       selectedAddons: [],
-      qty: 1
+      qty: 1,
+      stockEstimate: null,
+      stockLoading: false,
+      stockRequest: 0,
+      maxToAdd: null
     };
 
     function openCustomModal(id, name, base, imgPath, hasSizes, hasSugar, hasAddons) {
@@ -1347,7 +1395,11 @@ $storeClose = getSetting('store_close_time', '20:00');
         sizeIdx: 0,
         sugarIdx: 0,
         selectedAddons: [],
-        qty: 1
+        qty: 1,
+        stockEstimate: null,
+        stockLoading: true,
+        stockRequest: 0,
+        maxToAdd: null
       };
       document.getElementById('cmName').textContent = name;
       const imgBox = document.getElementById('cmImg');
@@ -1371,17 +1423,20 @@ $storeClose = getSetting('store_close_time', '20:00');
       if (hasAddons) {
         fetch(`${APP_URL}/api/get_product_addons.php?product_id=${id}`)
           .then(r => r.json()).then(data => {
+            if (Number(_cm.id) !== Number(id)) return;
             const list = data.addons || [];
             _cm.addons = list;
             document.getElementById('cmAddons').innerHTML = list.map(a =>
               `<label style="display:flex;align-items:center;gap:8px;padding:6px 0"><input type="checkbox" onchange="cmToggleAddon(${a.id})"> ${a.name} (+\u20b1${a.price})</label>`
             ).join('');
+            cmUpdateStockEstimate();
           });
       }
       document.getElementById('cmNote').value = '';
       document.getElementById('cmQty').textContent = '1';
       cmUpdateTotal();
       document.getElementById('customModal').hidden = false;
+      cmUpdateStockEstimate();
     }
 
     function closeCustomModal() {
@@ -1396,6 +1451,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         el.setAttribute('aria-checked', i === idx ? 'true' : 'false');
       });
       cmUpdateTotal();
+      if (kind === 'size') cmUpdateStockEstimate();
     }
 
     function cmToggleAddon(id) {
@@ -1403,12 +1459,77 @@ $storeClose = getSetting('store_close_time', '20:00');
       if (i === -1) _cm.selectedAddons.push(id);
       else _cm.selectedAddons.splice(i, 1);
       cmUpdateTotal();
+      cmUpdateStockEstimate();
     }
 
     function cmChangeQty(d) {
-      _cm.qty = Math.max(1, _cm.qty + d);
+      const max = _cm.maxToAdd === null ? 99 : Math.min(99, _cm.maxToAdd);
+      _cm.qty = Math.max(1, Math.min(max || 1, _cm.qty + d));
       document.getElementById('cmQty').textContent = _cm.qty;
       cmUpdateTotal();
+    }
+
+    async function cmUpdateStockEstimate() {
+      const box = document.getElementById('cmStockInfo');
+      const addButton = document.getElementById('cmAddButton');
+      if (!_cm.id || !box || !addButton) return;
+      const requestId = ++_cmStockRequest;
+      _cm.stockRequest = requestId;
+      _cm.stockLoading = true;
+      _cm.stockEstimate = null;
+      _cm.maxToAdd = null;
+      box.hidden = false;
+      box.style.background = 'var(--surface-raised)';
+      box.style.color = 'var(--text-muted)';
+      box.textContent = 'Checking available quantity…';
+      addButton.disabled = true;
+      const params = new URLSearchParams({ product_id: _cm.id });
+      if (_cm.hasSizes) params.set('size_label', SIZES[_cm.sizeIdx].label);
+      _cm.selectedAddons.forEach(id => params.append('addon_ids[]', id));
+      try {
+        const response = await fetch(`${APP_URL}/api/product-stock-estimate.php?${params.toString()}`);
+        const result = await response.json();
+        if (requestId !== _cmStockRequest) return;
+        if (!response.ok || !result.success) throw new Error(result.error || 'Stock estimate unavailable.');
+        _cm.stockLoading = false;
+        _cm.stockEstimate = result;
+        if (!result.tracked) {
+          box.hidden = true;
+          _cm.maxToAdd = null;
+        } else {
+          const cart = getCart();
+          const currentQty = cart.filter(item => Number(item.productId) === Number(_cm.id)).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+          _cm.maxToAdd = Math.max(0, Number(result.max_quantity || 0) - currentQty);
+          cart.filter(item => Number(item.productId) === Number(_cm.id)).forEach(item => { item.stockMax = Number(result.max_quantity || 0); });
+          if (cart.length) saveCart(cart);
+          box.hidden = false;
+          if (result.max_quantity < 1) {
+            box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
+            box.style.color = 'var(--status-cancelled, #b42318)';
+            box.textContent = 'Unavailable — estimated quantity: 0';
+          } else if (result.low_stock) {
+            box.style.background = 'var(--status-warning-bg, #fff4d6)';
+            box.style.color = 'var(--status-warning, #8a5a00)';
+            box.textContent = `Low stock — estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_cm.maxToAdd} more can be added` : ''}`;
+          } else {
+            box.style.background = 'var(--surface-raised)';
+            box.style.color = 'var(--text-muted)';
+            box.textContent = `Estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_cm.maxToAdd} more can be added` : ''}`;
+          }
+        }
+        _cm.qty = Math.max(1, Math.min(_cm.qty, _cm.maxToAdd === null ? 99 : Math.max(1, _cm.maxToAdd)));
+        document.getElementById('cmQty').textContent = _cm.qty;
+        cmUpdateTotal();
+      } catch (error) {
+        if (requestId !== _cmStockRequest) return;
+        _cm.stockLoading = false;
+        _cm.maxToAdd = 0;
+        box.hidden = false;
+        box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
+        box.style.color = 'var(--status-cancelled, #b42318)';
+        box.textContent = error.message;
+        cmUpdateTotal();
+      }
     }
 
     function cmUnitPrice() {
@@ -1424,9 +1545,17 @@ $storeClose = getSetting('store_close_time', '20:00');
     function cmUpdateTotal() {
       document.getElementById('cmPrice').textContent = '\u20b1' + cmUnitPrice().toFixed(2) + ' base';
       document.getElementById('cmTotal').textContent = '\u20b1' + (cmUnitPrice() * _cm.qty).toFixed(2);
+      const max = _cm.maxToAdd;
+      document.getElementById('cmQtyPlus').disabled = _cm.stockLoading || (max !== null && _cm.qty >= max);
+      document.getElementById('cmQtyMinus').disabled = _cm.qty <= 1;
+      document.getElementById('cmAddButton').disabled = _cm.stockLoading || max === 0 || (max !== null && _cm.qty > max);
     }
 
     function confirmAddToCart() {
+      if (_cm.stockLoading || _cm.maxToAdd === 0 || (_cm.maxToAdd !== null && _cm.qty > _cm.maxToAdd)) {
+        showToast('warning', 'The selected product quantity exceeds the estimated stock available.');
+        return;
+      }
       const cart = getCart();
       const addonNames = _cm.selectedAddons.map(id => _cm.addons.find(a => a.id === id)?.name).filter(Boolean);
       cart.push({
@@ -1439,6 +1568,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         addon_ids: [..._cm.selectedAddons],
         unit_price: cmUnitPrice(),
         qty: _cm.qty,
+        stockMax: _cm.stockEstimate?.tracked ? Number(_cm.stockEstimate.max_quantity) : null,
         note: document.getElementById('cmNote').value.trim(),
       });
       saveCart(cart);

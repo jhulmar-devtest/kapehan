@@ -19,7 +19,7 @@
 
   <!-- Shop header -->
   <div class="rcpt-header">
-    <div class="rcpt-icon"><i class="fa-solid fa-mug-hot"></i></div>
+    <img class="rcpt-logo" src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="<?= e(APP_NAME) ?> logo">
     <div class="rcpt-shop-name"><?= e(APP_NAME) ?></div>
     <div class="rcpt-tagline"><?= e(APP_TAGLINE) ?></div>
   </div>

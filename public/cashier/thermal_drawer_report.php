@@ -57,6 +57,25 @@ if ($report['status'] === 'closed') {
 }
 $printer->feed(1);
 $printer->sep('-');
+$printer->center('CLOSE / REOPEN HISTORY');
+if (empty($report['closure_events'])) {
+  $printer->line('No closes or reopens');
+} else {
+  foreach ($report['closure_events'] as $event) {
+    $printer->wrapLeft('Closed ' . date('g:i A', strtotime($event['closed_at'])) . ' by ' . ($event['closed_by_name'] ?? 'Cashier'));
+    $printer->amount('Close count', (float)$event['closing_amount']);
+    $printer->amount('Close difference', (float)$event['variance']);
+    if (!empty($event['reopen_id'])) {
+      $printer->wrapLeft('Reopened ' . date('g:i A', strtotime($event['reopened_at'])) . ' by ' . ($event['reopened_by_name'] ?? 'Cashier'));
+      $printer->amount('Recount', (float)$event['reopen_recounted_amount']);
+      $printer->amount('Reopen difference', (float)$event['reopen_variance']);
+      $printer->wrapLeft('Reason: ' . $event['reopen_reason']);
+    }
+    $printer->sep('-');
+  }
+}
+$printer->feed(1);
+$printer->sep('-');
 $printer->center('CASH MOVEMENTS');
 if (!$report['movements']) {
   $printer->line('No cash movements');

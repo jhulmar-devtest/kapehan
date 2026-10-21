@@ -8,4 +8,4 @@ if (isLoggedIn() && in_array(currentRole(), [ROLE_ADMIN, ROLE_CASHIER], true)) {
   redirectByRole();
 }
 
-require __DIR__ . '/public/menu.php';
+require __DIR__ . '/public/landing.php';

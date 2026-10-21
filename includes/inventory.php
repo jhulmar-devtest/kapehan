@@ -99,6 +99,76 @@ function inventoryRecipeForProduct(PDO $db, int $productId, string $sizeLabel = 
   return array_filter($recipe, static fn($amount) => (float) $amount > 0);
 }
 
+/** Estimate how many units of a selected product configuration remain makeable. */
+function inventoryProductStockEstimate(PDO $db, int $productId, string $sizeLabel = '', array $addonIds = []): array
+{
+  $productStmt = $db->prepare('SELECT has_sizes FROM products WHERE id = ? AND is_available = 1 LIMIT 1');
+  $productStmt->execute([$productId]);
+  $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+  if (!$product) throw new RuntimeException('This product is no longer available.');
+
+  $sizeLabel = trim($sizeLabel);
+  if (!(bool) $product['has_sizes']) $sizeLabel = '';
+  elseif ($sizeLabel !== '' && !in_array($sizeLabel, inventorySizeLabels($db), true)) {
+    throw new RuntimeException('The selected size is no longer available.');
+  }
+
+  $usage = inventoryRecipeForProduct($db, $productId, $sizeLabel);
+  $trackedStmt = $db->prepare('SELECT 1 FROM product_ingredients WHERE product_id = ? LIMIT 1');
+  $trackedStmt->execute([$productId]);
+  $tracked = (bool) $trackedStmt->fetchColumn();
+
+  $addonIds = array_values(array_unique(array_filter(
+    array_map('intval', array_filter($addonIds, 'is_scalar')),
+    static fn($id) => $id > 0
+  )));
+  if ($addonIds) {
+    if (!inventoryAddonSchemaAvailable($db)) {
+      throw new RuntimeException('Add-on inventory tracking is not set up yet.');
+    }
+    $allowedStmt = $db->prepare(
+      "SELECT a.id FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
+        WHERE pa.product_id = ? AND a.status = 'active'
+          AND a.id IN (" . implode(',', array_fill(0, count($addonIds), '?')) . ')'
+    );
+    $allowedStmt->execute(array_merge([$productId], $addonIds));
+    $allowed = array_map('intval', $allowedStmt->fetchAll(PDO::FETCH_COLUMN));
+    if (count($allowed) !== count($addonIds)) throw new RuntimeException('An add-on is no longer available for this product.');
+    foreach ($addonIds as $addonId) {
+      $addonRecipe = $db->prepare('SELECT inventory_item_id, qty_per_unit FROM addon_ingredients WHERE addon_id = ?');
+      $addonRecipe->execute([$addonId]);
+      $rows = $addonRecipe->fetchAll(PDO::FETCH_ASSOC);
+      if (!$rows) throw new RuntimeException('Inventory use has not been configured for a selected add-on.');
+      foreach ($rows as $row) {
+        $itemId = (int) $row['inventory_item_id'];
+        $usage[$itemId] = ($usage[$itemId] ?? 0.0) + (float) $row['qty_per_unit'];
+      }
+      $tracked = true;
+    }
+  }
+
+  if (!$usage) {
+    if ($tracked) throw new RuntimeException('This product size does not have a complete inventory recipe.');
+    return ['tracked' => false, 'max_quantity' => null, 'low_stock' => false];
+  }
+
+  $stock = inventoryStockSnapshot($db, array_keys($usage));
+  $maxQuantity = 999;
+  $lowStock = false;
+  foreach ($usage as $itemId => $perUnit) {
+    if ($perUnit <= 0 || !isset($stock[$itemId])) {
+      $maxQuantity = 0;
+      $lowStock = true;
+      continue;
+    }
+    $available = max(0, (float) $stock[$itemId]['available']);
+    $maxQuantity = min($maxQuantity, (int) floor(($available + 0.000001) / $perUnit));
+    if ($available <= (float) ($stock[$itemId]['reorder_level'] ?? 0)) $lowStock = true;
+  }
+
+  return ['tracked' => true, 'max_quantity' => max(0, $maxQuantity), 'low_stock' => $lowStock];
+}
+
 /** Aggregate recipe use for order-detail rows, honoring size labels in notes. */
 function inventoryRequirementsForDetails(PDO $db, array $details): array
 {
@@ -210,7 +280,7 @@ function inventoryStockSnapshot(PDO $db, ?array $itemIds = null, bool $forUpdate
     $where = ' WHERE id IN (' . implode(',', array_fill(0, count($itemIds), '?')) . ')';
     $params = $itemIds;
   }
-  $sql = 'SELECT id, name, unit, quantity_on_hand FROM inventory_items' . $where . ' ORDER BY id';
+  $sql = 'SELECT id, name, unit, quantity_on_hand, reorder_level FROM inventory_items' . $where . ' ORDER BY id';
   if ($forUpdate) $sql .= ' FOR UPDATE';
   $stmt = $db->prepare($sql);
   $stmt->execute($params);
@@ -220,6 +290,7 @@ function inventoryStockSnapshot(PDO $db, ?array $itemIds = null, bool $forUpdate
     $items[$id] = [
       'id' => $id, 'name' => $row['name'], 'unit' => $row['unit'],
       'on_hand' => (float) $row['quantity_on_hand'], 'reserved' => 0.0,
+      'reorder_level' => (float) $row['reorder_level'],
     ];
   }
   if ($items && inventoryReservationSchemaAvailable($db)) {

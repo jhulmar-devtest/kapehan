@@ -109,7 +109,8 @@ function renderCartSidebar() {
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
   const loyaltyCheckbox = document.getElementById("redeemLoyaltyCheckbox");
   if (loyaltyCheckbox) {
-    const eligible = Number(window.LOYALTY_BALANCE || 0) >= 100 && subtotal >= 10;
+    const eligible = Number(window.LOYALTY_BALANCE || 0) >= Number(window.LOYALTY_REDEEM_POINTS || 100)
+      && subtotal >= Number(window.LOYALTY_REDEEM_DISCOUNT || 10);
     loyaltyCheckbox.disabled = !eligible;
     if (!eligible) loyaltyCheckbox.checked = false;
   }
@@ -129,15 +130,26 @@ function renderCartSidebar() {
 function getCartLoyaltyRedemption(amount) {
   const checkbox = document.getElementById("redeemLoyaltyCheckbox");
   const balance = Number(window.LOYALTY_BALANCE || 0);
-  if (!checkbox?.checked || balance < 100) return { points: 0, discount: 0 };
-  const blocks = Math.min(Math.floor(balance / 100), Math.floor(Math.round(amount * 100) / 1000));
-  return { points: blocks * 100, discount: blocks * 10 };
+  const pointsRequired = Number(window.LOYALTY_REDEEM_POINTS || 100);
+  const discount = Number(window.LOYALTY_REDEEM_DISCOUNT || 10);
+  if (!checkbox?.checked || balance < pointsRequired || amount < discount) return { points: 0, discount: 0 };
+  return { points: pointsRequired, discount };
 }
 
 function cartChangeQty(lineId, d) {
   const cart = getCart();
   const item = cart.find((i) => i.lineId === lineId);
-  if (item) item.qty = Math.max(1, item.qty + d);
+  if (!item) return;
+  const productItems = cart.filter((i) => Number(i.productId) === Number(item.productId));
+  const stockCaps = productItems
+    .filter((i) => i.stockMax !== null && i.stockMax !== undefined && Number.isFinite(Number(i.stockMax)))
+    .map((i) => Number(i.stockMax));
+  const nextProductQty = productItems.reduce((sum, i) => sum + Number(i.qty || 0), 0) + d;
+  if (d > 0 && stockCaps.length && nextProductQty > Math.min(...stockCaps)) {
+    showToast("warning", `Estimated stock limit reached for ${item.name}.`);
+    return;
+  }
+  item.qty = Math.max(1, item.qty + d);
   saveCart(cart);
   renderCartSidebar();
 }
@@ -356,8 +368,8 @@ function submitOrder() {
         if (redeemCheckbox) redeemCheckbox.checked = false;
         if (Number.isFinite(Number(res.loyalty_balance))) window.LOYALTY_BALANCE = Number(res.loyalty_balance);
         const loyaltyHint = document.getElementById("loyaltyCartHint");
-        if (loyaltyHint) loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · 100 points = ₱10 off`;
-        if (redeemCheckbox) redeemCheckbox.disabled = Number(window.LOYALTY_BALANCE || 0) < 100;
+        if (loyaltyHint) loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · ${window.LOYALTY_REDEEM_POINTS || 100} points = ₱${Number(window.LOYALTY_REDEEM_DISCOUNT || 10).toFixed(2)} off`;
+        if (redeemCheckbox) redeemCheckbox.disabled = Number(window.LOYALTY_BALANCE || 0) < Number(window.LOYALTY_REDEEM_POINTS || 100);
         closePaymentModal();
         closeCart();
         openConfirmModal(res, { pickupLabel, pickupDate });

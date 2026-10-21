@@ -29,6 +29,7 @@ if (!$user) {
 }
 
 $loyaltyReady = loyaltyLedgerAvailable($db);
+$loyaltyRules = loyaltyRules($db);
 $loyaltyBalance = loyaltyPointsBalance($db, $role, $userId);
 $loyaltyEntries = loyaltyHistory($db, $role, $userId, 30);
 
@@ -526,7 +527,7 @@ $ordersUrl = APP_URL . '/orders.php';
 
         <section class="loyalty-panel" aria-labelledby="loyaltyHeading">
           <div class="profile-card-title" id="loyaltyHeading" style="font-size:1.1rem"><i class="fa-solid fa-star" style="color:#a46a3b"></i> Loyalty Points</div>
-          <div class="profile-card-sub" style="margin-bottom:0"><?= $loyaltyReady ? 'Earn 1 point for every ₱10 you pay. Redeem 100 points for ₱10 off a future order.' : 'Loyalty points will be available after the database migration is applied.' ?></div>
+          <div class="profile-card-sub" style="margin-bottom:0"><?= $loyaltyReady ? 'Earn ' . number_format($loyaltyRules['points_per_10_spent']) . ' point' . ($loyaltyRules['points_per_10_spent'] === 1 ? '' : 's') . ' for every ₱10 you pay. Redeem ' . number_format($loyaltyRules['redeem_points']) . ' points for ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' off an order (once per order).' : 'Loyalty points will be available after the database migration is applied.' ?></div>
           <div class="loyalty-balance">
             <div><strong><?= number_format($loyaltyBalance) ?></strong><span>available points</span></div>
             <i class="fa-solid fa-mug-hot" style="font-size:1.8rem;opacity:.85" aria-hidden="true"></i>

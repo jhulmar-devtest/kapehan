@@ -998,7 +998,7 @@ if (isLoggedIn()) redirectByRole();
 
   <nav class="nav" id="navbar">
     <a href="#" class="nav-logo">
-      <div class="nav-logo-icon"><img src="../assets/images/logo.png" alt="Logo"></div>
+      <div class="nav-logo-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
       <div>
         <div class="nav-logo-text"><?= APP_NAME ?></div>
         <div class="nav-logo-sub">EARIST Cavite Campus</div>
@@ -1151,7 +1151,7 @@ if (isLoggedIn()) redirectByRole();
 
   <footer class="footer">
     <div class="footer-brand">
-      <div class="footer-brand-icon"><img src="../assets/images/logo.png" alt="Logo"></div>
+      <div class="footer-brand-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
       <div>
         <div class="footer-brand-name"><?= APP_NAME ?></div>
         <div class="footer-brand-sub">EARIST Cavite Campus</div>

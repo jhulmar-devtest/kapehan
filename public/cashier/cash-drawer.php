@@ -15,34 +15,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   elseif ($amount >= 0) $amount = round($amount, 2);
   $drawerId = (int)($_POST['drawer_id'] ?? 0);
 
-  if (in_array($action, ['open', 'handoff_submit', 'handoff_confirm', 'close', 'movement_in', 'movement_out'], true) && $amount < 0) {
+  if (in_array($action, ['open', 'reopen'], true)) {
+    $errorMessage = 'Only an admin can open or reopen the shared drawer.';
+  } elseif (in_array($action, ['handoff_submit', 'handoff_confirm', 'close', 'movement_in', 'movement_out'], true) && $amount < 0) {
     $errorMessage = 'Enter a valid amount of zero or more.';
-  } elseif ($action === 'open') {
-    try {
-      $db->beginTransaction();
-      $active = $db->query("SELECT id FROM cash_drawer_days WHERE status='open' LIMIT 1 FOR UPDATE")->fetchColumn();
-      if ($active) {
-        throw new RuntimeException('The shared drawer is already open. Record a handoff or close the current drawer day.');
-      }
-      $stmt = $db->prepare('INSERT INTO cash_drawer_days (business_date, opening_amount, opened_by) VALUES (?, ?, ?)');
-      $stmt->execute([$today, $amount, currentUserId()]);
-      $drawerId = (int)$db->lastInsertId();
-      $db->commit();
-      flash('global', 'Drawer day opened. The starting fund has been recorded.', 'success');
-      redirect(APP_URL . '/cashier/cash-drawer.php?day=' . $drawerId);
-    } catch (Throwable $e) {
-      if ($db->inTransaction()) $db->rollBack();
-      $errorMessage = $e instanceof PDOException && $e->getCode() === '23000'
-        ? 'A drawer record already exists for today.'
-        : $e->getMessage();
-    }
   } elseif (in_array($action, ['handoff_submit', 'handoff_confirm', 'close', 'movement_in', 'movement_out'], true)) {
     try {
       $db->beginTransaction();
-      $stmt = $db->prepare("SELECT * FROM cash_drawer_days WHERE id=? AND status='open' FOR UPDATE");
+      $stmt = $db->prepare('SELECT * FROM cash_drawer_days WHERE id=? FOR UPDATE');
       $stmt->execute([$drawerId]);
       $drawer = $stmt->fetch(PDO::FETCH_ASSOC);
-      if (!$drawer) throw new RuntimeException('This drawer day is no longer open. Refresh the page.');
+      if (!$drawer) throw new RuntimeException('This drawer day no longer exists. Refresh the page.');
+      if ($drawer['status'] !== 'open') throw new RuntimeException('This drawer day is no longer open. Refresh the page.');
 
       $note = sanitizeString($_POST['note'] ?? '', 255);
       if ($action === 'handoff_submit') {
@@ -87,14 +71,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ->execute([$drawerId, currentUserId(), $direction, $amount, $note]);
         $db->commit();
         flash('global', 'Cash movement recorded.', 'success');
-      } else {
+      } elseif ($action === 'close') {
         if (cashDrawerHasPendingHandoff($db, $drawerId)) {
           throw new RuntimeException('Resolve the pending handoff before closing the drawer day.');
         }
         $expected = cashDrawerExpectedAmount($db, $drawerId, (float)$drawer['opening_amount']);
         $variance = round($amount - $expected, 2);
-        $db->prepare("UPDATE cash_drawer_days SET status='closed', closing_amount=?, expected_closing_amount=?, variance=?, closed_by=?, closed_at=NOW() WHERE id=? AND status='open'")
-          ->execute([$amount, $expected, $variance, currentUserId(), $drawerId]);
+        $closedAt = (string)$db->query('SELECT NOW()')->fetchColumn();
+        $db->prepare('INSERT INTO cash_drawer_closures (drawer_day_id, closed_by, closing_amount, expected_closing_amount, variance, closed_at) VALUES (?,?,?,?,?,?)')
+          ->execute([$drawerId, currentUserId(), $amount, $expected, $variance, $closedAt]);
+        $db->prepare("UPDATE cash_drawer_days SET status='closed', closing_amount=?, expected_closing_amount=?, variance=?, closed_by=?, closed_at=? WHERE id=? AND status='open'")
+          ->execute([$amount, $expected, $variance, currentUserId(), $closedAt, $drawerId]);
         $db->commit();
         flash('global', 'Drawer day closed. Variance: ' . peso($variance), $variance == 0.0 ? 'success' : 'warning');
       }
@@ -120,7 +107,6 @@ if (!$drawer && !empty($_GET['day'])) {
 }
 if (!$drawer) $drawer = $todayDrawer;
 $report = $drawer ? cashDrawerReportData($db, (int)$drawer['id']) : null;
-$canOpenToday = !$activeDrawer && !$todayDrawer;
 $hasPendingHandoff = $activeDrawer ? cashDrawerHasPendingHandoff($db, (int)$activeDrawer['id']) : false;
 $lateClose = $report && $report['status'] === 'closed'
   && date('Y-m-d', strtotime($report['closed_at'])) > $report['business_date'];
@@ -139,7 +125,7 @@ layoutHeader('Cash Drawer');
 <div class="page-header">
   <div>
     <div class="page-header-title">Shared Cash Drawer</div>
-    <div class="page-header-sub">One opening and closing count for the physical drawer each day.</div>
+    <div class="page-header-sub">Admins enter the starting fund. Cashiers record handoffs, cash movements, and the closing count.</div>
   </div>
   <?php if ($report): ?>
     <div class="page-header-actions">
@@ -154,21 +140,7 @@ layoutHeader('Cash Drawer');
 <?php endif; ?>
 
 <?php if (!$drawer): ?>
-  <div class="card" style="max-width:680px">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-cash-register"></i> Open today’s drawer</div></div>
-    <div class="card-body">
-      <p class="text-muted mb-4">Count the cash already in the physical drawer and enter it once. Other cashiers can log in without entering another starting fund.</p>
-      <form method="POST" style="display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap">
-        <?= csrfField() ?>
-        <input type="hidden" name="drawer_action" value="open">
-        <div class="form-group" style="margin:0;min-width:230px;flex:1">
-          <label class="form-label" for="opening-amount">Starting fund (₱)</label>
-          <input class="form-control" id="opening-amount" name="amount" type="number" min="0" step="0.01" required placeholder="e.g. 1500.00">
-        </div>
-        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-lock-open"></i> Open Drawer Day</button>
-      </form>
-    </div>
-  </div>
+  <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i><div>The drawer has not been opened for today yet. Ask an admin to enter the starting fund before processing walk-in orders.</div></div>
 <?php else: ?>
   <div class="stats-grid">
     <div class="stat-card stat-gold"><div class="stat-icon gold"><i class="fa-solid fa-wallet"></i></div><div class="stat-content"><div class="stat-label">Opening Fund</div><div class="stat-value"><?= peso($report['opening_amount']) ?></div><div class="stat-sub">Opened by <?= e($report['opened_by_name']) ?> · <?= date('g:i A', strtotime($report['opened_at'])) ?></div></div></div>
@@ -275,22 +247,15 @@ layoutHeader('Cash Drawer');
       <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cash movements</h3>
         <?php if (!$report['movements']): ?><div class="text-muted">No cash movements recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['movements'] as $movement): ?><div><strong><?= ucfirst($movement['direction']) ?> <?= peso($movement['amount']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= e($movement['cashier_name']) ?> · <?= date('g:i A', strtotime($movement['created_at'])) ?> · <?= e($movement['reason']) ?></div></div><?php endforeach; ?></div><?php endif; ?>
       </section>
+      <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Close/reopen history</h3>
+        <?php if (empty($report['closure_events'])): ?><div class="text-muted">No drawer closes or reopens recorded.</div><?php else: ?><div style="display:grid;gap:10px"><?php foreach ($report['closure_events'] as $event): ?><div><strong>Closed <?= date('g:i A', strtotime($event['closed_at'])) ?> · <?= e($event['closed_by_name'] ?? 'Cashier') ?></strong><div class="text-muted" style="font-size:.8rem">Counted <?= peso($event['closing_amount']) ?> · Expected <?= peso($event['expected_closing_amount']) ?> · Difference <?= peso($event['variance']) ?></div><?php if (!empty($event['reopen_id'])): ?><div class="text-muted" style="font-size:.8rem">Reopened <?= date('g:i A', strtotime($event['reopened_at'])) ?> by <?= e($event['reopened_by_name'] ?? 'Cashier') ?> · Recount <?= peso($event['reopen_recounted_amount']) ?> vs expected <?= peso($event['reopen_expected_amount']) ?> · Difference <?= peso($event['reopen_variance']) ?> · <?= e($event['reopen_reason']) ?></div><?php endif; ?></div><?php endforeach; ?></div><?php endif; ?>
+      </section>
     </div>
   </div>
 <?php endif; ?>
 
-<?php if ($canOpenToday && $report && $report['business_date'] !== $today): ?>
-  <div class="alert alert-info mt-4"><i class="fa-solid fa-circle-info"></i><div>The previous drawer day is closed. You can now open today’s drawer.</div></div>
-  <div class="card" style="max-width:680px">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-cash-register"></i> Open today’s drawer</div></div>
-    <div class="card-body">
-      <form method="POST" style="display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap">
-        <?= csrfField() ?><input type="hidden" name="drawer_action" value="open">
-        <div class="form-group" style="margin:0;min-width:230px;flex:1"><label class="form-label" for="opening-amount-today">Starting fund (₱)</label><input class="form-control" id="opening-amount-today" name="amount" type="number" min="0" step="0.01" required placeholder="e.g. 1500.00"></div>
-        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-lock-open"></i> Open Today’s Drawer</button>
-      </form>
-    </div>
-  </div>
+<?php if (!$activeDrawer && !$todayDrawer && $report && $report['business_date'] !== $today): ?>
+  <div class="alert alert-info mt-4"><i class="fa-solid fa-circle-info"></i><div>The previous drawer day is closed. Ask an admin to enter today’s starting fund before processing walk-in orders.</div></div>
 <?php endif; ?>
 
 <?php if ($report && $report['status'] === 'open' && !$hasPendingHandoff): ?>
@@ -326,6 +291,7 @@ layoutHeader('Cash Drawer');
     });
   </script>
 <?php endif; ?>
+
 
 <?php
 $recentDrawerDays = $db->query('SELECT id,business_date,status,opening_amount,closing_amount,variance FROM cash_drawer_days ORDER BY business_date DESC LIMIT 14')->fetchAll(PDO::FETCH_ASSOC);

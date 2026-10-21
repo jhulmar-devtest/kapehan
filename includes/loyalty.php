@@ -2,13 +2,9 @@
 /**
  * Loyalty point rules and ledger operations.
  *
- * Earn 1 point for each full P10 actually paid. A customer may redeem each
- * full 100 points for P10 off. Balances are derived from the immutable ledger.
+ * Loyalty rules are stored in app_settings. One redemption is allowed per
+ * order, and the discount is always capped at P10.
  */
-
-const LOYALTY_SPEND_CENTS_PER_POINT = 1000;
-const LOYALTY_REDEEM_POINTS_PER_BLOCK = 100;
-const LOYALTY_DISCOUNT_CENTS_PER_BLOCK = 1000;
 
 function loyaltyLedgerAvailable(PDO $db): bool
 {
@@ -32,21 +28,32 @@ function loyaltyAccountConfig(string $type): ?array
   };
 }
 
-function loyaltyPointsFromSpend(float $amount): int
+function loyaltyRules(PDO $db): array
 {
-  $cents = max(0, (int) round($amount * 100));
-  return intdiv($cents, LOYALTY_SPEND_CENTS_PER_POINT);
+  $redeemPoints = filter_var(getSetting('loyalty_redeem_points', '100'), FILTER_VALIDATE_INT);
+  $pointsPerTen = filter_var(getSetting('loyalty_points_per_10_spent', '1'), FILTER_VALIDATE_INT);
+  $discount = filter_var(getSetting('loyalty_redeem_discount', '10.00'), FILTER_VALIDATE_FLOAT);
+  return [
+    'redeem_points' => max(1, min(100000, $redeemPoints === false ? 100 : $redeemPoints)),
+    'discount_cents' => max(1, min(1000, (int) round(($discount === false ? 10 : $discount) * 100))),
+    'points_per_10_spent' => max(0, min(100, $pointsPerTen === false ? 1 : $pointsPerTen)),
+  ];
 }
 
-function loyaltyRedemptionFor(int $balance, float $amount): array
+function loyaltyPointsFromSpend(PDO $db, float $amount): int
 {
+  $cents = max(0, (int) round($amount * 100));
+  return intdiv($cents, 1000) * loyaltyRules($db)['points_per_10_spent'];
+}
+
+function loyaltyRedemptionFor(PDO $db, int $balance, float $amount): array
+{
+  $rules = loyaltyRules($db);
   $amountCents = max(0, (int) round($amount * 100));
-  $balanceBlocks = intdiv(max(0, $balance), LOYALTY_REDEEM_POINTS_PER_BLOCK);
-  $amountBlocks = intdiv($amountCents, LOYALTY_DISCOUNT_CENTS_PER_BLOCK);
-  $blocks = min($balanceBlocks, $amountBlocks);
+  $canRedeem = $balance >= $rules['redeem_points'] && $amountCents >= $rules['discount_cents'];
   return [
-    'points' => $blocks * LOYALTY_REDEEM_POINTS_PER_BLOCK,
-    'discount' => ($blocks * LOYALTY_DISCOUNT_CENTS_PER_BLOCK) / 100,
+    'points' => $canRedeem ? $rules['redeem_points'] : 0,
+    'discount' => $canRedeem ? $rules['discount_cents'] / 100 : 0.0,
   ];
 }
 
@@ -99,11 +106,12 @@ function loyaltyRedeemForOrder(
   if (!$lock->fetchColumn()) throw new RuntimeException('That loyalty account is no longer active.');
 
   $balance = loyaltyPointsBalance($db, $customerType, $customerId);
-  $redemption = loyaltyRedemptionFor($balance, $amount);
-  if ($redemption['points'] < LOYALTY_REDEEM_POINTS_PER_BLOCK) {
-    throw new RuntimeException($balance < LOYALTY_REDEEM_POINTS_PER_BLOCK
+  $rules = loyaltyRules($db);
+  $redemption = loyaltyRedemptionFor($db, $balance, $amount);
+  if ($redemption['points'] < $rules['redeem_points']) {
+    throw new RuntimeException($balance < $rules['redeem_points']
       ? 'This account no longer has enough points to redeem.'
-      : 'The order total is too low to redeem points.');
+      : 'The order total must be at least ₱' . number_format($rules['discount_cents'] / 100, 2) . ' to redeem points.');
   }
 
   $db->prepare(
@@ -162,7 +170,7 @@ function loyaltyAwardOrder(PDO $db, int $orderId, string $actorType, ?int $actor
   $exists->execute([$orderId]);
   if ($exists->fetchColumn()) return 0;
 
-  $points = loyaltyPointsFromSpend((float) $order['total_amount']);
+  $points = loyaltyPointsFromSpend($db, (float) $order['total_amount']);
   if ($points < 1) return 0;
   $db->prepare(
     "INSERT INTO loyalty_points_ledger (customer_type, customer_id, order_id, entry_type, points_delta, amount_value, actor_type, actor_id, note)

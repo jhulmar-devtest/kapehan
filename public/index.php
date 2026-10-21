@@ -13,4 +13,4 @@ if (isLoggedIn() && in_array(currentRole(), [ROLE_ADMIN, ROLE_CASHIER], true)) {
   redirectByRole();
 }
 
-require __DIR__ . '/menu.php';
+require __DIR__ . '/landing.php';

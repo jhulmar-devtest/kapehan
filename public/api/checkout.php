@@ -122,9 +122,10 @@ try {
     $accountLock = $db->prepare('SELECT id FROM ' . $accountConfig['table'] . ' WHERE id = ? AND is_active = 1 FOR UPDATE');
     $accountLock->execute([$customerId]);
     if (!$accountLock->fetchColumn()) throw new RuntimeException('Your account cannot redeem points right now.');
-    $redemption = loyaltyRedemptionFor(loyaltyPointsBalance($db, $role, $customerId), $total);
-    if ($redemption['points'] < LOYALTY_REDEEM_POINTS_PER_BLOCK) {
-      throw new RuntimeException('You need at least 100 points and ₱10 in the order to redeem.');
+    $loyaltyRules = loyaltyRules($db);
+    $redemption = loyaltyRedemptionFor($db, loyaltyPointsBalance($db, $role, $customerId), $total);
+    if ($redemption['points'] < $loyaltyRules['redeem_points']) {
+      throw new RuntimeException('You need at least ' . number_format($loyaltyRules['redeem_points']) . ' points and a ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' order to redeem.');
     }
   }
   $total = round($total - $redemption['discount'], 2);
@@ -186,7 +187,7 @@ try {
     'points_redeemed' => $redemptionResult['points'],
     'loyalty_discount' => $redemptionResult['discount'],
     'loyalty_balance' => $redemptionResult['balance'],
-    'points_expected_after_pickup' => loyaltyPointsFromSpend($total),
+    'points_expected_after_pickup' => loyaltyPointsFromSpend($db, $total),
     'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",
   ]);
 } catch (\Throwable $e) {
