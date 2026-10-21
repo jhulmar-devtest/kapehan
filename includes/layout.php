@@ -108,8 +108,8 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
       <i class="fa-solid fa-mug-hot" style="display:none"></i>
     </div>
     <div class="sidebar-brand-text">
-      <div class="sidebar-brand-name">EARIST Coffee</div>
-      <div class="sidebar-brand-tag">POS System</div>
+      <div class="sidebar-brand-name">Kapehan ni Amang</div>
+      <div class="sidebar-brand-tag">EARIST Cavite Campus</div>
     </div>
   </div>
 

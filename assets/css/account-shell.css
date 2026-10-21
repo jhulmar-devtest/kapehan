@@ -52,9 +52,36 @@ body {
   gap: 20px;
   height: 72px;
 }
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
 .logo img {
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: block;
+  object-fit: contain;
+  border-radius: 50%;
+  background: var(--primary-color);
+  box-shadow: var(--shadow-primary);
+}
+.logo-name,
+.logo-sub {
+  display: block;
+}
+.logo-name {
+  font-size: .86rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+}
+.logo-sub {
+  color: var(--text-muted);
+  font-size: .64rem;
+  letter-spacing: .04em;
+  margin-top: 2px;
 }
 .header-search {
   display: flex;
@@ -375,7 +402,14 @@ main.container {
     gap: 12px;
   }
   .logo img {
-    height: 32px;
+    width: 36px;
+    height: 36px;
+  }
+  .logo-name {
+    font-size: .8rem;
+  }
+  .logo-sub {
+    font-size: .58rem;
   }
   .header-actions {
     gap: 8px;

@@ -435,6 +435,10 @@ function renderOrderTimeline(string $status): string {
     <div class="container header-inner">
       <a href="<?= APP_URL ?>/menu.php" class="logo">
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
+        <span>
+          <span class="logo-name"><?= e(APP_NAME) ?></span>
+          <span class="logo-sub">EARIST Cavite Campus</span>
+        </span>
       </a>
       <form class="header-search" role="search" action="<?= APP_URL ?>/menu.php" method="GET">
         <i class="fa-solid fa-magnifying-glass"></i>
