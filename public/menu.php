@@ -137,13 +137,14 @@ $storeClose = getSetting('store_close_time', '20:00');
       background: var(--background-color);
       color: var(--text-color);
       -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
     }
 
     /* ── Shared container width — this is what keeps header/nav/content aligned (item 9) ── */
     .container {
-      max-width: 1200px;
+      max-width: 1344px;
       margin: 0 auto;
-      padding-inline: 24px;
+      padding-inline: 52px;
     }
 
     /* ── Header ── */
@@ -151,8 +152,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(243, 240, 236, .92);
-      backdrop-filter: blur(14px);
+      background: rgba(243, 240, 236, .94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border-color);
     }
 
@@ -160,30 +162,59 @@ $storeClose = getSetting('store_close_time', '20:00');
       display: flex;
       align-items: center;
       gap: 20px;
-      height: 82px;
+      height: 78px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 0 0 auto;
     }
 
     .logo img {
-      height: 46px;
+      width: 44px;
+      height: 44px;
       display: block;
+      object-fit: contain;
+      border-radius: 50%;
+      background: var(--primary-color);
+      box-shadow: var(--shadow-primary);
+    }
+
+    .logo-name {
+      display: block;
+      font-size: .86rem;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -.01em;
+    }
+
+    .logo-sub {
+      display: block;
+      color: var(--text-muted);
+      font-size: .64rem;
+      letter-spacing: .04em;
+      margin-top: 2px;
     }
 
     .header-search {
       display: flex;
       align-items: center;
       gap: 10px;
-      background: var(--surface-color);
+      background: rgba(255, 255, 255, .78);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-full);
-      padding: 10px 18px;
-      width: 360px;
-      font-size: 1.05rem;
-      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+      padding: 11px 18px;
+      width: min(390px, 38vw);
+      font-size: .9rem;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
     }
 
     .header-search:focus-within {
       border-color: var(--primary-color);
       box-shadow: 0 0 0 3px var(--primary-subtle);
+      background: var(--surface-color);
     }
 
     .header-search input {
@@ -215,11 +246,11 @@ $storeClose = getSetting('store_close_time', '20:00');
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 48px;
-      width: 48px;
+      height: 44px;
+      width: 44px;
       border-radius: 50%;
       border: 1px solid var(--border-color);
-      background: var(--surface-color);
+      background: rgba(255, 255, 255, .78);
       cursor: pointer;
       font: inherit;
       font-size: 22px;
@@ -325,14 +356,21 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     .cart-btn {
       position: relative;
-      width: 48px;
-      height: 48px;
-      border-radius: var(--radius-md);
+      width: 46px;
+      height: 46px;
+      border-radius: var(--radius-full);
       border: 1px solid var(--border-color);
-      background: var(--surface-color);
+      background: rgba(255, 255, 255, .78);
       cursor: pointer;
       font-size: 19px;
       color: var(--text-color);
+      transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .cart-btn:hover {
+      background: var(--surface-color);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
     }
 
     .cart-badge {
@@ -355,6 +393,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     /* ── Category nav (flat + horizontally scrollable — items 5 & 9) ── */
     .category-nav {
       border-top: 1px solid var(--border-color);
+      background: rgba(243, 240, 236, .72);
     }
 
     .category-scroll {
@@ -372,14 +411,14 @@ $storeClose = getSetting('store_close_time', '20:00');
     .cat-pill {
       flex: 0 0 auto;
       white-space: nowrap;
-      padding: 10px 20px;
+      padding: 9px 18px;
       border-radius: var(--radius-full);
       border: 1px solid var(--border-color);
       background: var(--surface-color);
       cursor: pointer;
       font: inherit;
       font-weight: 600;
-      font-size: 14.5px;
+      font-size: .82rem;
       color: var(--text-secondary);
       transition: background var(--transition-fast), border-color var(--transition-fast),
         color var(--transition-fast), box-shadow var(--transition-fast);
@@ -412,19 +451,21 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     /* ── Spotlight (hybrid pinned + auto-picked highlight strip) ── */
     .spotlight-section {
-      margin-bottom: 24px;
-      padding: 22px 22px 26px;
+      margin-bottom: 42px;
+      padding: 28px 28px 30px;
       border-radius: var(--radius-xl);
-      background: linear-gradient(135deg, var(--secondary-color) 0%, var(--secondary-light) 100%);
+      border: 1px solid var(--border-color);
+      background: linear-gradient(135deg, var(--surface-color) 0%, var(--surface-raised) 64%, var(--accent-subtle) 100%);
       position: relative;
       overflow: hidden;
+      box-shadow: var(--shadow-sm);
     }
 
     .spotlight-section::before {
       content: '';
       position: absolute;
       inset: 0;
-      background: radial-gradient(circle at 88% -10%, var(--accent-subtle) 0%, transparent 55%);
+      background: radial-gradient(circle at 96% -30%, var(--primary-subtle) 0%, transparent 44%);
       pointer-events: none;
     }
 
@@ -433,21 +474,22 @@ $storeClose = getSetting('store_close_time', '20:00');
       align-items: baseline;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       position: relative;
     }
 
     .spotlight-heading h2 {
       font-family: 'Instrument Serif', serif;
-      font-size: 29px;
+      font-size: clamp(1.8rem, 3vw, 2.35rem);
       font-weight: 400;
-      letter-spacing: -0.01em;
-      color: #fff;
+      letter-spacing: -0.02em;
+      color: var(--text-color);
     }
 
     .spotlight-heading p {
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.72);
+      font-size: .86rem;
+      color: var(--text-secondary);
+      margin-top: 3px;
     }
 
     .spotlight-scroll {
@@ -469,11 +511,12 @@ $storeClose = getSetting('store_close_time', '20:00');
       scroll-snap-align: start;
       width: 240px;
       background: var(--surface-color);
+      border: 1px solid var(--border-color);
       border-radius: var(--radius-lg);
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+      transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
     }
 
     .spotlight-card.unavailable,
@@ -585,11 +628,84 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     /* ── Main content ── */
     main.container {
-      padding-block: 28px 120px;
+      padding-block: 44px 120px;
+    }
+
+    .menu-intro {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+      padding: 22px 0 42px;
+    }
+
+    .menu-intro-copy {
+      max-width: 760px;
+    }
+
+    .menu-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--primary-color);
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .menu-eyebrow::before {
+      content: '';
+      width: 20px;
+      height: 1.5px;
+      border-radius: var(--radius-xs);
+      background: var(--primary-color);
+    }
+
+    .menu-intro h1 {
+      font-family: 'Instrument Serif', serif;
+      font-size: clamp(2.25rem, 4.5vw, 3.7rem);
+      font-weight: 400;
+      letter-spacing: -.03em;
+      line-height: 1.05;
+      margin-bottom: 12px;
+    }
+
+    .menu-intro h1 em {
+      color: var(--primary-color);
+      font-weight: 400;
+    }
+
+    .menu-intro p {
+      max-width: 650px;
+      color: var(--text-secondary);
+      font-size: .96rem;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .menu-hours-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      flex: 0 0 auto;
+      padding: 11px 15px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, .64);
+      color: var(--text-secondary);
+      font-size: .76rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .menu-hours-note i {
+      color: var(--primary-color);
     }
 
     .cat-section {
-      margin-bottom: 44px;
+      margin-bottom: 56px;
     }
 
     .cat-section-title {
@@ -598,9 +714,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       gap: 12px;
       font-family: 'Instrument Serif', serif;
       font-weight: 400;
-      font-size: 30px;
+      font-size: clamp(1.75rem, 2.8vw, 2.1rem);
       letter-spacing: -0.01em;
-      margin-bottom: 18px;
+      margin-bottom: 20px;
     }
 
     .cat-section-title::before {
@@ -615,7 +731,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     .menu-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
-      gap: 22px;
+      gap: 20px;
     }
 
     .menu-card {
@@ -626,17 +742,18 @@ $storeClose = getSetting('store_close_time', '20:00');
       cursor: pointer;
       position: relative;
       transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+      box-shadow: var(--shadow-xs);
     }
 
     .menu-card:hover,
     .menu-card:focus-visible {
       transform: translateY(-5px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--border-strong);
+      box-shadow: var(--shadow-lg);
+      border-color: var(--primary-glow);
     }
 
     .menu-card-img {
-      height: 190px;
+      height: 204px;
       background: var(--surface-raised);
       display: flex;
       align-items: center;
@@ -695,12 +812,12 @@ $storeClose = getSetting('store_close_time', '20:00');
     }
 
     .menu-card-body {
-      padding: 15px 17px 17px;
+      padding: 16px 18px 18px;
     }
 
     .menu-card-name {
       font-weight: 600;
-      font-size: 16.5px;
+      font-size: .98rem;
       line-height: 1.35;
       margin-bottom: 7px;
     }
@@ -714,7 +831,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     .menu-card-price {
       font-weight: 700;
       color: var(--primary-color);
-      font-size: 16px;
+      font-size: .96rem;
     }
 
     .card-rating-badge {
@@ -743,6 +860,13 @@ $storeClose = getSetting('store_close_time', '20:00');
       align-items: center;
       justify-content: center;
       font-size: 15px;
+      box-shadow: var(--shadow-primary);
+      transition: transform var(--transition-fast), background var(--transition-fast);
+    }
+
+    .menu-card:hover .menu-card-add {
+      background: var(--primary-dark);
+      transform: scale(1.06);
     }
 
     .no-results {
@@ -755,7 +879,8 @@ $storeClose = getSetting('store_close_time', '20:00');
     /* ── Footer — the staff-login link lives here, deliberately understated (item 10) ── */
     .site-footer {
       border-top: 1px solid var(--border-color);
-      padding-block: 22px;
+      padding-block: 26px;
+      background: rgba(250, 248, 245, .7);
     }
 
     .footer-inner {
@@ -766,6 +891,7 @@ $storeClose = getSetting('store_close_time', '20:00');
       gap: 10px;
       font-size: 13.5px;
       color: var(--text-muted);
+      min-height: 34px;
     }
 
     .footer-staff-link {
@@ -866,6 +992,14 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
 
       .logo {
+        min-width: 0;
+      }
+
+      .logo-name {
+        font-size: .8rem;
+      }
+
+      .logo {
         order: 1;
       }
 
@@ -895,6 +1029,25 @@ $storeClose = getSetting('store_close_time', '20:00');
 
       main.container {
         padding-block: 18px 88px;
+      }
+
+      .menu-intro {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 16px;
+        padding: 12px 0 28px;
+      }
+
+      .menu-intro h1 {
+        font-size: clamp(2.2rem, 9vw, 3rem);
+      }
+
+      .menu-intro p {
+        font-size: .9rem;
+      }
+
+      .menu-hours-note {
+        font-size: .72rem;
       }
 
       .cat-section {
@@ -981,6 +1134,10 @@ $storeClose = getSetting('store_close_time', '20:00');
     <div class="container header-inner">
       <a href="<?= APP_URL ?>/landing.php" class="logo">
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
+        <span>
+          <span class="logo-name"><?= APP_NAME ?></span>
+          <span class="logo-sub">EARIST Cavite Campus</span>
+        </span>
       </a>
 
       <form class="header-search" role="search" action="<?= APP_URL ?>/menu.php" method="GET">
@@ -1024,12 +1181,21 @@ $storeClose = getSetting('store_close_time', '20:00');
 
   <main class="container">
 
+    <section class="menu-intro" aria-labelledby="menuTitle">
+      <div class="menu-intro-copy">
+        <div class="menu-eyebrow">EARIST Cavite Campus · Made for your day</div>
+        <h1 id="menuTitle">Find your next <em>campus favorite.</em></h1>
+        <p>Browse today’s drinks and snacks, customize your order, and choose an available pickup time. We’ll keep you updated as it’s prepared.</p>
+      </div>
+      <div class="menu-hours-note"><i class="fa-regular fa-clock"></i> Today’s shop hours <?= e(date('g:i A', strtotime($storeOpen))) ?>–<?= e(date('g:i A', strtotime($storeClose))) ?></div>
+    </section>
+
     <?php if (!empty($spotlightProducts)): ?>
       <div class="spotlight-section">
         <div class="spotlight-heading">
           <div>
             <h2>Today's Picks</h2>
-            <p>Handpicked and crowd favorites, updated daily</p>
+            <p>Handpicked favorites and popular orders</p>
           </div>
         </div>
         <div class="spotlight-scroll" id="spotlightScroll">

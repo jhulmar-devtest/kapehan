@@ -73,6 +73,15 @@ if (isLoggedIn()) redirectByRole();
       transition: background var(--transition-slow), padding var(--transition-slow);
     }
 
+    .nav-inner {
+      width: 100%;
+      max-width: 1240px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
     .nav.scrolled {
       background: rgba(243, 240, 236, 0.94);
       backdrop-filter: blur(16px);
@@ -227,7 +236,7 @@ if (isLoggedIn()) redirectByRole();
       position: relative;
       z-index: 2;
       text-align: center;
-      max-width: 800px;
+      max-width: 920px;
     }
 
     .hero-tag {
@@ -294,7 +303,7 @@ if (isLoggedIn()) redirectByRole();
       font-size: 1.05rem;
       color: var(--text-secondary);
       line-height: 1.7;
-      max-width: 520px;
+      max-width: 640px;
       margin: 0 auto var(--space-10);
       font-weight: 300;
       opacity: 0;
@@ -396,7 +405,7 @@ if (isLoggedIn()) redirectByRole();
     }
 
     .section-inner {
-      max-width: 1100px;
+      max-width: 1240px;
       margin: 0 auto;
     }
 
@@ -439,7 +448,7 @@ if (isLoggedIn()) redirectByRole();
       font-size: 0.95rem;
       color: var(--text-secondary);
       line-height: 1.7;
-      max-width: 480px;
+      max-width: 620px;
       margin-bottom: 56px;
       font-weight: 300;
     }
@@ -525,7 +534,7 @@ if (isLoggedIn()) redirectByRole();
     }
 
     .features-layout {
-      max-width: 1100px;
+      max-width: 1240px;
       margin: 0 auto;
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -721,7 +730,7 @@ if (isLoggedIn()) redirectByRole();
     }
 
     .roles-grid {
-      max-width: 1100px;
+      max-width: 1240px;
       margin: 52px auto 0;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -820,6 +829,12 @@ if (isLoggedIn()) redirectByRole();
     .footer {
       border-top: 1px solid var(--border-color);
       padding: var(--space-10) 48px;
+    }
+
+    .footer-inner {
+      width: 100%;
+      max-width: 1240px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -965,6 +980,9 @@ if (isLoggedIn()) redirectByRole();
 
       .footer {
         padding: var(--space-8) var(--space-6);
+      }
+
+      .footer-inner {
         flex-direction: column;
         align-items: flex-start;
         gap: var(--space-4);
@@ -997,23 +1015,25 @@ if (isLoggedIn()) redirectByRole();
 <body>
 
   <nav class="nav" id="navbar">
-    <a href="#" class="nav-logo">
-      <div class="nav-logo-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
-      <div>
-        <div class="nav-logo-text"><?= APP_NAME ?></div>
-        <div class="nav-logo-sub">EARIST Cavite Campus</div>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="nav-logo-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
+        <div>
+          <div class="nav-logo-text"><?= APP_NAME ?></div>
+          <div class="nav-logo-sub">EARIST Cavite Campus</div>
+        </div>
+      </a>
+      <div class="nav-actions">
+        <a href="<?= APP_URL ?>/menu.php" class="btn-nav-ghost">
+          <i class="fa-solid fa-list"></i> <span class="nav-text-hide">Menu</span>
+        </a>
+        <a href="<?= APP_URL ?>/register.php" class="btn-nav btn-nav-ghost">
+          <i class="fa-solid fa-user-plus"></i> <span class="nav-text-hide">Register</span>
+        </a>
+        <a href="<?= APP_URL ?>/login.php" class="btn-nav btn-nav-primary">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In
+        </a>
       </div>
-    </a>
-    <div class="nav-actions">
-      <a href="<?= APP_URL ?>/menu.php" class="btn-nav-ghost">
-        <i class="fa-solid fa-list"></i> <span class="nav-text-hide">Menu</span>
-      </a>
-      <a href="<?= APP_URL ?>/register.php" class="btn-nav btn-nav-ghost">
-        <i class="fa-solid fa-user-plus"></i> <span class="nav-text-hide">Register</span>
-      </a>
-      <a href="<?= APP_URL ?>/login.php" class="btn-nav btn-nav-primary">
-        <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In
-      </a>
     </div>
   </nav>
 
@@ -1021,12 +1041,12 @@ if (isLoggedIn()) redirectByRole();
     <div class="hero-ring"></div>
     <div class="hero-ring hero-ring-2"></div>
     <div class="hero-inner">
-      <div class="hero-tag"><i class="fa-solid fa-location-dot"></i> EARIST Cavite Campus — Open Daily</div>
-      <h1 class="hero-headline">Your <em>campus <span class="accent-word">coffee</span></em>,<br>ordered your way</h1>
-      <p class="hero-sub">Skip the queue. Pre-order your favorite drinks and snacks online, pay securely, and pick up fresh — all without the wait.</p>
+      <div class="hero-tag"><i class="fa-solid fa-location-dot"></i> Made for the EARIST Cavite Campus</div>
+      <h1 class="hero-headline">Your campus coffee break,<br><em>made <span class="accent-word">easier</span></em></h1>
+      <p class="hero-sub">Browse drinks and snacks, choose an available pickup time, and place your order online. Follow its progress and show your claim QR when it’s ready.</p>
       <div class="hero-ctas">
-        <a href="<?= APP_URL ?>/register.php" class="btn-hero-primary"><i class="fa-solid fa-user-plus"></i> Get Started — It's Free</a>
-        <a href="<?= APP_URL ?>/login.php" class="btn-hero-ghost"><i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In</a>
+        <a href="<?= APP_URL ?>/menu.php" class="btn-hero-primary"><i class="fa-solid fa-mug-hot"></i> Explore the Menu</a>
+        <a href="<?= APP_URL ?>/register.php" class="btn-hero-ghost"><i class="fa-solid fa-user-plus"></i> Create an Account</a>
       </div>
     </div>
     <div class="hero-scroll">
@@ -1038,27 +1058,27 @@ if (isLoggedIn()) redirectByRole();
     <div class="section-inner">
       <div class="reveal">
         <div class="section-label">How it works</div>
-        <h2 class="section-title">Three steps to your<br><em>perfect order</em></h2>
-        <p class="section-sub">No more lining up between classes. Order ahead, pay online, and just walk in to collect.</p>
+        <h2 class="section-title">A simpler way to<br><em>order on campus</em></h2>
+        <p class="section-sub">Place a pre-order in a few steps, then keep an eye on its status while the shop prepares it.</p>
       </div>
       <div class="steps-grid">
         <div class="step-card reveal reveal-delay-1">
           <div class="step-number">01</div>
           <div class="step-icon"><i class="fa-solid fa-list"></i></div>
-          <div class="step-title">Browse the Menu</div>
-          <div class="step-desc">Explore our full menu of hot drinks, cold brews, and snacks. Add your favorites to your cart in seconds.</div>
+          <div class="step-title">Choose your order</div>
+          <div class="step-desc">Browse available drinks and snacks, customize your selections, and add them to your cart.</div>
         </div>
         <div class="step-card reveal reveal-delay-2">
           <div class="step-number">02</div>
           <div class="step-icon"><i class="fa-solid fa-mobile-screen"></i></div>
-          <div class="step-title">Pay Online</div>
-          <div class="step-desc">Confirm your order with GCash, PayMaya, or online banking. Your order is locked in instantly.</div>
+          <div class="step-title">Pick a time and pay</div>
+          <div class="step-desc">Choose an available pickup time and follow the GCash instructions. Enter the payment reference so the shop can verify it.</div>
         </div>
         <div class="step-card reveal reveal-delay-3">
           <div class="step-number">03</div>
           <div class="step-icon"><i class="fa-solid fa-id-card"></i></div>
-          <div class="step-title">Show ID & Collect</div>
-          <div class="step-desc">Walk to the counter when your order is ready, show your school ID, and pick it up — no waiting in line.</div>
+          <div class="step-title">Track and collect</div>
+          <div class="step-desc">Check your order status. When it’s ready, show your claim QR and school ID at the counter.</div>
         </div>
       </div>
     </div>
@@ -1069,35 +1089,35 @@ if (isLoggedIn()) redirectByRole();
       <div>
         <div class="reveal">
           <div class="section-label">Why use it</div>
-          <h2 class="section-title">Built for<br><em>busy students</em></h2>
+          <h2 class="section-title">Made for the<br><em>campus routine</em></h2>
         </div>
         <div class="features-list">
           <div class="feature-item reveal reveal-delay-1">
             <div class="feature-icon"><i class="fa-solid fa-bolt"></i></div>
             <div>
-              <div class="feature-title">Zero wait time</div>
-              <div class="feature-desc">Your order is ready by the time you arrive. No standing around between lectures.</div>
+              <div class="feature-title">Choose a pickup time</div>
+              <div class="feature-desc">Select from available pickup times for today, so you can plan around your campus schedule.</div>
             </div>
           </div>
           <div class="feature-item reveal reveal-delay-2">
             <div class="feature-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
             <div>
-              <div class="feature-title">Full order history</div>
-              <div class="feature-desc">Track every order you've placed — status updates in real time from pending to ready.</div>
+              <div class="feature-title">Follow order progress</div>
+              <div class="feature-desc">See your order history and check when an order moves from pending to preparing or ready.</div>
             </div>
           </div>
           <div class="feature-item reveal reveal-delay-3">
             <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
             <div>
-              <div class="feature-title">Secure & campus-only</div>
-              <div class="feature-desc">Enrollment verified at pickup via school ID. Your account and payments are fully secured.</div>
+              <div class="feature-title">Clear pickup verification</div>
+              <div class="feature-desc">Your claim QR helps staff find the right order, and your school ID helps confirm pickup.</div>
             </div>
           </div>
           <div class="feature-item reveal">
             <div class="feature-icon"><i class="fa-solid fa-rotate-left"></i></div>
             <div>
-              <div class="feature-title">Easy refunds</div>
-              <div class="feature-desc">Something wrong? Submit a refund request directly from your order history page.</div>
+              <div class="feature-title">Earn loyalty points</div>
+              <div class="feature-desc">Eligible purchases earn points that can be redeemed for a discount on a future order.</div>
             </div>
           </div>
         </div>
@@ -1107,12 +1127,12 @@ if (isLoggedIn()) redirectByRole();
           <div class="fcard fcard-back"></div>
           <div class="fcard fcard-back2"></div>
           <div class="fcard fcard-main">
-            <div class="fcard-label">Your Order — #ECC-20250001</div>
+            <div class="fcard-label">Your Order — Preparing</div>
             <div class="fcard-order-item"><span class="fcard-order-name">Café Latte</span><span class="fcard-order-qty">×2</span><span class="fcard-order-price">₱120.00</span></div>
             <div class="fcard-order-item"><span class="fcard-order-name">Iced Americano</span><span class="fcard-order-qty">×1</span><span class="fcard-order-price">₱65.00</span></div>
             <div class="fcard-order-item"><span class="fcard-order-name">Cheese Pandesal</span><span class="fcard-order-qty">×2</span><span class="fcard-order-price">₱40.00</span></div>
-            <div class="fcard-total"><span class="fcard-total-label">Total Paid</span><span class="fcard-total-amount">₱225.00</span></div>
-            <div class="fcard-status">Ready for pickup</div>
+            <div class="fcard-total"><span class="fcard-total-label">Order total</span><span class="fcard-total-amount">₱225.00</span></div>
+            <div class="fcard-status">Order status updates</div>
           </div>
         </div>
       </div>
@@ -1121,28 +1141,28 @@ if (isLoggedIn()) redirectByRole();
 
   <section class="roles-section">
     <div class="section-inner">
-      <div class="reveal" style="max-width:500px">
-        <div class="section-label">Access levels</div>
-        <h2 class="section-title">One system,<br><em>three roles</em></h2>
-        <p class="section-sub" style="margin-bottom:0">Whether you're a student ordering ahead, a cashier managing the counter, or an admin overseeing everything — there's a tailored experience for you.</p>
+      <div class="reveal" style="max-width:640px">
+        <div class="section-label">For customers and staff</div>
+        <h2 class="section-title">One campus shop,<br><em>connected in one place</em></h2>
+        <p class="section-sub" style="margin-bottom:0">Customers can order ahead, while the cashier and admin tools help the shop handle orders and daily operations.</p>
       </div>
       <div class="roles-grid">
         <a href="<?= APP_URL ?>/login.php" class="role-card reveal reveal-delay-1">
           <div class="role-card-icon student"><i class="fa-solid fa-graduation-cap"></i></div>
-          <div class="role-card-title">Student</div>
-          <div class="role-card-desc">Browse the menu, pre-order from anywhere on campus, pay online, and track your order status in real time.</div>
-          <div class="role-card-link">Sign in as Student <i class="fa-solid fa-arrow-right"></i></div>
+          <div class="role-card-title">Customer</div>
+          <div class="role-card-desc">Students and faculty can browse the menu, place pre-orders, follow order status, and show a claim QR at pickup.</div>
+          <div class="role-card-link">Customer sign in <i class="fa-solid fa-arrow-right"></i></div>
         </a>
         <a href="<?= APP_URL ?>/cashier-select.php" class="role-card reveal reveal-delay-2">
           <div class="role-card-icon cashier"><i class="fa-solid fa-cash-register"></i></div>
           <div class="role-card-title">Cashier</div>
-          <div class="role-card-desc">Handle walk-in orders on the POS, manage pre-order queues, process payments, and print receipts.</div>
+          <div class="role-card-desc">Process walk-in sales, verify pre-order payments, manage the pickup queue, and record drawer activity.</div>
           <div class="role-card-link">Sign in as Cashier <i class="fa-solid fa-arrow-right"></i></div>
         </a>
         <a href="<?= APP_URL ?>/staff-login.php" class="role-card reveal reveal-delay-3">
           <div class="role-card-icon admin"><i class="fa-solid fa-gauge-high"></i></div>
           <div class="role-card-title">Admin</div>
-          <div class="role-card-desc">Manage products, cashier accounts, view sales reports, approve refunds, and oversee all orders.</div>
+          <div class="role-card-desc">Manage products, inventory, staff access, store settings, cash drawer controls, and sales reports.</div>
           <div class="role-card-link">Sign in as Admin <i class="fa-solid fa-arrow-right"></i></div>
         </a>
       </div>
@@ -1150,17 +1170,19 @@ if (isLoggedIn()) redirectByRole();
   </section>
 
   <footer class="footer">
-    <div class="footer-brand">
-      <div class="footer-brand-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
-      <div>
-        <div class="footer-brand-name"><?= APP_NAME ?></div>
-        <div class="footer-brand-sub">EARIST Cavite Campus</div>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-brand-icon"><img src="<?= e(APP_URL . '/../assets/images/logo.png') ?>" alt="Logo"></div>
+        <div>
+          <div class="footer-brand-name"><?= APP_NAME ?></div>
+          <div class="footer-brand-sub">EARIST Cavite Campus</div>
+        </div>
       </div>
-    </div>
-    <div class="footer-copy">&copy; <?= date('Y') ?> EARIST Cavite Campus. All rights reserved.</div>
-    <div class="footer-links">
-      <a href="<?= APP_URL ?>/login.php">Sign In</a>
-      <a href="<?= APP_URL ?>/register.php">Register</a>
+      <div class="footer-copy">&copy; <?= date('Y') ?> EARIST Cavite Campus. All rights reserved.</div>
+      <div class="footer-links">
+        <a href="<?= APP_URL ?>/login.php">Sign In</a>
+        <a href="<?= APP_URL ?>/register.php">Register</a>
+      </div>
     </div>
   </footer>
 
