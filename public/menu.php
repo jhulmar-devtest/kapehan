@@ -732,9 +732,13 @@ $storeClose = getSetting('store_close_time', '20:00');
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
       gap: 20px;
+      align-items: stretch;
     }
 
     .menu-card {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
       background: var(--surface-color);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-lg);
@@ -747,14 +751,32 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     .menu-card:hover,
     .menu-card:focus-visible {
-      transform: translateY(-5px);
-      box-shadow: var(--shadow-lg);
-      border-color: var(--primary-glow);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: rgba(192, 57, 43, .3);
+      outline: none;
+    }
+
+    .menu-card:active {
+      transform: scale(.99);
+    }
+
+    .menu-card.unavailable {
+      cursor: default;
+      opacity: .78;
+    }
+
+    .menu-card.unavailable:hover,
+    .menu-card.unavailable:focus-visible,
+    .menu-card.unavailable:active {
+      transform: none;
+      box-shadow: var(--shadow-xs);
+      border-color: var(--border-color);
     }
 
     .menu-card-img {
-      height: 204px;
-      background: var(--surface-raised);
+      height: clamp(168px, 18vw, 218px);
+      background: linear-gradient(145deg, #f6f0e8, #ebe3d8);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -766,16 +788,23 @@ $storeClose = getSetting('store_close_time', '20:00');
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform var(--transition-slow);
+      transition: transform 420ms cubic-bezier(.2,.7,.2,1);
     }
 
-    .menu-card:hover .menu-card-img img {
-      transform: scale(1.07);
+    .menu-card:not(.unavailable):hover .menu-card-img img {
+      transform: scale(1.045);
     }
 
     .menu-card-img-icon {
-      font-size: 38px;
-      color: var(--text-placeholder);
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .62);
+      color: var(--secondary-light);
+      font-size: 24px;
+      box-shadow: var(--shadow-xs);
     }
 
     .best-seller-badge {
@@ -784,11 +813,12 @@ $storeClose = getSetting('store_close_time', '20:00');
       left: 10px;
       background: var(--accent-color);
       color: var(--text-on-accent);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
-      padding: 5px 11px;
+      padding: 6px 10px;
       border-radius: var(--radius-full);
       box-shadow: var(--shadow-xs);
+      letter-spacing: .01em;
     }
 
     .in-cart-badge {
@@ -812,26 +842,36 @@ $storeClose = getSetting('store_close_time', '20:00');
     }
 
     .menu-card-body {
-      padding: 16px 18px 18px;
+      flex: 1;
+      min-height: 104px;
+      padding: 15px 62px 16px 16px;
     }
 
     .menu-card-name {
-      font-weight: 600;
-      font-size: .98rem;
-      line-height: 1.35;
-      margin-bottom: 7px;
+      display: -webkit-box;
+      min-height: 2.6em;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-weight: 650;
+      font-size: .96rem;
+      line-height: 1.3;
+      margin-bottom: 9px;
+      letter-spacing: -.01em;
     }
 
     .menu-card-meta {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      min-height: 23px;
     }
 
     .menu-card-price {
       font-weight: 700;
       color: var(--primary-color);
-      font-size: .96rem;
+      font-size: 1rem;
+      letter-spacing: -.01em;
     }
 
     .card-rating-badge {
@@ -849,10 +889,10 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     .menu-card-add {
       position: absolute;
-      bottom: 12px;
-      right: 12px;
-      width: 34px;
-      height: 34px;
+      bottom: 15px;
+      right: 15px;
+      width: 38px;
+      height: 38px;
       border-radius: var(--radius-full);
       background: var(--primary-color);
       color: #fff;
@@ -861,12 +901,18 @@ $storeClose = getSetting('store_close_time', '20:00');
       justify-content: center;
       font-size: 15px;
       box-shadow: var(--shadow-primary);
-      transition: transform var(--transition-fast), background var(--transition-fast);
+      border: 2px solid var(--surface-color);
+      transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
     }
 
-    .menu-card:hover .menu-card-add {
+    .menu-card:not(.unavailable):hover .menu-card-add {
       background: var(--primary-dark);
       transform: scale(1.06);
+      box-shadow: 0 5px 16px rgba(192, 57, 43, .34);
+    }
+
+    .menu-card.unavailable .menu-card-add {
+      display: none;
     }
 
     .no-results {
@@ -913,16 +959,140 @@ $storeClose = getSetting('store_close_time', '20:00');
       margin-bottom: 20px;
     }
 
+    .auth-modal-box {
+      max-width: 470px;
+      max-height: min(90vh, 820px);
+      padding: 28px;
+      border: 1px solid rgba(224, 219, 212, .9);
+      box-shadow: var(--shadow-xl);
+    }
+
+    .product-modal {
+      max-width: 520px;
+      padding: 20px;
+      border: 1px solid rgba(224, 219, 212, .9);
+      box-shadow: var(--shadow-xl);
+    }
+
+    .product-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .product-modal-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: .76rem;
+      font-weight: 700;
+    }
+
+    .product-modal-kicker i {
+      color: var(--primary-color);
+    }
+
+    .product-modal .product-modal-close {
+      position: static;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--border-color);
+      border-radius: 50%;
+      background: var(--surface-raised);
+      color: var(--text-secondary);
+      font-size: 21px;
+      line-height: 1;
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .product-modal .product-modal-close:hover {
+      transform: rotate(90deg);
+      border-color: var(--primary-color);
+      background: var(--primary-subtle);
+      color: var(--primary-color);
+    }
+
+    .product-modal .product-modal-close:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 600px) {
+      .product-modal {
+        padding: 16px;
+      }
+    }
+
+    .auth-heading {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      align-items: center;
+      gap: 13px;
+      padding: 2px 28px 20px 0;
+    }
+
+    .auth-brand-mark {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      border-radius: 50%;
+      background: var(--surface-color);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .auth-brand-mark img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .auth-eyebrow {
+      color: var(--primary-color);
+      font-size: .64rem;
+      font-weight: 800;
+      letter-spacing: .11em;
+      line-height: 1.3;
+      text-transform: uppercase;
+    }
+
+    .auth-heading h2 {
+      margin-top: 2px;
+      font-family: 'Instrument Serif', serif;
+      font-size: 1.8rem;
+      font-weight: 400;
+      letter-spacing: -.02em;
+      line-height: 1.05;
+    }
+
+    .auth-heading p {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: .75rem;
+      line-height: 1.4;
+    }
+
     .tab-btn {
       flex: 1;
-      padding: 9px;
+      min-height: 40px;
+      padding: 9px 12px;
       border: none;
       background: none;
       border-radius: var(--radius-sm);
       font: inherit;
+      font-size: .85rem;
       font-weight: 700;
       cursor: pointer;
       color: var(--text-muted);
+      transition: color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
     }
 
     .tab-btn.active {
@@ -933,40 +1103,68 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     .auth-panel label {
       display: block;
-      font-size: 12.5px;
+      font-size: .76rem;
       font-weight: 700;
-      margin: 12px 0 5px;
+      margin: 13px 0 6px;
       color: var(--text-secondary);
     }
 
     .auth-panel input,
     .auth-panel select {
       width: 100%;
-      padding: 11px 13px;
+      min-height: 46px;
+      padding: 10px 13px;
       border: 1px solid var(--border-color);
-      border-radius: var(--radius-sm);
+      border-radius: 10px;
+      background: var(--surface-color);
+      color: var(--text-color);
       font: inherit;
+      font-size: 16px;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .auth-panel input:focus,
+    .auth-panel select:focus {
+      border-color: var(--primary-color);
+      outline: none;
+      box-shadow: 0 0 0 3px var(--primary-subtle);
+    }
+
+    .auth-panel input::placeholder {
+      color: var(--text-placeholder);
     }
 
     .auth-panel .btn-primary {
       width: 100%;
-      margin-top: 18px;
-      padding: 12px;
+      min-height: 48px;
+      margin-top: 20px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: .92rem;
+      box-shadow: var(--shadow-primary);
     }
 
     .link-muted {
       display: block;
       text-align: center;
-      margin-top: 12px;
-      font-size: 13px;
-      color: var(--text-muted);
+      margin-top: 15px;
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-decoration: underline;
+      text-underline-offset: 3px;
     }
 
     .checkbox-row {
       display: flex;
       align-items: flex-start;
       gap: 8px;
-      margin-top: 14px;
+      margin-top: 16px;
+      padding: 11px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--surface-raised);
+      align-items: center;
     }
 
     .checkbox-row input {
@@ -976,6 +1174,16 @@ $storeClose = getSetting('store_close_time', '20:00');
     .checkbox-row label {
       margin: 0;
       font-weight: 400;
+      font-size: .75rem;
+      line-height: 1.45;
+    }
+
+    .checkbox-row input {
+      flex: 0 0 auto;
+      width: 17px;
+      height: 17px;
+      margin-top: 1px;
+      accent-color: var(--primary-color);
     }
 
 
@@ -1065,11 +1273,12 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
 
       .menu-card-img {
-        height: 132px;
+        height: clamp(112px, 30vw, 156px);
       }
 
       .menu-card-body {
-        padding: 12px 42px 13px 12px;
+        min-height: 96px;
+        padding: 12px 45px 12px 12px;
       }
 
       .menu-card-name {
@@ -1082,10 +1291,38 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
 
       .menu-card-add {
-        width: 30px;
-        height: 30px;
+        width: 32px;
+        height: 32px;
         right: 8px;
         bottom: 8px;
+      }
+
+      .auth-modal-box {
+        max-height: 88vh;
+        padding: 22px 18px;
+      }
+
+      .auth-heading {
+        grid-template-columns: 42px minmax(0, 1fr);
+        gap: 10px;
+        padding-bottom: 16px;
+      }
+
+      .auth-brand-mark {
+        width: 40px;
+        height: 40px;
+      }
+
+      .auth-heading h2 {
+        font-size: 1.6rem;
+      }
+
+      .auth-tabs {
+        margin-bottom: 15px;
+      }
+
+      .auth-panel label {
+        margin-top: 10px;
       }
     }
 
@@ -1361,9 +1598,17 @@ $storeClose = getSetting('store_close_time', '20:00');
 
   <!-- ══════════════ AUTH MODAL (item 2 & 6) ══════════════ -->
   <div class="modal-overlay" id="authModal" hidden>
-    <div class="modal-box">
-      <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+    <div class="modal-box auth-modal-box" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" aria-describedby="authModalIntro">
+      <button class="modal-close" onclick="closeAuthModal()" aria-label="Close sign in or registration">&times;</button>
       <?php showFlash('global'); ?>
+      <div class="auth-heading">
+        <div class="auth-brand-mark"><img src="<?= APP_URL ?>/../assets/images/logo.png" alt="Kapehan ni Amang logo"></div>
+        <div>
+          <div class="auth-eyebrow">Kapehan ni Amang</div>
+          <h2 id="authModalTitle">Welcome back</h2>
+          <p id="authModalIntro">Sign in to order your campus favorites.</p>
+        </div>
+      </div>
       <div class="auth-tabs">
         <button class="tab-btn active" data-tab="login" onclick="switchAuthTab('login')">Sign In</button>
         <button class="tab-btn" data-tab="register" onclick="switchAuthTab('register')">Register</button>
@@ -1371,35 +1616,26 @@ $storeClose = getSetting('store_close_time', '20:00');
 
       <form id="loginPanel" class="auth-panel" method="POST" action="<?= APP_URL ?>/login.php">
         <?= csrfField() ?>
-        <label>Student / Faculty ID or Email</label>
-        <input type="text" name="identifier" required>
-        <label>Password</label>
-        <input type="password" name="password" required>
-        <button type="submit" class="btn btn-primary">Sign In</button>
+        <label for="loginIdentifier">Student / Faculty ID or email</label>
+        <input id="loginIdentifier" type="text" name="identifier" autocomplete="username" placeholder="Enter your ID or email" required>
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" name="password" autocomplete="current-password" placeholder="Enter your password" required>
+        <button type="submit" class="btn btn-primary">Sign in</button>
         <a href="<?= APP_URL ?>/forgot-password.php" class="link-muted">Forgot password?</a>
       </form>
 
       <form id="registerPanel" class="auth-panel" hidden method="POST" action="<?= APP_URL ?>/register.php">
         <?= csrfField() ?>
-        <label>I am a</label>
-        <select name="account_type" id="regAccountType">
-          <option value="student" <?= ($registerOld['account_type'] ?? '') === 'student' ? 'selected' : '' ?>>Student</option>
-          <option value="faculty" <?= ($registerOld['account_type'] ?? '') === 'faculty' ? 'selected' : '' ?>>Faculty</option>
-        </select>
-        <label>Full Name</label>
-        <input type="text" name="full_name" value="<?= e($registerOld['full_name'] ?? '') ?>" required>
-        <label id="idLabel">Student ID Number</label>
-        <input type="text" name="id_no" value="<?= e($registerOld['id_no'] ?? '') ?>" placeholder="e.g. 2316-00001C" required>
-        <div id="courseField">
-          <label>Course</label>
-          <input type="text" name="course" value="<?= e($registerOld['course'] ?? '') ?>">
-        </div>
-        <label>Email</label>
-        <input type="email" name="email" value="<?= e($registerOld['email'] ?? '') ?>" required>
-        <label>Password</label>
-        <input type="password" name="password" required>
-        <label>Confirm Password</label>
-        <input type="password" name="confirm_password" required>
+        <label for="regFullName">Full name</label>
+        <input id="regFullName" type="text" name="full_name" value="<?= e($registerOld['full_name'] ?? '') ?>" autocomplete="name" placeholder="Enter your full name" required>
+        <label id="idLabel" for="regIdNumber">Student / Faculty ID number</label>
+        <input id="regIdNumber" type="text" name="id_no" value="<?= e($registerOld['id_no'] ?? '') ?>" placeholder="e.g. 2316-00001C or 2023-0001" required>
+        <label for="regEmail">Email</label>
+        <input id="regEmail" type="email" name="email" value="<?= e($registerOld['email'] ?? '') ?>" autocomplete="email" placeholder="you@example.com" required>
+        <label for="regPassword">Password</label>
+        <input id="regPassword" type="password" name="password" autocomplete="new-password" placeholder="Create a password" required>
+        <label for="regConfirmPassword">Confirm password</label>
+        <input id="regConfirmPassword" type="password" name="confirm_password" autocomplete="new-password" placeholder="Enter your password again" required>
         <div class="checkbox-row">
           <input type="checkbox" name="id_declaration" id="idDecl" required>
           <label for="idDecl">I confirm this ID belongs to me.</label>
@@ -1411,8 +1647,11 @@ $storeClose = getSetting('store_close_time', '20:00');
 
   <!-- ══════════════ CUSTOMIZE MODAL (existing behavior, adapted) ══════════════ -->
   <div class="modal-overlay" id="customModal" hidden>
-    <div class="modal-box wide">
-      <button class="modal-close" onclick="closeCustomModal()">&times;</button>
+    <div class="modal-box wide product-modal" role="dialog" aria-modal="true" aria-labelledby="cmName">
+      <div class="product-modal-head">
+        <span class="product-modal-kicker"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i> Customize your drink</span>
+        <button type="button" class="modal-close product-modal-close" onclick="closeCustomModal()" aria-label="Close product options">&times;</button>
+      </div>
       <div id="cmImg" style="height:168px;border-radius:14px;background:var(--surface-raised);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px"></div>
       <h3 id="cmName" style="font-size:21px;margin-bottom:6px"></h3>
       <div id="cmPrice" style="color:var(--primary-color);font-weight:700;margin-bottom:16px"></div>
@@ -1609,6 +1848,10 @@ $storeClose = getSetting('store_close_time', '20:00');
       document.getElementById('customModal').hidden = true;
     }
 
+    document.getElementById('customModal').addEventListener('click', function(event) {
+      if (event.target === this) closeCustomModal();
+    });
+
     function cmPick(kind, idx) {
       const key = kind === 'size' ? 'sizeIdx' : 'sugarIdx';
       _cm[key] = idx;
@@ -1767,12 +2010,11 @@ $storeClose = getSetting('store_close_time', '20:00');
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.getElementById('loginPanel').hidden = tab !== 'login';
       document.getElementById('registerPanel').hidden = tab !== 'register';
+      document.getElementById('authModalTitle').textContent = tab === 'register' ? 'Create your account' : 'Welcome back';
+      document.getElementById('authModalIntro').textContent = tab === 'register'
+        ? 'Join the campus coffee community and order ahead.'
+        : 'Sign in to order your campus favorites.';
     }
-    document.getElementById('regAccountType')?.addEventListener('change', e => {
-      const isFaculty = e.target.value === 'faculty';
-      document.getElementById('idLabel').textContent = isFaculty ? 'Faculty ID Number' : 'Student ID Number';
-      document.getElementById('courseField').style.display = isFaculty ? 'none' : '';
-    });
 
     if (AUTO_AUTH_TAB || HAS_REGISTER_ERROR || HAS_GLOBAL_FLASH) {
       openAuthModal(HAS_REGISTER_ERROR ? 'register' : (AUTO_AUTH_TAB || 'login'));

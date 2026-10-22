@@ -138,7 +138,20 @@ $stmt = $db->prepare(
    LEFT JOIN payments p ON o.id = p.order_id
    LEFT JOIN order_feedback f ON o.id = f.order_id
    WHERE o.{$fkColumn} = ? {$where}
-   ORDER BY o.created_at DESC"
+   ORDER BY
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready') THEN 0 ELSE 1 END ASC,
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready') AND o.pickup_time = 'ASAP' THEN 0 ELSE 1 END ASC,
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready')
+          THEN COALESCE(o.pickup_date, DATE(o.created_at)) ELSE NULL END ASC,
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready') AND o.pickup_time <> 'ASAP'
+          THEN COALESCE(STR_TO_DATE(o.pickup_time, '%H:%i'), TIME(o.created_at))
+          WHEN o.status IN ('pending', 'preparing', 'ready') THEN TIME(o.created_at)
+          ELSE NULL END ASC,
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready')
+          THEN CASE o.status WHEN 'ready' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END
+          ELSE 0 END ASC,
+     CASE WHEN o.status IN ('pending', 'preparing', 'ready') THEN o.created_at ELSE NULL END ASC,
+     o.created_at DESC"
 );
 $stmt->execute($params);
 $orders = $stmt->fetchAll();
@@ -508,7 +521,7 @@ function renderOrderTimeline(string $status): string {
                   <div class="order-meta">Pickup &middot; <?= (int) $o['item_count'] ?> item<?= (int) $o['item_count'] !== 1 ? 's' : '' ?></div>
                   <div class="order-date">
                     <?php if (!empty($o['pickup_date'])): ?>
-                      <?= date('j M Y', strtotime($o['pickup_date'])) ?><?= !empty($o['pickup_time']) ? ', ' . date('g:i A', strtotime($o['pickup_time'])) : '' ?>
+                      <?= date('j M Y', strtotime($o['pickup_date'])) ?><?= !empty($o['pickup_time']) ? ', ' . ($o['pickup_time'] === 'ASAP' ? 'ASAP' : date('g:i A', strtotime($o['pickup_time']))) : '' ?>
                     <?php else: ?>
                       <?= date('j M Y, g:i A', strtotime($o['created_at'])) ?>
                     <?php endif; ?>

@@ -2,10 +2,12 @@
 // ============================================================
 // public/register.php
 //
-// Self-registration for BOTH students and faculty — branches on
-// $_POST['account_type']. Replaces the old student-only register.php
-// plus register-faculty.php (that file can now be deleted once this
-// is confirmed working; nothing links to it anymore).
+// Self-registration for BOTH students and faculty. The account type is
+// no longer chosen by the user: it is inferred from the ID number format
+// (student 2316-00001C vs faculty 2023-0001 — the two never overlap).
+// Course is no longer collected at signup (students can add it later
+// from their profile). Replaces the old student-only register.php
+// plus register-faculty.php.
 //
 // GET requests bounce to the shop page with the register modal open.
 // ============================================================
@@ -20,28 +22,28 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 verifyCsrf();
 
-$accountType = ($_POST['account_type'] ?? '') === 'faculty' ? ROLE_FACULTY : ROLE_STUDENT;
-
 $old = [];
 $old['full_name'] = sanitizeString($_POST['full_name'] ?? '');
-$old['id_no']      = sanitizeString($_POST['id_no'] ?? '');
-$old['course']     = sanitizeString($_POST['course'] ?? ''); // students only
+$old['id_no']      = strtoupper(sanitizeString($_POST['id_no'] ?? ''));
 $old['email']      = filter_var(trim($_POST['email'] ?? ''), FILTER_SANITIZE_EMAIL);
 $password  = $_POST['password'] ?? '';
 $confirm   = $_POST['confirm_password'] ?? '';
 $declared  = isset($_POST['id_declaration']);
 
+// Infer the account type from the ID format. The role is decided here on
+// the server from the ID itself — never from a submitted form field.
+$accountType = null;
+if (validateStudentId($old['id_no']) === null)      $accountType = ROLE_STUDENT;
+elseif (validateFacultyId($old['id_no']) === null)  $accountType = ROLE_FACULTY;
+
 $errors = [];
 if (empty($old['full_name'])) $errors[] = 'Full name is required.';
-if (empty($old['id_no']))     $errors[] = ($accountType === ROLE_STUDENT ? 'Student' : 'Faculty') . ' ID number is required.';
+if (empty($old['id_no']))     $errors[] = 'ID number is required.';
 if (empty($old['email']))     $errors[] = 'Email address is required.';
 if (!$declared)                $errors[] = 'You must confirm that the ID provided is correct.';
 
-if (empty($errors) && !empty($old['id_no'])) {
-  $idError = $accountType === ROLE_STUDENT
-    ? validateStudentId($old['id_no'])
-    : validateFacultyId($old['id_no']);
-  if ($idError) $errors[] = $idError;
+if (empty($errors) && $accountType === null) {
+  $errors[] = 'ID number not recognized. Students use a format like 2316-00001C; faculty use a format like 2023-0001.';
 }
 
 if (empty($errors) && !filter_var($old['email'], FILTER_VALIDATE_EMAIL)) {
@@ -52,10 +54,10 @@ $pwError = validatePassword($password);
 if ($pwError) $errors[] = $pwError;
 if ($password !== $confirm) $errors[] = 'Passwords do not match.';
 
-$table    = $accountType === ROLE_STUDENT ? 'students' : 'faculty';
-$idColumn = $accountType === ROLE_STUDENT ? 'student_id_no' : 'faculty_id_no';
-
 if (empty($errors)) {
+  $table    = $accountType === ROLE_STUDENT ? 'students' : 'faculty';
+  $idColumn = $accountType === ROLE_STUDENT ? 'student_id_no' : 'faculty_id_no';
+
   $db   = Database::getInstance();
   $stmt = $db->prepare("SELECT id FROM {$table} WHERE {$idColumn} = ? LIMIT 1");
   $stmt->execute([$old['id_no']]);
@@ -65,6 +67,7 @@ if (empty($errors)) {
 }
 
 if (empty($errors) && !empty($old['email'])) {
+  $table = $accountType === ROLE_STUDENT ? 'students' : 'faculty';
   $db   = Database::getInstance();
   $stmt = $db->prepare("SELECT id FROM {$table} WHERE email = ? LIMIT 1");
   $stmt->execute([$old['email']]);
@@ -75,7 +78,7 @@ if (empty($errors) && !empty($old['email'])) {
 
 if (!empty($errors)) {
   flash('global', implode(' ', $errors), 'error');
-  $_SESSION['register_old'] = $old + ['account_type' => $accountType];
+  $_SESSION['register_old'] = $old;
   redirect(APP_URL . '/menu.php?auth=register');
 }
 
@@ -85,10 +88,12 @@ $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
 try {
   if ($accountType === ROLE_STUDENT) {
     $stmt = $db->prepare(
+      // course is NOT NULL in the schema and is no longer asked at signup;
+      // store '' (shown as "Not set" in the profile) so no migration is needed.
       "INSERT INTO students (full_name, student_id_no, course, email, password, id_declaration, email_verified)
-       VALUES (?, ?, ?, ?, ?, 1, 0)"
+       VALUES (?, ?, '', ?, ?, 1, 0)"
     );
-    $stmt->execute([$old['full_name'], $old['id_no'], $old['course'], $old['email'], $hash]);
+    $stmt->execute([$old['full_name'], $old['id_no'], $old['email'], $hash]);
   } else {
     $stmt = $db->prepare(
       "INSERT INTO faculty (full_name, faculty_id_no, email, password, id_declaration, email_verified)

@@ -44,7 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
   $errors = [];
   if (empty($fullName)) $errors[] = 'Full name is required.';
   if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Please enter a valid email address.';
-  if ($role === ROLE_STUDENT && empty($course)) $errors[] = 'Course/Program is required.';
 
   // If the email actually changed, re-verification is required — this
   // mirrors how registration works, so there's no backdoor around OTP.
@@ -512,7 +511,7 @@ $ordersUrl = APP_URL . '/orders.php';
             <div class="profile-row">
               <div class="profile-row-label">Course / Program</div>
               <div class="profile-row-main">
-                <span class="profile-row-value" id="display-course"><?= e($user['course'] ?? 'Not set') ?></span>
+                <span class="profile-row-value" id="display-course"><?= e(($user['course'] ?? '') !== '' ? $user['course'] : 'Not set') ?></span>
                 <input type="text" name="course" class="profile-row-input" id="input-course" value="<?= e($user['course'] ?? '') ?>" maxlength="100">
               </div>
               <button type="button" class="row-icon-btn" onclick="editRow('course')"><i class="fa-solid fa-pen"></i></button>

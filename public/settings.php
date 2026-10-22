@@ -398,8 +398,8 @@ layoutHeader('Settings');
 
               <!-- Course (students only) -->
               <div class="form-group">
-                <label class="form-label" for="course">Course/Program <span style="color: var(--status-cancelled)">*</span></label>
-                <input type="text" id="course" name="course" class="form-control" value="<?= e($user['course'] ?? '') ?>" required maxlength="100" placeholder="e.g., BS Computer Science">
+                <label class="form-label" for="course">Course/Program <span class="form-hint" style="display:inline">(optional)</span></label>
+                <input type="text" id="course" name="course" class="form-control" value="<?= e($user['course'] ?? '') ?>" maxlength="100" placeholder="e.g., BS Computer Science">
               </div>
             <?php endif; ?>
 
