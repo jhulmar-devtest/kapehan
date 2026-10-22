@@ -62,7 +62,7 @@
       <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
     <?php endif; ?>
     <label class="field-label" for="refNo">GCash reference number</label>
-    <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="Paste reference number">
+    <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="20">
     <div class="confirm-actions" style="margin-top:18px">
       <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
       <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= gcashPaymentNumber() !== '' && gcashPaymentName() !== '' ? '' : 'disabled' ?>>Submit order</button>

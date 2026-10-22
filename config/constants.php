@@ -27,6 +27,10 @@ if (!defined('GCASH_PAYMENT_NUMBER')) {
 if (!defined('GCASH_PAYMENT_NAME')) {
   define('GCASH_PAYMENT_NAME', '');
 }
+// Number of digits in a GCash transaction reference number (shown in the
+// GCash receipt as "Ref No. 1234 567 890123"). Change this one value if a
+// real receipt ever shows a different length.
+define('GCASH_REF_DIGITS', 13);
 define('PICKUP_MIN_LEAD_MINUTES', 5);
 
 // APP_URL auto-detects the host AND protocol so the app works on:

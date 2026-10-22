@@ -1588,7 +1588,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
       <?php endif; ?>
       <label class="field-label" for="refNo">GCash reference number</label>
-      <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="Paste reference number">
+      <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="20">
       <div class="confirm-actions" style="margin-top:18px">
         <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
         <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= gcashPaymentNumber() !== '' && gcashPaymentName() !== '' ? '' : 'disabled' ?>>Submit order</button>
@@ -1710,6 +1710,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     const APP_URL = '<?= APP_URL ?>';
     const IS_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
+    window.GCASH_REF_DIGITS = <?= (int) GCASH_REF_DIGITS ?>;
     window.LOYALTY_REDEEM_POINTS = <?= (int) $loyaltyRules['redeem_points'] ?>;
     window.LOYALTY_REDEEM_DISCOUNT = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
     window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;

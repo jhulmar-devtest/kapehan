@@ -337,6 +337,10 @@ function submitOrder() {
     showToast("warning", "Please enter your GCash reference number.");
     return;
   }
+  if (refNo.replace(/\D/g, "").length !== (window.GCASH_REF_DIGITS || 13)) {
+    showToast("warning", `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`);
+    return;
+  }
   const pickupDate = todayInManila();
   const pickupLabel =
     pickupTimeEl.options[pickupTimeEl.selectedIndex]?.text ||

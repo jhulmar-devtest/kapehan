@@ -31,6 +31,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
     flash('global', 'GCash reference number is required.', 'error');
     redirect(APP_URL . '/cashier/walkin.php');
   }
+  if ($payMethod === 'GCash') {
+    $gcashRef = normalizeGcashRef($gcashRef);
+    if ($refError = gcashRefError($gcashRef)) {
+      flash('global', $refError, 'error');
+      redirect(APP_URL . '/cashier/walkin.php');
+    }
+    if (gcashRefInUse($db, $gcashRef)) {
+      flash('global', 'This GCash reference number was already used for another order.', 'error');
+      redirect(APP_URL . '/cashier/walkin.php');
+    }
+  }
 
   $validDenoms = [1000, 500, 200, 100, 50, 20, 10, 5, 1, 0.50, 0.25];
   $denoms = [];
@@ -1821,7 +1832,7 @@ layoutHeader('Walk-in POS', '');
             type="text"
             id="gcash-ref-input"
             class="gcash-ref-input"
-            placeholder="e.g. 1234567890"
+            placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference no."
             maxlength="50"
             autocomplete="off"
             oninput="onGcashRefInput()"
@@ -2024,7 +2035,7 @@ layoutHeader('Walk-in POS', '');
     const ref = document.getElementById('gcash-ref-input').value.trim();
     const confirmBtn = document.getElementById('cash-confirm-btn');
     const confirmLbl = document.getElementById('confirm-btn-label');
-    const valid = ref.length >= 6;
+    const valid = ref.replace(/\D/g, '').length === <?= (int) GCASH_REF_DIGITS ?>;
     confirmBtn.disabled = !valid;
     confirmLbl.textContent = valid ?
       'Confirm GCash Payment' :

@@ -471,6 +471,39 @@ function gcashPaymentNumber(): string {
 }
 
 /**
+ * GCash reference number helpers (used by online checkout and walk-in POS).
+ *
+ * normalizeGcashRef()  - keeps digits only, so "3041 718 703362" and
+ *                        "3041-718-703362" are treated as the same number.
+ * gcashRefError()      - null if the normalized reference looks valid,
+ *                        otherwise a message safe to show the user.
+ * gcashRefInUse()      - true if another pending/paid GCash payment already
+ *                        used this reference (failed/refunded ones don't count).
+ */
+function normalizeGcashRef(string $raw): string {
+  return preg_replace('/\D+/', '', $raw);
+}
+
+function gcashRefError(string $normalized): ?string {
+  if (strlen($normalized) !== GCASH_REF_DIGITS) {
+    return 'Please enter the ' . GCASH_REF_DIGITS . '-digit GCash reference number from your receipt.';
+  }
+  return null;
+}
+
+function gcashRefInUse(PDO $db, string $normalized): bool {
+  $stmt = $db->prepare(
+    "SELECT 1 FROM payments
+      WHERE payment_method = 'GCash'
+        AND payment_status IN (?, ?)
+        AND REPLACE(REPLACE(REPLACE(reference_number, ' ', ''), '-', ''), '.', '') = ?
+      LIMIT 1"
+  );
+  $stmt->execute([PAY_STATUS_PENDING, PAY_STATUS_PAID, $normalized]);
+  return (bool) $stmt->fetchColumn();
+}
+
+/**
  * normalizePhMobile($raw)
  *
  * Accepts 09XXXXXXXXX, 9XXXXXXXXX, 639XXXXXXXXX or +639XXXXXXXXX (spaces and

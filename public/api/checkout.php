@@ -79,6 +79,19 @@ if (empty($ref)) {
   echo json_encode(['ok' => false, 'message' => 'GCash reference number is required.']);
   exit;
 }
+// Keep digits only, check the length, and refuse a reference that was
+// already used for another order (the same receipt can't pay twice).
+$ref = normalizeGcashRef($ref);
+if ($refError = gcashRefError($ref)) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'message' => $refError]);
+  exit;
+}
+if (gcashRefInUse($db, $ref)) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'message' => 'This GCash reference number was already used for another order. Please check your receipt.']);
+  exit;
+}
 
 // Catalog prices, size adjustments and add-ons are re-read from the database.
 $total = 0;
