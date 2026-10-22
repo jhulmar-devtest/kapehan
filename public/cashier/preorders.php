@@ -114,9 +114,13 @@ $orders = $db->query(
             o.locked_by, o.locked_at, o.lock_expire_at,
             customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, c.full_name
    ORDER BY
+     CASE
+       WHEN o.pickup_time = 'ASAP' THEN 0
+       WHEN o.pickup_time IS NULL OR o.pickup_time = '' THEN 2
+       ELSE 1
+     END ASC,
+     CASE WHEN o.pickup_time IS NULL OR o.pickup_time = 'ASAP' OR o.pickup_time = '' THEN NULL ELSE STR_TO_DATE(o.pickup_time, '%H:%i') END ASC,
      FIELD(o.status,'ready','preparing','pending'),
-     CASE WHEN o.pickup_time = 'ASAP' THEN 0 ELSE 1 END ASC,
-     CASE WHEN o.pickup_time IS NULL OR o.pickup_time = 'ASAP' THEN NULL ELSE STR_TO_DATE(o.pickup_time, '%H:%i') END ASC,
      o.created_at ASC"
 )->fetchAll();
 
@@ -518,6 +522,10 @@ layoutHeader('Pre-orders', '');
 
   .countdown {
     font-variant-numeric: tabular-nums;
+  }
+
+  .page-header-actions {
+    flex-wrap: wrap;
   }
 
   /* Locked card state */

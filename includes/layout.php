@@ -22,6 +22,9 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
   $role     = currentRole();
   $userName = e($_SESSION['full_name'] ?? 'User');
   $appUrl   = APP_URL;
+  $pickupAlertEndpoint = $role === ROLE_CASHIER
+    ? ' data-cashier-pickup-alert-endpoint="' . e($appUrl . '/api/cashier-pickup-alerts.php') . '"'
+    : '';
 
   // Build the <head> block
   echo '<!DOCTYPE html>' . "\n";
@@ -35,11 +38,11 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
   echo '  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap" rel="stylesheet">' . "\n";
   echo '  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">' . "\n";
   echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/variables.css">' . "\n";
-  echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/layout.css">' . "\n";
+  echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/layout.css?v=' . (int) filemtime(__DIR__ . '/../assets/css/layout.css') . '">' . "\n";
   echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/components.css">' . "\n";
   if ($extraHead) echo '  ' . $extraHead . "\n";
   echo '</head>' . "\n";
-  echo '<body>' . "\n";
+  echo '<body' . $pickupAlertEndpoint . '>' . "\n";
 
   // ---- Sidebar role icon ----
   if ($role === ROLE_ADMIN) {
@@ -259,6 +262,7 @@ document.querySelectorAll(".toast").forEach(function(t) {
 
   // Cashier: silently poll pre-order badge every 30s (no page refresh)
   if (currentRole() === ROLE_CASHIER) {
+    echo '<script src="' . $appUrl . '/../assets/js/cashier-pickup-alerts.js?v=' . (int) filemtime(__DIR__ . '/../assets/js/cashier-pickup-alerts.js') . '"></script>' . "\n";
     echo '
 <script>
 (function() {

@@ -291,6 +291,7 @@ textarea {
   padding: 10px 0;
   margin: 1px var(--space-2);
   gap: 0;
+  overflow: visible;
 }
 .sidebar.collapsed .nav-item i {
   width: 20px;
@@ -303,7 +304,7 @@ textarea {
   opacity: 1;
   transition: opacity var(--transition-base);
 }
-.sidebar.collapsed .nav-item span {
+.sidebar.collapsed .nav-item > span:not(.nav-badge) {
   opacity: 0;
   width: 0;
   overflow: hidden;
@@ -322,7 +323,104 @@ textarea {
   flex-shrink: 0;
 }
 .sidebar.collapsed .nav-badge {
-  display: none;
+  display: block;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  margin: 0;
+  padding: 2px 4px;
+  min-width: 17px;
+  line-height: 1.1;
+  font-size: 0.56rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* Cashier pickup alerts stay visible across cashier pages until dismissed. */
+.cashier-pickup-alerts {
+  position: fixed;
+  z-index: 150;
+  top: calc(var(--header-h) + 10px);
+  right: 24px;
+  display: grid;
+  gap: 10px;
+  width: min(390px, calc(100vw - 32px));
+  max-height: calc(100dvh - var(--header-h) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+}
+.cashier-pickup-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
+  color: var(--text-color);
+  background: var(--surface-color);
+  border: 1px solid var(--status-pending-border);
+  border-left: 5px solid var(--status-pending);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(35, 24, 16, 0.2);
+  pointer-events: auto;
+}
+.cashier-pickup-alert.is-due {
+  border-color: var(--status-cancelled-border);
+  border-left-color: var(--status-cancelled);
+}
+.cashier-pickup-alert-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--status-pending);
+}
+.cashier-pickup-alert.is-due .cashier-pickup-alert-icon {
+  color: var(--status-cancelled);
+}
+.cashier-pickup-alert-copy {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+.cashier-pickup-alert-copy strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.88rem;
+}
+.cashier-pickup-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+.cashier-pickup-alert-link {
+  color: var(--primary-color);
+  font-weight: 700;
+  text-decoration: none;
+}
+.cashier-pickup-alert-link:hover {
+  text-decoration: underline;
+}
+.cashier-pickup-alert-dismiss {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  color: var(--text-color);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cashier-pickup-alert-dismiss:hover {
+  background: var(--border-color);
+}
+@media (max-width: 600px) {
+  .cashier-pickup-alerts {
+    top: calc(var(--header-h) + 8px);
+    right: 12px;
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - var(--header-h) - 18px);
+  }
 }
 
 .nav-item.logout {
@@ -478,7 +576,6 @@ textarea {
   border-color: var(--primary-color);
   color: var(--primary-color);
 }
-
 .topbar-user {
   display: flex;
   align-items: center;
