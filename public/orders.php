@@ -32,14 +32,101 @@ if (isset($_GET['get_order_items'])) {
   }
 
   $stmt = $db->prepare(
-    "SELECT od.product_id, od.quantity, od.price_at_time, p.name, p.image_path, p.has_sizes, p.has_sugar,
+    "SELECT od.id AS detail_id, od.product_id, od.quantity, od.price_at_time, p.name, p.image_path,
+            p.price AS base_price, p.has_sizes, p.has_sugar, p.is_available,
             od.customization_note AS note
      FROM order_details od
      JOIN products p ON od.product_id = p.id
      WHERE od.order_id = ?"
   );
   $stmt->execute([$oid]);
-  echo json_encode(['items' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+  $orderItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  $activeSizes = $db->query('SELECT label, price_adjustment FROM size_options WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_ASSOC);
+  $sugarOptions = ['Full Sugar', 'Less Sugar', '50% Sugar', 'No Sugar'];
+
+  foreach ($orderItems as &$item) {
+    $parts = array_values(array_filter(array_map('trim', explode(' · ', (string) ($item['note'] ?? ''))), static fn($part) => $part !== ''));
+    $item['size'] = null;
+    $item['sugar'] = null;
+    $item['custom_note'] = '';
+    $item['addon_ids'] = [];
+    $item['addons'] = [];
+    $sizeAdjustment = 0.0;
+
+    if ((int) $item['has_sizes'] === 1) {
+      foreach ($parts as $index => $part) {
+        foreach ($activeSizes as $sizeOption) {
+          if ($part === $sizeOption['label']) {
+            $item['size'] = $sizeOption['label'];
+            $sizeAdjustment = (float) $sizeOption['price_adjustment'];
+            unset($parts[$index]);
+            break 2;
+          }
+        }
+      }
+      if ($item['size'] === null && $activeSizes) {
+        $item['size'] = $activeSizes[0]['label'];
+        $sizeAdjustment = (float) $activeSizes[0]['price_adjustment'];
+      }
+    }
+
+    if ((int) $item['has_sugar'] === 1) {
+      foreach ($parts as $index => $part) {
+        if (in_array($part, $sugarOptions, true)) {
+          $item['sugar'] = $part;
+          unset($parts[$index]);
+          break;
+        }
+      }
+      if ($item['sugar'] === null) $item['sugar'] = $sugarOptions[0];
+    }
+
+    try {
+      $addonStmt = $db->prepare(
+        'SELECT a.id, a.name, a.price
+           FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
+          WHERE pa.product_id = ? AND a.status = \'active\'
+            AND EXISTS (SELECT 1 FROM addon_ingredients ai WHERE ai.addon_id = a.id)
+          ORDER BY a.id'
+      );
+      $addonStmt->execute([(int) $item['product_id']]);
+      $availableAddons = $addonStmt->fetchAll(PDO::FETCH_ASSOC);
+      $savedAddonStmt = $db->prepare('SELECT addon_id, addon_name_snapshot FROM order_detail_addons WHERE order_detail_id = ? ORDER BY id');
+      $savedAddonStmt->execute([(int) $item['detail_id']]);
+      $savedAddons = $savedAddonStmt->fetchAll(PDO::FETCH_ASSOC);
+
+      $savedAddonNames = array_column($savedAddons, 'addon_name_snapshot');
+    } catch (PDOException $e) {
+      // Older installations may not have the add-on snapshot table yet.
+      $availableAddons = [];
+      $savedAddonNames = [];
+    }
+
+    $requestedAddonNames = $savedAddonNames;
+    foreach ($parts as $index => $part) {
+      if (str_starts_with($part, '+')) {
+        $requestedAddonNames = array_merge($requestedAddonNames, preg_split('/\\s*,\\s*\\+/', ltrim($part, '+')) ?: []);
+        unset($parts[$index]);
+      }
+    }
+    $addonTotal = 0.0;
+    foreach ($availableAddons as $availableAddon) {
+      if (in_array($availableAddon['name'], $requestedAddonNames, true)) {
+        $item['addon_ids'][] = (int) $availableAddon['id'];
+        $item['addons'][] = $availableAddon['name'];
+        $addonTotal += (float) $availableAddon['price'];
+      }
+    }
+    $item['unit_price'] = round((float) $item['base_price'] + $sizeAdjustment + $addonTotal, 2);
+
+    foreach ($parts as $part) {
+      $item['custom_note'] = trim($item['custom_note'] . ' ' . $part);
+    }
+    $item['custom_note'] = trim($item['custom_note']);
+    unset($item['detail_id'], $item['price_at_time'], $item['base_price'], $item['has_sugar']);
+  }
+  unset($item);
+  echo json_encode(['items' => $orderItems]);
   exit;
 }
 
@@ -174,8 +261,9 @@ function renderOrderTimeline(string $status): string {
   $html = '<div class="order-timeline">';
   $i = 0;
   foreach ($steps as $key => $label) {
-    $state = $i < $currentIdx ? 'done' : ($i === $currentIdx ? 'current' : '');
-    $icon  = $i < $currentIdx ? 'fa-check' : ($i === $currentIdx ? 'fa-mug-hot' : '');
+    $isClaimed = $status === 'claimed';
+    $state = $isClaimed || $i < $currentIdx ? 'done' : ($i === $currentIdx ? 'current' : '');
+    $icon  = $isClaimed || $i < $currentIdx ? 'fa-check' : ($i === $currentIdx ? 'fa-mug-hot' : '');
     $html .= '<div class="order-timeline-step ' . $state . '">'
       . '<div class="track"></div>'
       . '<div class="dot">' . ($icon ? '<i class="fa-solid ' . $icon . '"></i>' : ($i + 1)) . '</div>'
@@ -543,7 +631,7 @@ function renderOrderTimeline(string $status): string {
                   </div>
                 </div>
               </div>
-              <?php if ($group === 'ongoing'): ?>
+              <?php if ($group !== 'cancelled'): ?>
                 <div data-timeline><?= renderOrderTimeline($o['status']) ?></div>
               <?php endif; ?>
             </div>
@@ -704,8 +792,9 @@ function renderOrderTimeline(string $status): string {
       const idx = STEP_ORDER.indexOf(status);
       if (idx === -1) return '';
       return '<div class="order-timeline">' + STEP_ORDER.map((key, i) => {
-        const state = i < idx ? 'done' : (i === idx ? 'current' : '');
-        const icon = i < idx ? '<i class="fa-solid fa-check"></i>' : (i === idx ? '<i class="fa-solid fa-mug-hot"></i>' : (i + 1));
+        const isClaimed = status === 'claimed';
+        const state = isClaimed || i < idx ? 'done' : (i === idx ? 'current' : '');
+        const icon = isClaimed || i < idx ? '<i class="fa-solid fa-check"></i>' : (i === idx ? '<i class="fa-solid fa-mug-hot"></i>' : (i + 1));
         return `<div class="order-timeline-step ${state}"><div class="track"></div><div class="dot">${icon}</div><div class="label">${STEP_LABELS[key]}</div></div>`;
       }).join('') + '</div>';
     }

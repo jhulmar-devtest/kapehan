@@ -269,21 +269,33 @@ function reorder(orderId) {
         return;
       }
       const cart = getCart();
+      let skipped = 0;
       data.items.forEach((item) => {
+        if (!Number(item.is_available) || (Number(item.has_sizes) && !item.size)) {
+          skipped++;
+          return;
+        }
         cart.push({
           lineId: "l_" + Date.now() + Math.random().toString(16).slice(2),
           productId: item.product_id,
           name: item.name,
-          size: null,
-          sugar: null,
-          addons: [],
-          unit_price: parseFloat(item.price_at_time),
+          size: item.size || null,
+          sugar: item.sugar || null,
+          addons: item.addons || [],
+          addon_ids: item.addon_ids || [],
+          unit_price: parseFloat(item.unit_price),
           qty: parseInt(item.quantity) || 1,
-          note: item.note || "",
+          note: item.custom_note || "",
         });
       });
+      if (!data.items.length || data.items.length === skipped) {
+        showToast("error", "The products in this order are no longer available to reorder.");
+        return;
+      }
       saveCart(cart);
-      showToast("success", "Added to your cart!");
+      showToast(skipped ? "warning" : "success", skipped
+        ? `Available items added. ${skipped} unavailable item${skipped === 1 ? " was" : "s were"} skipped.`
+        : "Added to your cart with the original options and current prices!");
       openCart();
     })
     .catch(() => showToast("error", "Network error — please try again."));

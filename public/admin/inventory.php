@@ -322,6 +322,25 @@ layoutHeader('Inventory');
 
 <div class="inv-grid">
   <div class="card">
+    <div style="padding:var(--space-4);border-bottom:1px solid var(--border-color);display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap">
+      <div style="flex:1;min-width:min(100%,240px)">
+        <label class="form-label" for="inventory-search">Search stock items</label>
+        <div style="position:relative">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted)"></i>
+          <input class="form-control" id="inventory-search" type="search" placeholder="Search name, category, or unit…" style="padding-left:36px" autocomplete="off">
+        </div>
+      </div>
+      <div style="min-width:190px">
+        <label class="form-label" for="inventory-category-filter">Category</label>
+        <select class="form-control" id="inventory-category-filter">
+          <option value="">All categories</option>
+          <?php foreach ($inventoryCategories as $category): ?>
+            <option value="<?= e(mb_strtolower($category['name'])) ?>"><?= e($category['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <span id="inventory-result-count" class="text-muted" aria-live="polite" style="font-size:.82rem;padding-bottom:9px"><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?></span>
+    </div>
     <div style="overflow-x:auto">
       <table class="data-table">
         <thead>
@@ -342,7 +361,7 @@ layoutHeader('Inventory');
             <?php else: foreach ($items as $it):
               $low = (float) $it['available_quantity'] <= (float) $it['reorder_level'];
             ?>
-              <tr style="<?= $low ? 'background:#fdecea' : '' ?>">
+              <tr data-inventory-row data-inventory-name="<?= e(mb_strtolower($it['name'] . ' ' . ($it['category'] ?? 'Other') . ' ' . $it['unit'])) ?>" data-inventory-category="<?= e(mb_strtolower($it['category'] ?? 'Other')) ?>" style="<?= $low ? 'background:#fdecea' : '' ?>">
                 <td>
                   <button type="button" class="inv-item-link" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'>
                     <?= e($it['name']) ?>
@@ -374,6 +393,9 @@ layoutHeader('Inventory');
               </tr>
           <?php endforeach;
           endif; ?>
+          <?php if (!empty($items)): ?>
+            <tr id="inventory-search-empty" hidden><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No stock items match your search and category filters.</td></tr>
+          <?php endif; ?>
         </tbody>
       </table>
     </div>
@@ -556,6 +578,31 @@ layoutHeader('Inventory');
 
 <script>
   let inventoryItemsAddedThisSession = false;
+
+  const inventorySearch = document.getElementById('inventory-search');
+  const inventoryCategoryFilter = document.getElementById('inventory-category-filter');
+  const inventoryRows = Array.from(document.querySelectorAll('[data-inventory-row]'));
+  const inventorySearchEmpty = document.getElementById('inventory-search-empty');
+  const inventoryResultCount = document.getElementById('inventory-result-count');
+
+  function filterInventoryRows() {
+    const query = inventorySearch.value.trim().toLocaleLowerCase();
+    const category = inventoryCategoryFilter.value;
+    let visible = 0;
+    inventoryRows.forEach(row => {
+      const matches = row.dataset.inventoryName.includes(query)
+        && (!category || row.dataset.inventoryCategory === category);
+      row.hidden = !matches;
+      if (matches) visible++;
+    });
+    if (inventorySearchEmpty) inventorySearchEmpty.hidden = query === '' && category === '' || visible > 0;
+    if (inventoryResultCount) inventoryResultCount.textContent = query || category
+      ? `${visible} of ${inventoryRows.length} items match`
+      : `${inventoryRows.length} item${inventoryRows.length === 1 ? '' : 's'}`;
+  }
+
+  inventorySearch.addEventListener('input', filterInventoryRows);
+  inventoryCategoryFilter.addEventListener('change', filterInventoryRows);
 
   function openAddItemModal() {
     inventoryItemsAddedThisSession = false;
