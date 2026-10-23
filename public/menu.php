@@ -1661,9 +1661,9 @@ $storeClose = getSetting('store_close_time', '20:00');
         <label for="regEmail">Email</label>
         <input id="regEmail" type="email" name="email" value="<?= e($registerOld['email'] ?? '') ?>" autocomplete="email" placeholder="you@example.com" required>
         <label for="regPassword">Password</label>
-        <input id="regPassword" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters and 1 special character" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required>
+        <input id="regPassword" type="password" name="password" autocomplete="new-password" placeholder="8+ chars, upper/lowercase, number, symbol" minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." required>
         <label for="regConfirmPassword">Confirm password</label>
-        <input id="regConfirmPassword" type="password" name="confirm_password" autocomplete="new-password" placeholder="Enter your password again" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required>
+        <input id="regConfirmPassword" type="password" name="confirm_password" autocomplete="new-password" placeholder="Enter your password again" minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." required>
         <div class="checkbox-row">
           <input type="checkbox" name="id_declaration" id="idDecl" required>
           <label for="idDecl">I confirm this ID belongs to me.</label>

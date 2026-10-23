@@ -76,11 +76,21 @@ function sanitizeString(string $input, int $maxLength = 255): string {
  *
  * Returns an error message string if the password is too weak,
  * or null if it's acceptable.
- * Rules: at least 8 characters and at least one punctuation or symbol.
+ * Rules: at least 8 characters, with a lowercase letter, uppercase
+ * letter, number, and punctuation or symbol.
  */
 function validatePassword(string $password): ?string {
-  if (strlen($password) < 8) {
+  if (mb_strlen($password, 'UTF-8') < 8) {
     return 'Password must be at least 8 characters long.';
+  }
+  if (!preg_match('/[a-z]/', $password)) {
+    return 'Password must include at least one lowercase letter.';
+  }
+  if (!preg_match('/[A-Z]/', $password)) {
+    return 'Password must include at least one uppercase letter.';
+  }
+  if (!preg_match('/[0-9]/', $password)) {
+    return 'Password must include at least one number.';
   }
   if (!preg_match('/[\p{P}\p{S}]/u', $password)) {
     return 'Password must include at least one special character.';

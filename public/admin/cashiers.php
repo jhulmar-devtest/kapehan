@@ -138,7 +138,7 @@ layoutHeader('Cashiers');
           <input type="email" name="email" class="form-control" placeholder="cashier@example.com">
           <div class="form-hint">For password recovery and notifications</div>
         </div>
-        <div class="form-group"><label class="form-label">Password</label><input type="password" name="password" class="form-control" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." placeholder="At least 8 characters and 1 special character"></div>
+        <div class="form-group"><label class="form-label">Password</label><input type="password" name="password" class="form-control" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." placeholder="8+ chars, upper/lowercase, number, symbol"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('cashier-modal').classList.add('hidden')">Cancel</button>
