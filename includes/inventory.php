@@ -1,6 +1,18 @@
 <?php
 /** Inventory recipes, availability checks, reservations, and deductions. */
 
+function inventoryCategories(PDO $db): array
+{
+  return $db->query('SELECT id, name, sort_order FROM inventory_categories ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function inventoryCategoryExists(PDO $db, string $category): bool
+{
+  $stmt = $db->prepare('SELECT 1 FROM inventory_categories WHERE name=? LIMIT 1');
+  $stmt->execute([$category]);
+  return (bool)$stmt->fetchColumn();
+}
+
 function inventorySizeLabels(PDO $db): array
 {
   try {

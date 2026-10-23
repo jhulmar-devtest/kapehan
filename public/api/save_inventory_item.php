@@ -10,6 +10,7 @@
  * entering a dozen ingredients had to reopen the modal a dozen times.
  */
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
  
 header('Content-Type: application/json');
@@ -24,6 +25,7 @@ verifyCsrf();
 
 $name    = sanitizeString($_POST['name'] ?? '', 120);
 $unit    = sanitizeString($_POST['unit'] ?? '', 20);
+$category = sanitizeString($_POST['category'] ?? '', 80);
 $qty     = round((float) ($_POST['quantity_on_hand'] ?? 0), 3);
 $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
 $cost    = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
@@ -46,6 +48,11 @@ if ($isAddon && ($addonName === '' || $addonPrice < 0 || $addonQty <= 0)) {
 
 try {
   $db = Database::getInstance();
+  if (!inventoryCategoryExists($db, $category)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Choose a valid inventory category.']);
+    exit;
+  }
   $db->beginTransaction();
   $duplicateItem = $db->prepare('SELECT id FROM inventory_items WHERE name = ? AND unit = ? LIMIT 1');
   $duplicateItem->execute([$name, $unit]);
@@ -66,8 +73,8 @@ try {
     }
   }
   $db->prepare(
-    "INSERT INTO inventory_items (name, unit, quantity_on_hand, reorder_level, cost_per_unit) VALUES (?, ?, ?, ?, ?)"
-  )->execute([$name, $unit, $qty, $reorder, $cost]);
+    "INSERT INTO inventory_items (name, category, unit, quantity_on_hand, reorder_level, cost_per_unit) VALUES (?, ?, ?, ?, ?, ?)"
+  )->execute([$name, $category, $unit, $qty, $reorder, $cost]);
   $newId = (int) $db->lastInsertId();
 
   $addonId = null;
@@ -93,6 +100,7 @@ try {
     'item' => [
       'id' => $newId,
       'name' => $name,
+      'category' => $category,
       'unit' => $unit,
       'quantity_on_hand' => $qty,
       'reorder_level' => $reorder,

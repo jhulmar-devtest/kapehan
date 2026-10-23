@@ -157,3 +157,74 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   $drawer['cashier_sessions'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return $drawer;
 }
+
+/** Persist a point-in-time X reading or end-of-day Z reading for one drawer day. */
+function createCashRegisterReading(PDO $db, int $drawerId, string $readingType, string $issuerRole, int $issuerId): int
+{
+  if (!$db->inTransaction()) throw new LogicException('Register readings must be created inside a transaction.');
+  if (!in_array($readingType, ['X', 'Z'], true)) throw new InvalidArgumentException('Choose an X or Z reading.');
+
+  $drawerStmt = $db->prepare('SELECT * FROM cash_drawer_days WHERE id=? FOR UPDATE');
+  $drawerStmt->execute([$drawerId]);
+  $drawer = $drawerStmt->fetch(PDO::FETCH_ASSOC);
+  if (!$drawer) throw new RuntimeException('The drawer day could not be found.');
+  if ($readingType === 'X' && $drawer['status'] !== 'open') {
+    throw new RuntimeException('An X reading can only be created while the drawer is open.');
+  }
+  if ($readingType === 'Z' && $drawer['status'] !== 'closed') {
+    throw new RuntimeException('Close the drawer before creating a Z reading.');
+  }
+
+  $issuedAt = (string)$db->query('SELECT NOW()')->fetchColumn();
+  $activityThrough = $readingType === 'Z' ? $drawer['closed_at'] : $issuedAt;
+  $salesStmt = $db->prepare(
+    "SELECT p.payment_method, COALESCE(SUM(o.total_amount), 0) AS sales_total
+       FROM payments p JOIN orders o ON o.id=p.order_id
+      WHERE p.payment_status='paid' AND p.paid_at >= ? AND p.paid_at <= ?
+        AND o.status <> 'cancelled'
+      GROUP BY p.payment_method"
+  );
+  $salesStmt->execute([$drawer['opened_at'], $activityThrough]);
+  $paymentTotals = $salesStmt->fetchAll(PDO::FETCH_ASSOC);
+  $salesTotal = 0.0;
+  $cashSales = 0.0;
+  $nonCashSales = 0.0;
+  foreach ($paymentTotals as $payment) {
+    $method = (string)$payment['payment_method'];
+    $amount = (float)$payment['sales_total'];
+    $salesTotal += $amount;
+    if (strcasecmp($method, 'cash') === 0) $cashSales += $amount;
+    else $nonCashSales += $amount;
+  }
+  $countStmt = $db->prepare(
+    "SELECT COUNT(DISTINCT o.id) FROM payments p JOIN orders o ON o.id=p.order_id
+      WHERE p.payment_status='paid' AND p.paid_at >= ? AND p.paid_at <= ? AND o.status <> 'cancelled'"
+  );
+  $countStmt->execute([$drawer['opened_at'], $activityThrough]);
+  $transactionCount = (int)$countStmt->fetchColumn();
+
+  $movementStmt = $db->prepare(
+    "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS cash_in,
+            COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS cash_out
+       FROM cash_drawer_movements WHERE drawer_day_id=? AND created_at <= ?"
+  );
+  $movementStmt->execute([$drawerId, $activityThrough]);
+  $movements = $movementStmt->fetch(PDO::FETCH_ASSOC) ?: ['cash_in' => 0, 'cash_out' => 0];
+  $expectedCash = cashDrawerExpectedAmount($db, $drawerId, (float)$drawer['opening_amount'], $activityThrough);
+  $countedCash = $readingType === 'Z' ? (float)$drawer['closing_amount'] : null;
+  $variance = $readingType === 'Z' ? round($countedCash - $expectedCash, 2) : null;
+
+  $insert = $db->prepare(
+    'INSERT INTO cash_register_readings
+      (drawer_day_id, reading_type, business_date, issued_at, activity_through, issued_by_role, issued_by_id,
+       sales_total, transaction_count, cash_sales, non_cash_sales, expected_cash,
+       cash_counted, cash_variance, cash_in, cash_out)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  $insert->execute([
+    $drawerId, $readingType, $drawer['business_date'], $issuedAt, $activityThrough, $issuerRole, $issuerId,
+    round($salesTotal, 2), $transactionCount, round($cashSales, 2), round($nonCashSales, 2),
+    $expectedCash, $countedCash, $variance, (float)$movements['cash_in'], (float)$movements['cash_out'],
+  ]);
+  return (int)$db->lastInsertId();
+}

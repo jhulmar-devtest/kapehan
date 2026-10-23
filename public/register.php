@@ -29,6 +29,7 @@ $old['email']      = filter_var(trim($_POST['email'] ?? ''), FILTER_SANITIZE_EMA
 $password  = $_POST['password'] ?? '';
 $confirm   = $_POST['confirm_password'] ?? '';
 $declared  = isset($_POST['id_declaration']);
+$privacyNoticeAccepted = isset($_POST['privacy_notice_accepted']);
 
 // Infer the account type from the ID format. The role is decided here on
 // the server from the ID itself — never from a submitted form field.
@@ -41,6 +42,7 @@ if (empty($old['full_name'])) $errors[] = 'Full name is required.';
 if (empty($old['id_no']))     $errors[] = 'ID number is required.';
 if (empty($old['email']))     $errors[] = 'Email address is required.';
 if (!$declared)                $errors[] = 'You must confirm that the ID provided is correct.';
+if (!$privacyNoticeAccepted)   $errors[] = 'Please review and acknowledge the information use notice.';
 
 if (empty($errors) && $accountType === null) {
   $errors[] = 'ID number not recognized. Students use a format like 2316-00001C; faculty use a format like 2023-0001.';
@@ -90,14 +92,14 @@ try {
     $stmt = $db->prepare(
       // course is NOT NULL in the schema and is no longer asked at signup;
       // store '' (shown as "Not set" in the profile) so no migration is needed.
-      "INSERT INTO students (full_name, student_id_no, course, email, password, id_declaration, email_verified)
-       VALUES (?, ?, '', ?, ?, 1, 0)"
+      "INSERT INTO students (full_name, student_id_no, course, email, password, id_declaration, privacy_notice_accepted_at, email_verified)
+       VALUES (?, ?, '', ?, ?, 1, NOW(), 0)"
     );
     $stmt->execute([$old['full_name'], $old['id_no'], $old['email'], $hash]);
   } else {
     $stmt = $db->prepare(
-      "INSERT INTO faculty (full_name, faculty_id_no, email, password, id_declaration, email_verified)
-       VALUES (?, ?, ?, ?, 1, 0)"
+      "INSERT INTO faculty (full_name, faculty_id_no, email, password, id_declaration, privacy_notice_accepted_at, email_verified)
+       VALUES (?, ?, ?, ?, 1, NOW(), 0)"
     );
     $stmt->execute([$old['full_name'], $old['id_no'], $old['email'], $hash]);
   }

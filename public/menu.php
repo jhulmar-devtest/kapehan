@@ -1552,6 +1552,10 @@ $storeClose = getSetting('store_close_time', '20:00');
         </select>
         <p id="pickupSlotMessage" class="cart-hint" role="status" style="font-size:12px;color:var(--text-muted);margin:6px 0 0"></p>
         <input class="field-input" id="cartNotes" placeholder="Notes (optional)" style="margin-top:10px">
+        <?php if ($role === ROLE_FACULTY): ?>
+          <label class="field-label" for="deliveryLocation" style="display:block;margin-top:10px">Delivery location <span aria-hidden="true">*</span></label>
+          <input class="field-input" id="deliveryLocation" maxlength="255" placeholder="Building, office, or room" required>
+        <?php endif; ?>
 
         <div class="loyalty-cart-option">
           <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyBalance >= $loyaltyRules['redeem_points'] ? '' : 'disabled' ?>> Redeem points</label>
@@ -1633,12 +1637,16 @@ $storeClose = getSetting('store_close_time', '20:00');
         <label for="regEmail">Email</label>
         <input id="regEmail" type="email" name="email" value="<?= e($registerOld['email'] ?? '') ?>" autocomplete="email" placeholder="you@example.com" required>
         <label for="regPassword">Password</label>
-        <input id="regPassword" type="password" name="password" autocomplete="new-password" placeholder="Create a password" required>
+        <input id="regPassword" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters and 1 special character" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required>
         <label for="regConfirmPassword">Confirm password</label>
-        <input id="regConfirmPassword" type="password" name="confirm_password" autocomplete="new-password" placeholder="Enter your password again" required>
+        <input id="regConfirmPassword" type="password" name="confirm_password" autocomplete="new-password" placeholder="Enter your password again" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required>
         <div class="checkbox-row">
           <input type="checkbox" name="id_declaration" id="idDecl" required>
           <label for="idDecl">I confirm this ID belongs to me.</label>
+        </div>
+        <div class="checkbox-row" style="align-items:flex-start">
+          <input type="checkbox" name="privacy_notice_accepted" id="privacyNoticeAccepted" required>
+          <label for="privacyNoticeAccepted">I understand that Kapehan ni Amang uses my name, school ID, and email to verify my account, process and update me about orders, and manage loyalty points. Authorized staff can access this information for these purposes.</label>
         </div>
         <button type="submit" class="btn btn-primary">Create Account</button>
       </form>

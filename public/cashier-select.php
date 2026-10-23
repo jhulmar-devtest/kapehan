@@ -314,7 +314,7 @@ unset($_SESSION['pos_add_success']);
       <label>Username</label>
       <input type="text" name="username" required>
       <label>Password</label>
-      <input type="password" name="password" required minlength="6">
+      <input type="password" name="password" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character.">
 
       <hr class="divider">
       <div class="divider-label">Admin verification required</div>

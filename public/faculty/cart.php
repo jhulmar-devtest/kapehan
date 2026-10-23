@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   $onlineMethods = ['GCash', 'PayMaya', 'Online Banking'];
   $method = in_array($methodRaw, $onlineMethods, true) ? $methodRaw : PAY_ONLINE;
   $notes  = sanitizeString($_POST['notes'] ?? '', 500);
+  $deliveryLocation = sanitizeString($_POST['delivery_location'] ?? '', 255);
 
   $pickupTime = sanitizeString($_POST['pickup_time'] ?? '', 10);
 
@@ -32,6 +33,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   }
   if (empty($pickupTime)) {
     flash('global', 'Please select a pickup time before placing your order.', 'error');
+    redirect(APP_URL . '/faculty/cart.php');
+  }
+  if ($deliveryLocation === '') {
+    flash('global', 'Please enter where your order should be delivered.', 'error');
     redirect(APP_URL . '/faculty/cart.php');
   }
 
@@ -85,8 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     $db->beginTransaction();
     try {
       $orderNo = generateOrderNumber();
-      $db->prepare("INSERT INTO orders (order_number,order_type,status,faculty_id,total_amount,notes,pickup_time) VALUES (?,?,?,?,?,?,?)")
-        ->execute([$orderNo, ORDER_PREORDER, STATUS_PENDING, currentUserId(), $total, $notes, $pickupTime]);
+      $db->prepare("INSERT INTO orders (order_number,order_type,status,faculty_id,total_amount,notes,delivery_location,pickup_time) VALUES (?,?,?,?,?,?,?,?)")
+        ->execute([$orderNo, ORDER_PREORDER, STATUS_PENDING, currentUserId(), $total, $notes, $deliveryLocation, $pickupTime]);
       $orderId = (int)$db->lastInsertId();
       // customization_note column added by customization_migration.sql
       $stmt = $db->prepare("INSERT INTO order_details (order_id,product_id,quantity,price_at_time,subtotal,customization_note) VALUES (?,?,?,?,?,?)");
@@ -725,6 +730,12 @@ layoutHeader('My Cart', '');
               <label class="form-label">Notes <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
               <textarea name="notes" class="form-control" rows="2"
                 placeholder="Special instructions, sugar level, etc."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="delivery-location">Delivery location <span class="req">*</span></label>
+              <input type="text" name="delivery_location" id="delivery-location" class="form-control" maxlength="255" required placeholder="Building, office, or room">
+              <div class="form-hint">Tell us where on campus to deliver your order.</div>
             </div>
 
             <button type="submit" class="place-btn" id="place-btn" disabled>

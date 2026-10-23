@@ -439,6 +439,29 @@ CREATE TABLE `cash_drawer_days` (
   CONSTRAINT `fk_cash_drawer_closed_by` FOREIGN KEY (`closed_by`) REFERENCES `cashiers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `cash_register_readings` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `drawer_day_id` INT UNSIGNED NOT NULL,
+  `reading_type` ENUM('X','Z') NOT NULL,
+  `business_date` DATE NOT NULL,
+  `issued_at` DATETIME NOT NULL,
+  `activity_through` DATETIME NOT NULL,
+  `issued_by_role` ENUM('admin','cashier') NOT NULL,
+  `issued_by_id` INT UNSIGNED NOT NULL,
+  `sales_total` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  `transaction_count` INT UNSIGNED NOT NULL DEFAULT 0,
+  `cash_sales` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  `non_cash_sales` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  `expected_cash` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  `cash_counted` DECIMAL(12,2) DEFAULT NULL,
+  `cash_variance` DECIMAL(12,2) DEFAULT NULL,
+  `cash_in` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  `cash_out` DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`id`),
+  KEY `idx_register_readings_day_type` (`drawer_day_id`,`reading_type`,`issued_at`),
+  CONSTRAINT `fk_register_readings_drawer_day` FOREIGN KEY (`drawer_day_id`) REFERENCES `cash_drawer_days` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `cash_drawer_handoffs` (
   `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `drawer_day_id` int UNSIGNED NOT NULL,
@@ -617,6 +640,7 @@ CREATE TABLE `faculty` (
   `email_verified` tinyint(1) NOT NULL DEFAULT '0',
   `email_verified_at` datetime DEFAULT NULL,
   `id_declaration` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Faculty agreed to ID declaration',
+  `privacy_notice_accepted_at` datetime DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -632,6 +656,7 @@ CREATE TABLE `faculty` (
 CREATE TABLE `inventory_items` (
   `id` int UNSIGNED NOT NULL,
   `name` varchar(120) NOT NULL,
+  `category` varchar(80) NOT NULL DEFAULT 'Other',
   `unit` varchar(20) NOT NULL COMMENT 'g, kg, ml, L, pcs',
   `quantity_on_hand` decimal(12,3) NOT NULL DEFAULT '0.000',
   `reorder_level` decimal(12,3) NOT NULL DEFAULT '0.000',
@@ -680,6 +705,37 @@ INSERT INTO `inventory_items` (`id`, `name`, `unit`, `quantity_on_hand`, `reorde
 ('34', 'Cup carriers', 'pcs', '200.000', '50.000', '4.50', '2026-10-09 09:20:16'),
 ('35', 'Takeaway bags', 'pcs', '300.000', '75.000', '3.00', '2026-10-09 09:20:31'),
 ('36', 'Order seal stickers', 'pcs', '1000.000', '250.000', '0.15', '2026-10-09 09:20:53');
+
+UPDATE `inventory_items`
+SET `category` = CASE
+  WHEN LOWER(`name`) REGEXP 'milk|cream|butter|cheese' THEN 'Dairy & Alternatives'
+  WHEN LOWER(`name`) REGEXP 'coffee|bean|espresso|tea' THEN 'Coffee & Tea'
+  WHEN LOWER(`name`) REGEXP 'syrup|sauce|vanilla|caramel' THEN 'Syrups & Sauces'
+  WHEN LOWER(`name`) REGEXP 'cup|lid|straw|napkin|bag|packag' THEN 'Cups & Packaging'
+  WHEN LOWER(`name`) REGEXP 'powder|matcha|cocoa|chocolate|sugar' THEN 'Dry Goods & Baking'
+  ELSE 'Other'
+END;
+
+--
+-- Table structure for table `inventory_categories`
+--
+
+CREATE TABLE `inventory_categories` (
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` varchar(80) NOT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_inventory_category_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `inventory_categories` (`name`, `sort_order`) VALUES
+('Coffee & Tea', 1),
+('Dairy & Alternatives', 2),
+('Syrups & Sauces', 3),
+('Dry Goods & Baking', 4),
+('Cups & Packaging', 5),
+('Other', 99);
 
 -- --------------------------------------------------------
 
@@ -795,6 +851,7 @@ CREATE TABLE `orders` (
   `cashier_id` int UNSIGNED DEFAULT NULL COMMENT 'NULL until cashier processes',
   `total_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
   `notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `delivery_location` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `locked_by` int UNSIGNED DEFAULT NULL COMMENT 'Cashier ID who locked this order for preparation',
@@ -1580,7 +1637,9 @@ INSERT INTO `schema_migrations` (`version`, `checksum`, `applied_at`) VALUES
 ('2026_10_11_add_inventory_reservations.sql', '66ddaaab6b082f7644118c6fb1fb25c2c55d555d643abeab40b5edcc8c09b4df', '2026-10-19 00:00:00'),
 ('2026_10_11_add_loyalty_points.sql', '9a6321c814e1f263d1b2b0f58e1bd95d01b36b5a3fb06742d3942fc6b9990341', '2026-10-19 00:00:00'),
 ('2026_10_19_add_addon_inventory_recipes.sql', '2fcc0720a68cb86d5b5aca3abcab3bb522cfd23d7f392cb3a8e983422efb6c7c', '2026-10-19 00:00:00'),
-('2026_10_20_harden_order_integrity.sql', '27afd682bc45d884f77e6c83a1ea26b4c055ccdf867b4617229d9d7065c320d8', '2026-10-19 00:00:00');
+('2026_10_20_harden_order_integrity.sql', '27afd682bc45d884f77e6c83a1ea26b4c055ccdf867b4617229d9d7065c320d8', '2026-10-19 00:00:00'),
+('2026_10_23_high_priority_improvements.sql', '9bec7b5030fd5a6884f4d76afbf7aff4e0cffb87291d21cd623e10245eae8aaa', '2026-10-23 00:00:00'),
+('2026_10_23_manage_inventory_categories.sql', 'e34297a738c6edbfe47e77c0c1a1adabef1f898c8cb264ad726129219c5d987d', '2026-10-23 00:00:00');
 
 -- --------------------------------------------------------
 
@@ -1677,6 +1736,7 @@ CREATE TABLE `students` (
   `email_verified_at` datetime DEFAULT NULL,
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'bcrypt hash',
   `id_declaration` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Student agreed to ID declaration',
+  `privacy_notice_accepted_at` datetime DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

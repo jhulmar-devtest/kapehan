@@ -31,7 +31,7 @@ $adminPassword = $_POST['admin_password'] ?? '';
 $errors = [];
 if (empty($fullName)) $errors[] = 'Full name is required.';
 if (empty($username))  $errors[] = 'Username is required.';
-if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
+if ($passwordError = validatePassword($password)) $errors[] = $passwordError;
 
 if (empty($errors)) {
   $stmt = $db->prepare("SELECT id FROM cashiers WHERE username = ? LIMIT 1");

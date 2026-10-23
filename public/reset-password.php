@@ -660,7 +660,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <label class="field-label">New Password</label>
               <div class="password-wrapper">
                 <input type="password" name="new_password" id="new-password" class="field-input"
-                  placeholder="At least 8 characters" required autocomplete="new-password">
+                  placeholder="At least 8 characters and 1 special character" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required autocomplete="new-password">
                 <button type="button" class="btn-toggle-password" onclick="togglePassword('new-password', this)" tabindex="-1">
                   <i class="fa-solid fa-eye"></i>
                 </button>
@@ -671,7 +671,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <label class="field-label">Confirm New Password</label>
               <div class="password-wrapper">
                 <input type="password" name="confirm_password" id="confirm-password" class="field-input"
-                  placeholder="Repeat password" required autocomplete="new-password">
+                  placeholder="Repeat password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." required autocomplete="new-password">
                 <button type="button" class="btn-toggle-password" onclick="togglePassword('confirm-password', this)" tabindex="-1">
                   <i class="fa-solid fa-eye"></i>
                 </button>

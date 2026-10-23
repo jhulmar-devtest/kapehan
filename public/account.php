@@ -588,9 +588,9 @@ $ordersUrl = APP_URL . '/orders.php';
         <label>Current Password</label>
         <input type="password" name="current_password" required>
         <label>New Password</label>
-        <input type="password" name="new_password" required minlength="8">
+        <input type="password" name="new_password" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character.">
         <label>Confirm New Password</label>
-        <input type="password" name="confirm_password" required minlength="8">
+        <input type="password" name="confirm_password" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character.">
         <button type="submit" class="btn btn-primary">Update Password</button>
       </form>
     </div>

@@ -129,6 +129,17 @@ layoutHeader('Cash Drawer');
   </div>
   <?php if ($report): ?>
     <div class="page-header-actions">
+      <?php if ($report['status'] === 'open'): ?>
+        <form method="POST" action="<?= APP_URL ?>/api/create-register-reading.php" style="display:inline">
+          <?= csrfField() ?><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>"><input type="hidden" name="reading_type" value="X">
+          <button class="btn btn-outline" type="submit"><i class="fa-solid fa-chart-line"></i> X Reading</button>
+        </form>
+      <?php else: ?>
+        <form method="POST" action="<?= APP_URL ?>/api/create-register-reading.php" style="display:inline">
+          <?= csrfField() ?><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>"><input type="hidden" name="reading_type" value="Z">
+          <button class="btn btn-outline" type="submit"><i class="fa-solid fa-file-invoice-dollar"></i> Z Reading</button>
+        </form>
+      <?php endif; ?>
       <button class="btn btn-primary" id="drawer-print-btn" onclick="printDrawerReport(<?= (int)$report['id'] ?>)"><i class="fa-solid fa-print"></i> Print Report</button>
     </div>
   <?php endif; ?>
@@ -321,4 +332,21 @@ function printDrawerReport(dayId) {
     .catch(err => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Report'; alert(err.message); });
 }
 </script>
+<?php if ($report):
+  $readingStmt = $db->prepare('SELECT id, reading_type, issued_at FROM cash_register_readings WHERE drawer_day_id=? ORDER BY issued_at DESC, id DESC');
+  $readingStmt->execute([(int)$report['id']]);
+  $savedReadings = $readingStmt->fetchAll(PDO::FETCH_ASSOC);
+  if ($savedReadings):
+?>
+  <div class="card mt-4">
+    <div class="card-header"><div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div></div>
+    <div class="card-body" style="display:grid;gap:8px">
+      <?php foreach ($savedReadings as $savedReading): ?>
+        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
+          <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+<?php endif; endif; ?>
 <?php layoutFooter(); ?>

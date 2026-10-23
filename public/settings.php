@@ -483,7 +483,7 @@ layoutHeader('Settings');
             <div class="form-group">
               <label class="form-label" for="new_password">New Password <span style="color: var(--status-cancelled)">*</span></label>
               <div class="password-wrapper">
-                <input type="password" id="new_password" name="new_password" class="form-control" required minlength="8" autocomplete="new-password">
+                <input type="password" id="new_password" name="new_password" class="form-control" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." autocomplete="new-password">
                 <button type="button" class="password-toggle" data-target="new_password" aria-label="Toggle password visibility">
                   <i class="fa-solid fa-eye"></i>
                 </button>
@@ -494,7 +494,7 @@ layoutHeader('Settings');
             <div class="form-group">
               <label class="form-label" for="confirm_password">Confirm New Password <span style="color: var(--status-cancelled)">*</span></label>
               <div class="password-wrapper">
-                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required autocomplete="new-password">
+                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters and include a special character." autocomplete="new-password">
                 <button type="button" class="password-toggle" data-target="confirm_password" aria-label="Toggle password visibility">
                   <i class="fa-solid fa-eye"></i>
                 </button>

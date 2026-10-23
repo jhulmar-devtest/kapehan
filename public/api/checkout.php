@@ -40,6 +40,9 @@ $data = json_decode(file_get_contents('php://input'), true) ?? [];
 $items       = $data['items'] ?? [];
 $ref         = sanitizeString($data['reference_no'] ?? '', 100);
 $notes       = sanitizeString($data['notes'] ?? '', 500);
+$deliveryLocation = $role === ROLE_FACULTY
+  ? sanitizeString($data['delivery_location'] ?? '', 255)
+  : '';
 $pickupDate  = sanitizeString($data['pickup_date'] ?? '', 10);
 $pickupTime  = sanitizeString($data['pickup_time'] ?? '', 10);
 $redeemPoints = filter_var($data['redeem_points'] ?? false, FILTER_VALIDATE_BOOLEAN);
@@ -52,6 +55,11 @@ $closeTime = getSetting('store_close_time', '20:00');
 if (empty($items)) {
   http_response_code(422);
   echo json_encode(['ok' => false, 'message' => 'Your cart is empty.']);
+  exit;
+}
+if ($role === ROLE_FACULTY && $deliveryLocation === '') {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'message' => 'Please enter where your order should be delivered.']);
   exit;
 }
 if ($pickupDate !== date('Y-m-d') || empty($pickupTime)) {
@@ -170,9 +178,9 @@ try {
     $orderNo = generateOrderNumber();
     try {
       $db->prepare(
-        "INSERT INTO orders (order_number, order_type, status, student_id, faculty_id, total_amount, notes, pickup_time, pickup_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      )->execute([$orderNo, ORDER_PREORDER, STATUS_PENDING, $studentId, $facultyId, $total, $notes, $pickupTime, $pickupDate]);
+        "INSERT INTO orders (order_number, order_type, status, student_id, faculty_id, total_amount, notes, delivery_location, pickup_time, pickup_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )->execute([$orderNo, ORDER_PREORDER, STATUS_PENDING, $studentId, $facultyId, $total, $notes, $deliveryLocation ?: null, $pickupTime, $pickupDate]);
       break; // success
     } catch (\PDOException $e) {
       if ($e->getCode() === '23000' && $attempt < $maxAttempts) {

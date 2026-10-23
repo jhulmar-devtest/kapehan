@@ -40,6 +40,10 @@
     </select>
     <p id="pickupSlotMessage" class="cart-hint" role="status" style="font-size:12px;color:var(--text-muted);margin:6px 0 0"></p>
     <input class="field-input" id="cartNotes" placeholder="Notes (optional)" style="margin-top:10px">
+    <?php if (currentRole() === ROLE_FACULTY): ?>
+      <label class="field-label" for="deliveryLocation" style="display:block;margin-top:10px">Delivery location <span aria-hidden="true">*</span></label>
+      <input class="field-input" id="deliveryLocation" maxlength="255" placeholder="Building, office, or room" required>
+    <?php endif; ?>
 
     <div class="cart-total-row" style="margin-top:16px">
       <span>Total</span><span id="cartTotal">₱0.00</span>

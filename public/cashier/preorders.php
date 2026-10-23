@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 // This is handled via beforeunload event in JS
 
 $orders = $db->query(
-  "SELECT o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes,
+  "SELECT o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes, o.delivery_location,
           o.locked_by, o.locked_at, o.lock_expire_at, o.pickup_time,
           COALESCE(s.full_name, f.full_name) AS customer_name,
           COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id,
@@ -125,7 +125,7 @@ $orders = $db->query(
    LEFT JOIN cashiers c ON o.locked_by = c.id
    WHERE o.order_type = 'pre-order'
      AND o.status IN ('pending','preparing','ready')
-   GROUP BY o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes,
+   GROUP BY o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes, o.delivery_location,
             o.locked_by, o.locked_at, o.lock_expire_at,
             customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, p.gateway, p.payment_status, c.full_name
    ORDER BY
@@ -880,6 +880,11 @@ layoutHeader('Pre-orders', '');
           <?php if (!empty($o['notes'])): ?>
             <div class="order-notes">
               <i class="fa-solid fa-note-sticky"></i><?= e($o['notes']) ?>
+            </div>
+          <?php endif; ?>
+          <?php if (!empty($o['delivery_location'])): ?>
+            <div class="order-notes" style="border-color:#b87936;background:#fff8ed">
+              <i class="fa-solid fa-location-dot"></i><strong>Deliver to:</strong> <?= e($o['delivery_location']) ?>
             </div>
           <?php endif; ?>
 

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
 $db = Database::getInstance();
+$inventoryCategories = inventoryCategories($db);
 
 // ---- Adjust stock (restock / waste / correction) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust_item'])) {
@@ -50,9 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
   verifyCsrf();
   $id = (int) ($_POST['item_id'] ?? 0);
   $name = sanitizeString($_POST['name'] ?? '', 120);
+  $category = sanitizeString($_POST['category'] ?? '', 80);
   $unit = sanitizeString($_POST['unit'] ?? '', 20);
   $reorder = round((float) ($_POST['reorder_level'] ?? 0), 3);
   $cost = round((float) ($_POST['cost_per_unit'] ?? 0), 2);
+  if (!inventoryCategoryExists($db, $category)) {
+    flash('global', 'Choose a valid inventory category.', 'error');
+    redirect(APP_URL . '/admin/inventory.php');
+  }
   if ($id && !empty($name) && !empty($unit)) {
     $isAddon = ($_POST['is_addon'] ?? '') === '1';
     $addonName = sanitizeString($_POST['addon_name'] ?? '', 120);
@@ -66,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
 
     try {
       $db->beginTransaction();
-      $db->prepare("UPDATE inventory_items SET name=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=?")
-        ->execute([$name, $unit, $reorder, $cost, $id]);
+      $db->prepare("UPDATE inventory_items SET name=?, category=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=?")
+        ->execute([$name, $category, $unit, $reorder, $cost, $id]);
 
       $existing = $db->prepare("SELECT a.id FROM addons a JOIN addon_ingredients ai ON ai.addon_id = a.id WHERE ai.inventory_item_id = ? ORDER BY a.id LIMIT 1");
       $existing->execute([$id]);
@@ -300,6 +306,7 @@ layoutHeader('Inventory');
     <div class="page-header-sub"><?= count($items) ?> item<?= count($items) !== 1 ? 's' : '' ?> tracked</div>
   </div>
   <div class="page-header-actions">
+    <a href="<?= APP_URL ?>/admin/inventory-categories.php" class="btn btn-ghost"><i class="fa-solid fa-tags"></i> Manage Categories</a>
     <a href="<?= APP_URL ?>/admin/recipes.php" class="btn btn-ghost"><i class="fa-solid fa-flask"></i> Product Recipes</a>
     <button class="btn btn-primary" onclick="openAddItemModal()"><i class="fa-solid fa-plus"></i> Add Item</button>
   </div>
@@ -320,6 +327,7 @@ layoutHeader('Inventory');
         <thead>
           <tr>
             <th>Item</th>
+            <th>Category</th>
             <th>On Hand</th>
             <th>Reorder Level</th>
             <th>Cost/Unit</th>
@@ -329,7 +337,7 @@ layoutHeader('Inventory');
         <tbody>
           <?php if (empty($items)): ?>
             <tr>
-              <td colspan="5" style="text-align:center;padding:30px;color:var(--text-muted)">No inventory items yet.</td>
+              <td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted)">No inventory items yet.</td>
             </tr>
             <?php else: foreach ($items as $it):
               $low = (float) $it['available_quantity'] <= (float) $it['reorder_level'];
@@ -341,6 +349,7 @@ layoutHeader('Inventory');
                   </button>
                   <?php if (!empty($it['addon'])): ?><span class="badge <?= $it['addon']['addon_status'] === 'active' ? 'badge-ready' : 'badge-cancelled' ?>" style="margin-left:6px"><?= $it['addon']['addon_status'] === 'active' ? 'Add-on' : 'Add-on paused' ?>: <?= e($it['addon']['addon_name']) ?></span><?php endif; ?>
                 </td>
+                <td><span class="badge badge-ready"><?= e($it['category'] ?? 'Other') ?></span></td>
                 <td>
                   <?= number_format((float) $it['quantity_on_hand'], 3) ?> <?= e($it['unit']) ?> on hand
                   <div class="text-muted" style="font-size:11px;margin-top:3px">
@@ -403,6 +412,7 @@ layoutHeader('Inventory');
         Adding several ingredients? This stays open after each save — click Done when you're finished and the list will refresh.
       </p>
       <div class="form-group"><label class="form-label">Name</label><input type="text" id="new-item-name" class="form-control" required placeholder="e.g. Fresh Milk"></div>
+      <div class="form-group"><label class="form-label" for="new-item-category">Category</label><select id="new-item-category" class="form-control"><?php foreach ($inventoryCategories as $categoryOption): ?><option value="<?= e($categoryOption['name']) ?>"><?= e($categoryOption['name']) ?></option><?php endforeach; ?></select></div>
       <div class="form-group"><label class="form-label">Stock unit</label><input type="text" id="new-item-unit" class="form-control" required placeholder="g, kg, ml, L, pcs"><small class="text-muted">How this item is counted in stock. Drink sizes are set on the Ordering page.</small></div>
       <div class="form-group"><label class="form-label">Starting Quantity</label><input type="number" step="0.001" id="new-item-qty" class="form-control" value="0"></div>
       <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" id="new-item-reorder" class="form-control" value="0"></div>
@@ -479,6 +489,7 @@ layoutHeader('Inventory');
       <input type="hidden" name="item_id" id="edit-item-id">
       <div class="modal-body">
         <div class="form-group"><label class="form-label">Name</label><input type="text" name="name" id="edit-item-name" class="form-control" required></div>
+        <div class="form-group"><label class="form-label" for="edit-item-category">Category</label><select name="category" id="edit-item-category" class="form-control"><?php foreach ($inventoryCategories as $categoryOption): ?><option value="<?= e($categoryOption['name']) ?>"><?= e($categoryOption['name']) ?></option><?php endforeach; ?></select></div>
         <div class="form-group"><label class="form-label">Stock unit</label><input type="text" name="unit" id="edit-item-unit" class="form-control" required></div>
         <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" name="reorder_level" id="edit-item-reorder" class="form-control"></div>
         <div class="form-group"><label class="form-label">Cost per Unit (₱)</label><input type="number" step="0.01" name="cost_per_unit" id="edit-item-cost" class="form-control"></div>
@@ -549,6 +560,7 @@ layoutHeader('Inventory');
   function openAddItemModal() {
     inventoryItemsAddedThisSession = false;
     ['new-item-name', 'new-item-unit'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('new-item-category').value = <?= json_encode((string)($inventoryCategories[0]['name'] ?? '')) ?>;
     ['new-item-qty', 'new-item-reorder', 'new-item-cost'].forEach(id => document.getElementById(id).value = '0');
     document.getElementById('new-item-is-addon').checked = false;
     document.getElementById('new-addon-name').value = '';
@@ -577,6 +589,7 @@ layoutHeader('Inventory');
 
     const formData = new FormData();
     formData.append('name', name);
+    formData.append('category', document.getElementById('new-item-category').value);
     formData.append('unit', unit);
     formData.append('quantity_on_hand', document.getElementById('new-item-qty').value || 0);
     formData.append('reorder_level', document.getElementById('new-item-reorder').value || 0);
@@ -594,6 +607,7 @@ layoutHeader('Inventory');
           inventoryItemsAddedThisSession = true;
           showToast('"' + name + '" added — add another or click Done');
           ['new-item-name', 'new-item-unit'].forEach(id => document.getElementById(id).value = '');
+          document.getElementById('new-item-category').value = <?= json_encode((string)($inventoryCategories[0]['name'] ?? '')) ?>;
           ['new-item-qty', 'new-item-reorder', 'new-item-cost'].forEach(id => document.getElementById(id).value = '0');
           document.getElementById('new-item-is-addon').checked = false;
           document.getElementById('new-addon-name').value = '';
@@ -652,6 +666,7 @@ layoutHeader('Inventory');
   function openEditItemModal(item) {
     document.getElementById('edit-item-id').value = item.id;
     document.getElementById('edit-item-name').value = item.name;
+    document.getElementById('edit-item-category').value = item.category || <?= json_encode((string)($inventoryCategories[0]['name'] ?? '')) ?>;
     document.getElementById('edit-item-unit').value = item.unit;
     document.getElementById('edit-item-reorder').value = item.reorder_level;
     document.getElementById('edit-item-cost').value = item.cost_per_unit;

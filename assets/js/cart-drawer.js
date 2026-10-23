@@ -296,6 +296,12 @@ function proceedToPayment() {
     showToast("warning", "Your cart is empty.");
     return;
   }
+  const deliveryLocationEl = document.getElementById("deliveryLocation");
+  if (deliveryLocationEl && !deliveryLocationEl.value.trim()) {
+    showToast("warning", "Please enter where your order should be delivered.");
+    deliveryLocationEl.focus();
+    return;
+  }
   const pickupTimeEl = document.getElementById("pickupTime");
   if (!pickupTimeEl?.value || pickupTimeEl.options[pickupTimeEl.selectedIndex]?.disabled) {
     showToast("warning", "Please choose an available pickup time.");
@@ -378,6 +384,7 @@ function submitOrder() {
     reference_no: refNo,
     pay_via: useGateway ? "paymongo" : "manual",
     notes: document.getElementById("cartNotes").value.trim(),
+    delivery_location: document.getElementById("deliveryLocation")?.value.trim() || "",
     pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
     redeem_points: !!document.getElementById("redeemLoyaltyCheckbox")?.checked,
