@@ -184,11 +184,12 @@ layoutHeader('Cash Drawer');
     <div class="card-header"><div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div></div>
     <div class="card-body" style="display:grid;gap:8px">
       <?php foreach ($savedReadings as $savedReading): ?>
-        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
+        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
           <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
         </a>
       <?php endforeach; ?>
     </div>
   </div>
 <?php endif; endif; ?>
+<?php require __DIR__ . '/../../includes/register-reading-modal.php'; ?>
 <?php layoutFooter(); ?>

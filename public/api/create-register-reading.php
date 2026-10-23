@@ -17,7 +17,8 @@ try {
   $readingId = createCashRegisterReading($db, $drawerId, $type, currentRole(), (int)currentUserId());
   $db->commit();
   auditLog(currentRole(), currentUserId(), 'create_' . strtolower($type) . '_reading', 'cash_register_readings', $readingId);
-  redirect(APP_URL . '/cashier/register-reading.php?id=' . $readingId);
+  $drawerPage = currentRole() === ROLE_ADMIN ? 'admin' : 'cashier';
+  redirect(APP_URL . '/' . $drawerPage . '/cash-drawer.php?day=' . $drawerId . '&reading=' . $readingId);
 } catch (Throwable $e) {
   if (isset($db) && $db->inTransaction()) $db->rollBack();
   error_log('Register reading creation failed: ' . $e->getMessage());

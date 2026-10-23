@@ -140,7 +140,7 @@ layoutHeader('Cash Drawer');
           <button class="btn btn-outline" type="submit"><i class="fa-solid fa-file-invoice-dollar"></i> Z Reading</button>
         </form>
       <?php endif; ?>
-      <button class="btn btn-primary" id="drawer-print-btn" onclick="printDrawerReport(<?= (int)$report['id'] ?>)"><i class="fa-solid fa-print"></i> Print Report</button>
+      <button class="btn btn-primary" id="drawer-print-btn" onclick="printDrawerReport(<?= (int)$report['id'] ?>)" title="Thermal print the full drawer audit report"><i class="fa-solid fa-print"></i> Print Full Drawer Report</button>
     </div>
   <?php endif; ?>
 </div>
@@ -328,8 +328,8 @@ function printDrawerReport(dayId) {
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Printing…';
   fetch('<?= APP_URL ?>/cashier/thermal_drawer_report.php?drawer_day_id=' + encodeURIComponent(dayId))
     .then(r => r.json())
-    .then(data => { if (!data.success) throw new Error(data.error || 'Printer error'); btn.innerHTML = '<i class="fa-solid fa-check"></i> Sent to printer'; setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Report'; }, 2500); })
-    .catch(err => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Report'; alert(err.message); });
+    .then(data => { if (!data.success) throw new Error(data.error || 'Printer error'); btn.innerHTML = '<i class="fa-solid fa-check"></i> Sent to printer'; setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report'; }, 2500); })
+    .catch(err => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report'; alert(err.message); });
 }
 </script>
 <?php if ($report):
@@ -342,11 +342,12 @@ function printDrawerReport(dayId) {
     <div class="card-header"><div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div></div>
     <div class="card-body" style="display:grid;gap:8px">
       <?php foreach ($savedReadings as $savedReading): ?>
-        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
+        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
           <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
         </a>
       <?php endforeach; ?>
     </div>
   </div>
 <?php endif; endif; ?>
+<?php require __DIR__ . '/../../includes/register-reading-modal.php'; ?>
 <?php layoutFooter(); ?>
