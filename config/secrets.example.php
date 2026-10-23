@@ -56,3 +56,14 @@ define('APP_KEY', 'REPLACE_WITH_YOUR_OWN_RANDOM_KEY');
 // priority over these. They're only used until an admin saves a value.
 define('GCASH_PAYMENT_NAME', '');
 define('GCASH_PAYMENT_NUMBER', '');
+
+// --- PayMongo (online GCash payments) ---
+// OPTIONAL. Leave PAYMONGO_SECRET_KEY empty to keep using the manual GCash
+// reference-number flow. To turn online payments on, see docs/PAYMONGO_SETUP.md.
+// Use the TEST keys (sk_test_...) while developing/demoing - no real money moves.
+// NEVER commit real keys. This file is gitignored; keep it that way.
+define('PAYMONGO_SECRET_KEY', '');      // sk_test_xxxxxxxxxxxxxxxx
+define('PAYMONGO_WEBHOOK_SECRET', '');  // whsk_xxxxxxxxxxxxxxxx (shown when you create the webhook)
+// Only needed on Windows/XAMPP if PayMongo calls fail with "SSL certificate problem":
+// full path to a cacert.pem file, e.g. 'C:/xampp/php/extras/ssl/cacert.pem'
+define('PAYMONGO_CA_BUNDLE', '');

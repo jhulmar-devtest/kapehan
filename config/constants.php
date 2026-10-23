@@ -31,6 +31,13 @@ if (!defined('GCASH_PAYMENT_NAME')) {
 // GCash receipt as "Ref No. 1234 567 890123"). Change this one value if a
 // real receipt ever shows a different length.
 define('GCASH_REF_DIGITS', 13);
+// PayMongo (online GCash). Real values go in config/secrets.php; these empty
+// defaults keep the app on the manual GCash-reference flow until they are set.
+if (!defined('PAYMONGO_SECRET_KEY'))     define('PAYMONGO_SECRET_KEY', '');
+if (!defined('PAYMONGO_WEBHOOK_SECRET')) define('PAYMONGO_WEBHOOK_SECRET', '');
+if (!defined('PAYMONGO_CA_BUNDLE'))      define('PAYMONGO_CA_BUNDLE', '');
+// Online orders left unpaid this long are cancelled automatically.
+define('PAYMONGO_UNPAID_ORDER_MINUTES', 45);
 define('PICKUP_MIN_LEAD_MINUTES', 5);
 
 // APP_URL auto-detects the host AND protocol so the app works on:

@@ -403,7 +403,7 @@ layoutHeader('Inventory');
         Adding several ingredients? This stays open after each save — click Done when you're finished and the list will refresh.
       </p>
       <div class="form-group"><label class="form-label">Name</label><input type="text" id="new-item-name" class="form-control" required placeholder="e.g. Fresh Milk"></div>
-      <div class="form-group"><label class="form-label">Unit</label><input type="text" id="new-item-unit" class="form-control" required placeholder="g, kg, ml, L, pcs"></div>
+      <div class="form-group"><label class="form-label">Stock unit</label><input type="text" id="new-item-unit" class="form-control" required placeholder="g, kg, ml, L, pcs"><small class="text-muted">How this item is counted in stock. Drink sizes are set on the Ordering page.</small></div>
       <div class="form-group"><label class="form-label">Starting Quantity</label><input type="number" step="0.001" id="new-item-qty" class="form-control" value="0"></div>
       <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" id="new-item-reorder" class="form-control" value="0"></div>
       <div class="form-group">
@@ -479,7 +479,7 @@ layoutHeader('Inventory');
       <input type="hidden" name="item_id" id="edit-item-id">
       <div class="modal-body">
         <div class="form-group"><label class="form-label">Name</label><input type="text" name="name" id="edit-item-name" class="form-control" required></div>
-        <div class="form-group"><label class="form-label">Unit</label><input type="text" name="unit" id="edit-item-unit" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">Stock unit</label><input type="text" name="unit" id="edit-item-unit" class="form-control" required></div>
         <div class="form-group"><label class="form-label">Reorder Level</label><input type="number" step="0.001" name="reorder_level" id="edit-item-reorder" class="form-control"></div>
         <div class="form-group"><label class="form-label">Cost per Unit (₱)</label><input type="number" step="0.01" name="cost_per_unit" id="edit-item-cost" class="form-control"></div>
         <hr style="border:0;border-top:1px solid var(--border-color);margin:1rem 0">

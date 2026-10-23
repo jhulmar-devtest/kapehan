@@ -16,9 +16,11 @@
 // This protects against XSS (Cross-Site Scripting) attacks.
 ini_set('session.cookie_httponly', 1);
 
-// SameSite=Strict = Cookie is not sent on cross-site requests.
-// Protects against CSRF (Cross-Site Request Forgery) attacks.
-ini_set('session.cookie_samesite', 'Strict');
+// SameSite=Lax allows the session cookie on top-level return navigations
+// from payment providers such as PayMongo, while withholding it on most
+// cross-site subrequests. State-changing forms and APIs still require CSRF
+// tokens (see includes/csrf.php).
+ini_set('session.cookie_samesite', 'Lax');
 
 // Strict mode = PHP will reject unknown session IDs.
 // Prevents session fixation attacks.

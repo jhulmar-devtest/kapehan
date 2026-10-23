@@ -39,6 +39,13 @@ class Database {
         DB_CHARSET
       );
 
+      // PHP 8.5 moved this driver attribute to Pdo\Mysql. Resolve it by
+      // name so PHP 8.5 does not emit a deprecation warning, while older
+      // PHP versions can continue using the PDO_MYSQL constant.
+      $mysqlInitCommandAttribute = defined('Pdo\\Mysql::ATTR_INIT_COMMAND')
+        ? constant('Pdo\\Mysql::ATTR_INIT_COMMAND')
+        : constant('PDO::MYSQL_ATTR_INIT_COMMAND');
+
       try {
         self::$instance = new PDO($dsn, DB_USER, DB_PASS, [
           // Show errors as exceptions (easier to debug)
@@ -48,7 +55,7 @@ class Database {
           // IMPORTANT: disable emulated prepares for real security
           PDO::ATTR_EMULATE_PREPARES   => false,
           // Strict mode — prevents silent data truncation
-          PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+          $mysqlInitCommandAttribute => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
         ]);
       } catch (PDOException $e) {
         // In production: log the error, show a friendly message.

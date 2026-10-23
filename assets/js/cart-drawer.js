@@ -317,7 +317,30 @@ function proceedToPayment() {
   const loyaltyDiscount = document.getElementById("paymentLoyaltyDiscount");
   if (loyaltyDiscount) loyaltyDiscount.textContent = `−₱${redemption.discount.toFixed(2)} (${redemption.points} points)`;
   document.getElementById("refNo").value = "";
+  if (window.PAYMONGO_ENABLED) setupGatewayPaymentModal();
   document.getElementById("paymentModal").hidden = false;
+}
+
+// Online GCash: hide the manual "send money + paste reference" parts.
+function setupGatewayPaymentModal() {
+  const modal = document.getElementById("paymentModal");
+  ["gcashPaymentName", "gcashPaymentNumber"].forEach((id) => {
+    const row = document.getElementById(id)?.closest(".confirm-row");
+    if (row) row.style.display = "none";
+  });
+  const refInput = document.getElementById("refNo");
+  if (refInput) refInput.style.display = "none";
+  const refLabel = modal.querySelector('label[for="refNo"]');
+  if (refLabel) refLabel.style.display = "none";
+  const hint = modal.querySelector("p.cart-hint");
+  if (hint) hint.style.display = "none";
+  const sub = modal.querySelector(".confirm-subheading");
+  if (sub) sub.textContent = "You'll be taken to GCash's secure payment page to pay for this order.";
+  const btn = document.getElementById("submitPaymentButton");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = "Pay with GCash";
+  }
 }
 
 function closePaymentModal() {
@@ -332,14 +355,18 @@ function submitOrder() {
     showToast("warning", "Your cart or pickup time changed. Please review it and try again.");
     return;
   }
-  const refNo = document.getElementById("refNo").value.trim();
-  if (!refNo) {
-    showToast("warning", "Please enter your GCash reference number.");
-    return;
-  }
-  if (refNo.replace(/\D/g, "").length !== (window.GCASH_REF_DIGITS || 13)) {
-    showToast("warning", `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`);
-    return;
+  // Online GCash (PayMongo) needs no reference number; the manual flow does.
+  const useGateway = !!window.PAYMONGO_ENABLED;
+  const refNo = useGateway ? "" : document.getElementById("refNo").value.trim();
+  if (!useGateway) {
+    if (!refNo) {
+      showToast("warning", "Please enter your GCash reference number.");
+      return;
+    }
+    if (refNo.replace(/\D/g, "").length !== (window.GCASH_REF_DIGITS || 13)) {
+      showToast("warning", `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`);
+      return;
+    }
   }
   const pickupDate = todayInManila();
   const pickupLabel =
@@ -349,6 +376,7 @@ function submitOrder() {
   const payload = {
     items: cart,
     reference_no: refNo,
+    pay_via: useGateway ? "paymongo" : "manual",
     notes: document.getElementById("cartNotes").value.trim(),
     pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
@@ -366,6 +394,11 @@ function submitOrder() {
   })
     .then((r) => r.json())
     .then((res) => {
+      if (res.ok && res.redirect_url) {
+        // Online GCash: hand the customer over to PayMongo's payment page.
+        window.location.href = res.redirect_url;
+        return;
+      }
       if (res.ok) {
         saveCart([]);
         const redeemCheckbox = document.getElementById("redeemLoyaltyCheckbox");
@@ -391,7 +424,7 @@ function submitOrder() {
     })
     .finally(() => {
       placeBtn.disabled = false;
-      placeBtn.textContent = "Submit order";
+      placeBtn.textContent = window.PAYMONGO_ENABLED ? "Pay with GCash" : "Submit order";
     });
 }
 

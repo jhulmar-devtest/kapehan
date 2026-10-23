@@ -480,6 +480,11 @@ function gcashPaymentNumber(): string {
  * gcashRefInUse()      - true if another pending/paid GCash payment already
  *                        used this reference (failed/refunded ones don't count).
  */
+/** True when online GCash via PayMongo is configured (secret key present). */
+function paymongoEnabled(): bool {
+  return defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== '';
+}
+
 function normalizeGcashRef(string $raw): string {
   return preg_replace('/\D+/', '', $raw);
 }

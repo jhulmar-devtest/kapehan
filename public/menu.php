@@ -1711,6 +1711,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     const IS_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
     window.GCASH_REF_DIGITS = <?= (int) GCASH_REF_DIGITS ?>;
+    window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;
     window.LOYALTY_REDEEM_POINTS = <?= (int) $loyaltyRules['redeem_points'] ?>;
     window.LOYALTY_REDEEM_DISCOUNT = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
     window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;

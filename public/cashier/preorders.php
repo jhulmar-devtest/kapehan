@@ -2,9 +2,13 @@
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 require_once __DIR__ . '/../../includes/loyalty.php';
+require_once __DIR__ . '/../../includes/paymongo.php';
 requireRole(ROLE_CASHIER);
 $db = Database::getInstance();
 $currentUser = currentUserId();
+
+// Cancel online orders that were never paid, so they stop holding stock/slots.
+try { paymongoExpireStaleOrders($db); } catch (Throwable $e) { error_log('PayMongo cleanup failed: ' . $e->getMessage()); }
 
 // Clear expired locks on page load (but not for orders in "preparing" status)
 $db->query(
@@ -49,6 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
       $orderStmt = $db->prepare("SELECT id FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
       $orderStmt->execute([$oid]);
       if (!$orderStmt->fetchColumn()) throw new RuntimeException('This pre-order could not be found.');
+
+      // Online (PayMongo) orders must be paid before they can be prepared.
+      if ($status === STATUS_PREPARING) {
+        $gw = $db->prepare('SELECT gateway, payment_status FROM payments WHERE order_id = ? LIMIT 1');
+        $gw->execute([$oid]);
+        $gwRow = $gw->fetch(PDO::FETCH_ASSOC);
+        if ($gwRow && $gwRow['gateway'] === 'paymongo' && $gwRow['payment_status'] !== PAY_STATUS_PAID) {
+          throw new RuntimeException('This order is still waiting for the customer to finish paying online.');
+        }
+      }
 
       // Update status - keep lock if status is "preparing" OR "ready", clear otherwise.
       if ($status === STATUS_PREPARING || $status === STATUS_READY) {
@@ -96,6 +110,7 @@ $orders = $db->query(
           COALESCE(s.full_name, f.full_name) AS customer_name,
           COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id,
           p.payment_method, p.reference_number, p.recipient_name, p.recipient_number,
+          p.gateway, p.payment_status AS pay_status,
           c.full_name AS locked_by_name,
           GROUP_CONCAT(CONCAT(od.quantity,'× ',pr.name,
             IF(od.customization_note IS NOT NULL AND od.customization_note != '',
@@ -112,7 +127,7 @@ $orders = $db->query(
      AND o.status IN ('pending','preparing','ready')
    GROUP BY o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes,
             o.locked_by, o.locked_at, o.lock_expire_at,
-            customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, c.full_name
+            customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, p.gateway, p.payment_status, c.full_name
    ORDER BY
      CASE
        WHEN o.pickup_time = 'ASAP' THEN 0
@@ -714,7 +729,7 @@ layoutHeader('Pre-orders', '');
 <div class="alert alert-info mb-5" style="margin-bottom:var(--space-5)">
   <i class="fa-solid fa-circle-info"></i>
   <div>
-    <strong>How to verify payment:</strong> Before pressing <em>Start Preparing</em>, check the reference number below against your <strong>GCash inbox</strong> or ask to see the student's payment screenshot.
+    <strong>How to verify payment:</strong> Orders marked <em>Paid online</em> were confirmed automatically by PayMongo. For manual GCash payments, before pressing <em>Start Preparing</em>, check the reference number below against your <strong>GCash inbox</strong> or ask to see the student's payment screenshot.
     At pickup, use <strong>Verify ID</strong> to check the physical school ID, or scan the customer's QR and review the matched order before confirming handover.
   </div>
 </div>
@@ -830,7 +845,7 @@ layoutHeader('Pre-orders', '');
                 <?php if (!empty($o['reference_number'])): ?>
                   <div class="ref-number"><?= e($o['reference_number']) ?></div>
                 <?php else: ?>
-                  <div class="ref-missing">No reference number</div>
+                  <div class="ref-missing"><?= ($o['gateway'] ?? '') === 'paymongo' ? 'Awaiting online payment&hellip;' : 'No reference number' ?></div>
                 <?php endif; ?>
                 <?php if (!empty($o['recipient_number'])): ?>
                   <div class="ref-label" style="margin-top:8px">Paid to</div>
@@ -842,10 +857,23 @@ layoutHeader('Pre-orders', '');
 
           <!-- Verify notice (only on pending) -->
           <?php if ($o['status'] === STATUS_PENDING): ?>
-            <div class="verify-notice">
-              <i class="fa-solid fa-triangle-exclamation"></i>
-              <div><strong>Verify before preparing:</strong> Check this reference number in your <?= $pay['label'] ?> inbox before pressing Start Preparing.</div>
-            </div>
+            <?php $isGateway = ($o['gateway'] ?? '') === 'paymongo'; $gwPaid = $isGateway && ($o['pay_status'] ?? '') === PAY_STATUS_PAID; ?>
+            <?php if ($gwPaid): ?>
+              <div class="verify-notice" style="background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7">
+                <i class="fa-solid fa-circle-check"></i>
+                <div><strong>Paid online:</strong> GCash payment was confirmed automatically. No need to check a reference number.</div>
+              </div>
+            <?php elseif ($isGateway): ?>
+              <div class="verify-notice">
+                <i class="fa-solid fa-hourglass-half"></i>
+                <div><strong>Waiting for payment:</strong> The customer has not finished paying online yet. You can start this order once it shows as paid.</div>
+              </div>
+            <?php else: ?>
+              <div class="verify-notice">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div><strong>Verify before preparing:</strong> Check this reference number in your <?= $pay['label'] ?> inbox before pressing Start Preparing.</div>
+              </div>
+            <?php endif; ?>
           <?php endif; ?>
 
           <!-- Notes -->
@@ -871,9 +899,16 @@ layoutHeader('Pre-orders', '');
             <input type="hidden" name="order_id" value="<?= $o['id'] ?>">
 
             <?php if ($o['status'] === STATUS_PENDING): ?>
-              <button type="button" class="btn btn-primary btn-sm flex-1" onclick="handleStartPreparing(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', '<?= e($pay['label']) ?>')">
-                <i class="fa-solid fa-fire"></i> Start Preparing
-              </button>
+              <?php $gwUnpaid = ($o['gateway'] ?? '') === 'paymongo' && ($o['pay_status'] ?? '') !== PAY_STATUS_PAID; ?>
+              <?php if ($gwUnpaid): ?>
+                <button type="button" class="btn btn-primary btn-sm flex-1" disabled>
+                  <i class="fa-solid fa-hourglass-half"></i> Awaiting payment
+                </button>
+              <?php else: ?>
+                <button type="button" class="btn btn-primary btn-sm flex-1" onclick="handleStartPreparing(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', '<?= e($pay['label']) ?>', <?= ($o['gateway'] ?? '') === 'paymongo' ? 'true' : 'false' ?>)">
+                  <i class="fa-solid fa-fire"></i> Start Preparing
+                </button>
+              <?php endif; ?>
 
             <?php elseif ($o['status'] === STATUS_PREPARING): ?>
               <button type="button" class="btn btn-accent btn-sm flex-1" onclick="handleMarkReady(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>')">
@@ -951,7 +986,7 @@ layoutHeader('Pre-orders', '');
   const queueQrCanvas = document.getElementById('queueQrCanvas');
   const queueQrContext = queueQrCanvas.getContext('2d', { willReadFrequently: true });
 
-  async function handleStartPreparing(orderId, orderNumber, paymentMethod) {
+  async function handleStartPreparing(orderId, orderNumber, paymentMethod, autoPaid = false) {
     // First try to lock the order
     const lockRes = await lockOrder(orderId);
     console.log('Lock result:', lockRes);
@@ -973,7 +1008,7 @@ layoutHeader('Pre-orders', '');
     }
 
     // Show verification modal
-    const confirmed = await confirmModal(
+    const confirmed = autoPaid ? true : await confirmModal(
       `Have you verified the <strong>${paymentMethod}</strong> reference number for order <strong>${orderNumber}</strong>?`, {
         title: 'Verify Payment',
         icon: 'fa-shield-check',

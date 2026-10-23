@@ -47,6 +47,14 @@ if ($isAddon && ($addonName === '' || $addonPrice < 0 || $addonQty <= 0)) {
 try {
   $db = Database::getInstance();
   $db->beginTransaction();
+  $duplicateItem = $db->prepare('SELECT id FROM inventory_items WHERE name = ? AND unit = ? LIMIT 1');
+  $duplicateItem->execute([$name, $unit]);
+  if ($duplicateItem->fetchColumn()) {
+    $db->rollBack();
+    http_response_code(409);
+    echo json_encode(['success' => false, 'error' => 'A stock item with that name and unit already exists. Select the existing item instead.']);
+    exit;
+  }
   if ($isAddon) {
     $duplicate = $db->prepare('SELECT COUNT(*) FROM addons WHERE name = ?');
     $duplicate->execute([$addonName]);
@@ -62,6 +70,7 @@ try {
   )->execute([$name, $unit, $qty, $reorder, $cost]);
   $newId = (int) $db->lastInsertId();
 
+  $addonId = null;
   if ($isAddon) {
     $db->prepare("INSERT INTO addons (name, price, status) VALUES (?, ?, 'active')")
       ->execute([$addonName, $addonPrice]);
@@ -92,6 +101,12 @@ try {
       'addon_name' => $isAddon ? $addonName : null,
       'addon_price' => $isAddon ? $addonPrice : null,
     ],
+    'addon' => $isAddon ? [
+      'id' => $addonId,
+      'name' => $addonName,
+      'price' => $addonPrice,
+      'stock_summary' => $name . ' · ' . number_format($addonQty, 3) . ' ' . $unit,
+    ] : null,
   ]);
 } catch (\Throwable $e) {
   if (isset($db) && $db->inTransaction()) $db->rollBack();

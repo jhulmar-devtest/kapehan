@@ -8,7 +8,13 @@
 // between the two is which FK column on `orders` gets the user's id.
 // ============================================================
 
+// Keep PHP diagnostics out of this JSON endpoint's response body. Warnings
+// and deprecations are still recorded in the PHP error log.
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
 require_once __DIR__ . '/../../config/init.php';
+ini_set('display_errors', '0');
 require_once __DIR__ . '/../../includes/loyalty.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 require_once __DIR__ . '/../../includes/order-pricing.php';
@@ -25,6 +31,10 @@ date_default_timezone_set('Asia/Manila');
 
 $db   = Database::getInstance();
 $role = currentRole();
+
+require_once __DIR__ . '/../../includes/paymongo.php';
+// Free up pickup slots / ingredients held by online orders that were never paid.
+try { paymongoExpireStaleOrders($db); } catch (Throwable $e) { error_log('PayMongo cleanup failed: ' . $e->getMessage()); }
 
 $data = json_decode(file_get_contents('php://input'), true) ?? [];
 $items       = $data['items'] ?? [];
@@ -69,28 +79,33 @@ if (
 // Pre-orders are GCash-only — no cash, no other e-wallets/banks. A
 // reference number is always required since there's no cash fallback.
 $method = 'GCash';
-if (gcashPaymentNumber() === '' || gcashPaymentName() === '') {
-  http_response_code(503);
-  echo json_encode(['ok' => false, 'message' => 'Online ordering is temporarily unavailable while the shop configures its GCash account.']);
-  exit;
-}
-if (empty($ref)) {
-  http_response_code(422);
-  echo json_encode(['ok' => false, 'message' => 'GCash reference number is required.']);
-  exit;
-}
-// Keep digits only, check the length, and refuse a reference that was
-// already used for another order (the same receipt can't pay twice).
-$ref = normalizeGcashRef($ref);
-if ($refError = gcashRefError($ref)) {
-  http_response_code(422);
-  echo json_encode(['ok' => false, 'message' => $refError]);
-  exit;
-}
-if (gcashRefInUse($db, $ref)) {
-  http_response_code(422);
-  echo json_encode(['ok' => false, 'message' => 'This GCash reference number was already used for another order. Please check your receipt.']);
-  exit;
+// Online GCash through PayMongo: no reference number, no manual verification.
+$viaGateway = paymongoEnabled() && (($data['pay_via'] ?? '') === 'paymongo');
+
+if (!$viaGateway) {
+  if (gcashPaymentNumber() === '' || gcashPaymentName() === '') {
+    http_response_code(503);
+    echo json_encode(['ok' => false, 'message' => 'Online ordering is temporarily unavailable while the shop configures its GCash account.']);
+    exit;
+  }
+  if (empty($ref)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'GCash reference number is required.']);
+    exit;
+  }
+  // Keep digits only, check the length, and refuse a reference that was
+  // already used for another order (the same receipt can't pay twice).
+  $ref = normalizeGcashRef($ref);
+  if ($refError = gcashRefError($ref)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => $refError]);
+    exit;
+  }
+  if (gcashRefInUse($db, $ref)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'This GCash reference number was already used for another order. Please check your receipt.']);
+    exit;
+  }
 }
 
 // Catalog prices, size adjustments and add-ons are re-read from the database.
@@ -183,15 +198,51 @@ try {
   // cashier staff before it is recorded as paid.
   $payStatus = PAY_STATUS_PENDING;
   $paidAt    = null;
-  $db->prepare(
-    "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, reference_number, recipient_name, recipient_number, paid_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-  )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
+  if ($viaGateway) {
+    // Stays pending until PayMongo's webhook confirms the payment.
+    $db->prepare(
+      "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, gateway)
+       VALUES (?, ?, ?, ?, 'paymongo')"
+    )->execute([$orderId, $method, $total, $payStatus]);
+  } else {
+    $db->prepare(
+      "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, reference_number, recipient_name, recipient_number, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
+  }
 
   $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId);
 
   $db->commit();
   auditLog($role, currentUserId(), 'place_preorder', 'orders', $orderId);
+
+  if ($viaGateway) {
+    // The order is saved. Now ask PayMongo for the hosted GCash payment page.
+    // Handled fully here (never rethrown) because the transaction is closed.
+    try {
+      $checkout = paymongoCreateCheckout(
+        $orderNo,
+        (float) $total,
+        (int) $orderId,
+        APP_URL . '/payment-return.php?order=' . urlencode($orderNo),
+        APP_URL . '/payment-return.php?order=' . urlencode($orderNo) . '&cancelled=1'
+      );
+      $db->prepare('UPDATE payments SET gateway_session_id = ? WHERE order_id = ?')->execute([$checkout['id'], $orderId]);
+      echo json_encode([
+        'ok'           => true,
+        'redirect_url' => $checkout['url'],
+        'order_number' => $orderNo,
+        'total'        => $total,
+        'message'      => 'Redirecting you to GCash to complete payment...',
+      ]);
+    } catch (Throwable $e) {
+      // Could not reach PayMongo: release the order again so nothing is left hanging.
+      try { paymongoCancelUnpaidOrder($db, (int) $orderId, $role, $customerId); } catch (Throwable $e2) { error_log('PayMongo rollback failed: ' . $e2->getMessage()); }
+      http_response_code(502);
+      echo json_encode(['ok' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Could not start the online payment. Please try again.']);
+    }
+    exit;
+  }
 
   echo json_encode([
     'ok'           => true,
