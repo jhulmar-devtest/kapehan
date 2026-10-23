@@ -547,8 +547,9 @@ function renderOrderTimeline(string $status): string {
       </form>
       <div class="header-actions">
         <div class="user-menu">
-          <button class="user-menu-btn" onclick="toggleUserMenu()">
-            <i class="fa-solid fa-circle-user" style="font-size:20px"></i>
+          <button class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Account menu for <?= e($_SESSION['full_name'] ?? 'User') ?>" aria-haspopup="true" aria-controls="userMenuDropdown">
+            <i class="fa-solid fa-circle-user" style="font-size:20px;flex:none"></i>
+            <span class="user-menu-name"><?= e($_SESSION['full_name'] ?? 'Account') ?></span>
           </button>
           <div class="user-menu-dropdown" id="userMenuDropdown">
             <a href="<?= APP_URL ?>/account.php" class="user-menu-item"><i class="fa-solid fa-user"></i> My Profile</a>

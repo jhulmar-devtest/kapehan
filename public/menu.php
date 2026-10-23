@@ -246,9 +246,11 @@ $storeClose = getSetting('store_close_time', '20:00');
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 9px;
       height: 44px;
-      width: 44px;
-      border-radius: 50%;
+      max-width: min(230px, 34vw);
+      padding: 0 13px;
+      border-radius: 999px;
       border: 1px solid var(--border-color);
       background: rgba(255, 255, 255, .78);
       cursor: pointer;
@@ -256,6 +258,16 @@ $storeClose = getSetting('store_close_time', '20:00');
       font-size: 22px;
       color: var(--text-secondary);
       transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+
+    .user-menu-name {
+      max-width: 165px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: .86rem;
+      font-weight: 700;
+      color: var(--text-color);
     }
 
     .user-menu-btn:hover {
@@ -1216,6 +1228,17 @@ $storeClose = getSetting('store_close_time', '20:00');
         gap: 8px;
       }
 
+      .user-menu-name {
+        display: none;
+      }
+
+      .user-menu-btn {
+        width: 44px;
+        min-width: 44px;
+        padding: 0;
+        border-radius: 50%;
+      }
+
       .header-search {
         display: flex;
         order: 3;
@@ -1385,8 +1408,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       <div class="header-actions">
         <?php if ($loggedIn): ?>
           <div class="user-menu">
-            <button class="user-menu-btn" onclick="toggleUserMenu()">
-              <i class="fa-solid fa-circle-user" style="font-size: 22px;"></i>
+            <button class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Account menu for <?= e($_SESSION['full_name'] ?? 'User') ?>" aria-haspopup="true" aria-controls="userMenuDropdown">
+              <i class="fa-solid fa-circle-user" style="font-size: 22px; flex:none"></i>
+              <span class="user-menu-name"><?= e($_SESSION['full_name'] ?? 'Account') ?></span>
             </button>
             <div class="user-menu-dropdown" id="userMenuDropdown">
               <a href="<?= APP_URL ?>/account.php" class="user-menu-item"><i class="fa-solid fa-user" style="color: var(--primary-color);"></i> My Profile</a>

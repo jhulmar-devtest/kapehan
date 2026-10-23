@@ -549,6 +549,10 @@ function normalizePhMobile(string $raw): ?string {
  * the spotlight_pinned/_until migration not having been run yet —
  * falls back to automatic-only in that case.
  *
+ * Automatic picks are ranked from the latest seven days of sales and
+ * ratings on every request, so new activity can update the section
+ * without waiting for a daily rotation.
+ *
  * Returns an array of product rows (same shape as the main menu
  * query: includes cat_name, avg_rating, has_addons) ready to render
  * with the existing menu-card markup/JS.
@@ -592,31 +596,33 @@ function getSpotlightProducts(int $limit = 5): array {
 
   $stmt = $db->prepare(
     "SELECT p.*, c.name AS cat_name,
-            COALESCE(ROUND(AVG(pr.rating),1), 0) AS avg_rating,
+            COALESCE(ratings.avg_rating, 0) AS avg_rating,
             $hasAddonsExpr,
-            COALESCE(SUM(CASE
-              WHEN o.created_at >= (NOW() - INTERVAL 7 DAY)
-               AND o.status NOT IN ('cancelled','no_show')
-              THEN od.quantity ELSE 0 END), 0) AS sold_7d
+            COALESCE(recent_sales.sold_7d, 0) AS sold_7d
      FROM products p
      JOIN categories c ON p.category_id = c.id
-     LEFT JOIN order_details od ON od.product_id = p.id
-     LEFT JOIN orders o         ON o.id = od.order_id
-     LEFT JOIN product_ratings pr ON pr.product_id = p.id
+     LEFT JOIN (
+       SELECT od.product_id, SUM(od.quantity) AS sold_7d
+       FROM order_details od
+       JOIN orders o ON o.id = od.order_id
+       WHERE o.created_at >= (NOW() - INTERVAL 7 DAY)
+         AND o.status NOT IN ('cancelled','no_show')
+       GROUP BY od.product_id
+     ) recent_sales ON recent_sales.product_id = p.id
+     LEFT JOIN (
+       SELECT product_id, ROUND(AVG(rating), 1) AS avg_rating
+       FROM product_ratings
+       GROUP BY product_id
+     ) ratings ON ratings.product_id = p.id
      WHERE p.is_available = 1
        AND c.name != 'Add-ons'
        AND p.id NOT IN ($exclude)
-     GROUP BY p.id
-     ORDER BY (sold_7d * (0.7 + 0.3 * (avg_rating / 5))) DESC, p.id ASC
+     ORDER BY (COALESCE(recent_sales.sold_7d, 0) * (0.7 + 0.3 * (COALESCE(ratings.avg_rating, 0) / 5))) DESC,
+              p.updated_at DESC, p.id ASC
      LIMIT 10"
   );
   $stmt->execute($pinnedIds);
   $candidates = $stmt->fetchAll();
-
-  // Stable-for-the-day shuffle of the top candidates, so the automatic
-  // slots aren't frozen on whichever 1-2 products are always best-sellers.
-  $seed = date('Ymd');
-  usort($candidates, fn($a, $b) => crc32($seed . '-' . $a['id']) <=> crc32($seed . '-' . $b['id']));
 
   return array_merge($pinned, array_slice($candidates, 0, $needed));
 }
