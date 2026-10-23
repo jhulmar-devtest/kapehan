@@ -167,13 +167,63 @@ foreach ($items as &$item) {
 unset($item);
 $lowStockCount = count(array_filter($items, fn($i) => (float) $i['available_quantity'] <= (float) $i['reorder_level']));
 
+// ---- Recent activity (grouped per day, and per order) ----
 $recentLog = $db->query(
   "SELECT l.*, i.name AS item_name, i.unit, o.order_number
    FROM inventory_log l
    JOIN inventory_items i ON l.inventory_item_id = i.id
    LEFT JOIN orders o ON o.id = l.order_id
-   ORDER BY l.created_at DESC LIMIT 12"
+   ORDER BY l.created_at DESC LIMIT 100"
 )->fetchAll();
+
+// Visual metadata per log type. Anything that isn't restock/waste/correction
+// (e.g. deductions from sales or pre-orders) falls back to "order".
+$activityMeta = [
+  'restock'    => ['label' => 'Restock',    'icon' => 'fa-box-open'],
+  'waste'      => ['label' => 'Waste',      'icon' => 'fa-trash-can'],
+  'correction' => ['label' => 'Correction', 'icon' => 'fa-sliders'],
+  'order'      => ['label' => 'Order',      'icon' => 'fa-receipt'],
+];
+
+function activityDayLabel(string $datetime): string
+{
+  $day = date('Y-m-d', strtotime($datetime));
+  if ($day === date('Y-m-d')) return 'Today';
+  if ($day === date('Y-m-d', strtotime('-1 day'))) return 'Yesterday';
+  return date('D, M j', strtotime($datetime));
+}
+
+function logQtyHtml(array $log): string
+{
+  $change = (float) $log['change_amount'];
+  $cls = $change >= 0 ? 'log-change-pos' : 'log-change-neg';
+  return '<div class="log-qty ' . $cls . '">' . ($change >= 0 ? '+' : '−') . number_format(abs($change), 3)
+    . ' <span style="font-weight:500;font-size:11.5px">' . e($log['unit']) . '</span></div>';
+}
+
+// day label => list of entries (a single row, or one group per order)
+$logGroups = [];
+$orderSlots = [];
+foreach ($recentLog as $log) {
+  $day = activityDayLabel($log['created_at']);
+  $orderId = (int) ($log['order_id'] ?? 0);
+
+  if ($orderId) {
+    $key = $day . '|' . $orderId; // an order spanning two days shows under each day
+    if (!isset($orderSlots[$key])) {
+      $logGroups[$day][] = [
+        'kind'         => 'order',
+        'order_number' => $log['order_number'] ?: ('#' . $orderId),
+        'time'         => $log['created_at'],
+        'lines'        => [],
+      ];
+      $orderSlots[$key] = array_key_last($logGroups[$day]);
+    }
+    $logGroups[$day][$orderSlots[$key]]['lines'][] = $log;
+  } else {
+    $logGroups[$day][] = ['kind' => 'single', 'log' => $log];
+  }
+}
 
 // Restock history per item, for the "View Details" popup (item 4). Grouped
 // in PHP from one query rather than one query per item on the page.
@@ -227,24 +277,218 @@ layoutHeader('Inventory');
     }
   }
 
-  .log-item {
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 13.5px;
+  /* ---- Recent Activity ---- */
+  .activity-card .card-body {
+    padding: 0;
   }
 
-  .log-item:last-child {
-    border-bottom: none;
+  .activity-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .activity-chip {
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .activity-chip:hover {
+    color: var(--text-color);
+    border-color: var(--text-muted);
+  }
+
+  .activity-chip.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+  }
+
+  .activity-scroll {
+    max-height: 560px;
+    overflow-y: auto;
+  }
+
+  .activity-day {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-raised);
+    padding: 6px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  [data-log-day][hidden] {
+    display: none;
+  }
+
+  .log-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .log-row[hidden] {
+    display: none;
+  }
+
+  .log-icon {
+    flex: 0 0 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+  }
+
+  .log-type-restock .log-icon {
+    background: #e6f4ea;
+    color: #1e7a3d;
+  }
+
+  .log-type-waste .log-icon {
+    background: #fdecea;
+    color: #b3261e;
+  }
+
+  .log-type-correction .log-icon {
+    background: #fff4e0;
+    color: #b26a00;
+  }
+
+  .log-type-order .log-icon {
+    background: #e8f0fe;
+    color: #1a56c4;
+  }
+
+  .log-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .log-name {
+    font-weight: 600;
+    font-size: 13.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .log-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .log-qty {
+    flex: 0 0 auto;
+    text-align: right;
+    font-weight: 700;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
   }
 
   .log-change-pos {
     color: #1e7a3d;
-    font-weight: 700;
   }
 
   .log-change-neg {
     color: #b3261e;
-    font-weight: 700;
+  }
+
+  /* Order groups */
+  .log-order {
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .log-order[hidden] {
+    display: none;
+  }
+
+  .log-order>summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .log-order>summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .log-order>summary:hover {
+    background: var(--surface-raised);
+  }
+
+  .log-chevron {
+    color: var(--text-muted);
+    font-size: 11px;
+    transition: transform var(--transition-fast);
+  }
+
+  .log-order[open] .log-chevron {
+    transform: rotate(90deg);
+  }
+
+  .log-order-lines {
+    padding: 0 16px 10px 62px;
+  }
+
+  .log-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 13px;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .log-line:first-child {
+    border-top: none;
+  }
+
+  .log-line-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .activity-empty {
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13.5px;
+  }
+
+  .activity-empty[hidden] {
+    display: none;
+  }
+
+  .activity-more {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
   }
 
   .inv-item-link {
@@ -394,30 +638,89 @@ layoutHeader('Inventory');
           <?php endforeach;
           endif; ?>
           <?php if (!empty($items)): ?>
-            <tr id="inventory-search-empty" hidden><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No stock items match your search and category filters.</td></tr>
+            <tr id="inventory-search-empty" hidden>
+              <td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No stock items match your search and category filters.</td>
+            </tr>
           <?php endif; ?>
         </tbody>
       </table>
     </div>
   </div>
 
-  <div class="card">
+  <!-- Recent Activity -->
+  <div class="card activity-card">
     <div class="card-header">
       <div class="card-title">Recent Activity</div>
     </div>
+
+    <div class="activity-filters" role="group" aria-label="Filter activity">
+      <button type="button" class="activity-chip active" data-log-filter="all">All</button>
+      <button type="button" class="activity-chip" data-log-filter="restock">Restock</button>
+      <button type="button" class="activity-chip" data-log-filter="waste">Waste</button>
+      <button type="button" class="activity-chip" data-log-filter="correction">Correction</button>
+      <button type="button" class="activity-chip" data-log-filter="order">Orders</button>
+    </div>
+
     <div class="card-body">
       <?php if (empty($recentLog)): ?>
-        <p style="color:var(--text-muted);font-size:13.5px">No stock changes logged yet.</p>
-        <?php else: foreach ($recentLog as $log): ?>
-          <div class="log-item">
-            <strong><?= e($log['item_name']) ?></strong>
-            <span class="<?= $log['change_amount'] >= 0 ? 'log-change-pos' : 'log-change-neg' ?>">
-              <?= $log['change_amount'] >= 0 ? '+' : '' ?><?= number_format((float) $log['change_amount'], 3) ?> <?= e($log['unit']) ?>
-            </span>
-            <div style="color:var(--text-muted)"><?= e(ucfirst($log['reason'])) ?><?= !empty($log['order_number']) ? ' · Order ' . e($log['order_number']) : '' ?> &middot; <?= date('M j, g:i A', strtotime($log['created_at'])) ?></div>
-          </div>
-      <?php endforeach;
-      endif; ?>
+        <div class="activity-empty">No stock changes logged yet.</div>
+      <?php else: ?>
+        <div class="activity-scroll">
+          <?php foreach ($logGroups as $dayLabel => $entries): ?>
+            <div data-log-day>
+              <div class="activity-day"><?= e($dayLabel) ?></div>
+              <?php foreach ($entries as $entry): ?>
+                <?php if ($entry['kind'] === 'order'):
+                  $lines = $entry['lines'];
+                  $count = count($lines);
+                ?>
+                  <details class="log-order log-type-order" data-log-entry data-log-type="order"
+                    title="<?= e(date('M j, Y g:i A', strtotime($entry['time']))) ?>">
+                    <summary>
+                      <div class="log-icon"><i class="fa-solid fa-receipt"></i></div>
+                      <div class="log-main">
+                        <div class="log-name">Order <?= e($entry['order_number']) ?></div>
+                        <div class="log-meta"><?= $count ?> ingredient<?= $count !== 1 ? 's' : '' ?> deducted · <?= date('g:i A', strtotime($entry['time'])) ?></div>
+                      </div>
+                      <i class="fa-solid fa-chevron-right log-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="log-order-lines">
+                      <?php foreach ($lines as $line): ?>
+                        <div class="log-line">
+                          <span class="log-line-name"><?= e($line['item_name']) ?></span>
+                          <?= logQtyHtml($line) ?>
+                        </div>
+                      <?php endforeach; ?>
+                    </div>
+                  </details>
+
+                <?php else:
+                  $log = $entry['log'];
+                  $type = in_array($log['reason'], ['restock', 'waste', 'correction'], true) ? $log['reason'] : 'order';
+                  $meta = $activityMeta[$type];
+                  $detail = $meta['label'];
+                  if ($type === 'restock' && !empty($log['supplier'])) $detail .= ' · ' . $log['supplier'];
+                  if ($type === 'order') $detail = ucfirst((string) $log['reason']);
+                ?>
+                  <div class="log-row log-type-<?= $type ?>" data-log-entry data-log-type="<?= $type ?>"
+                    title="<?= e(date('M j, Y g:i A', strtotime($log['created_at']))) ?>">
+                    <div class="log-icon"><i class="fa-solid <?= $meta['icon'] ?>"></i></div>
+                    <div class="log-main">
+                      <div class="log-name"><?= e($log['item_name']) ?></div>
+                      <div class="log-meta"><?= e($detail) ?> · <?= date('g:i A', strtotime($log['created_at'])) ?></div>
+                    </div>
+                    <?= logQtyHtml($log) ?>
+                  </div>
+                <?php endif; ?>
+              <?php endforeach; ?>
+            </div>
+          <?php endforeach; ?>
+          <div class="activity-empty" id="activity-filter-empty" hidden>No activity of this type yet.</div>
+        </div>
+        <div class="activity-more" id="activity-more-wrap" hidden>
+          <button type="button" class="btn btn-sm btn-ghost" id="activity-more-btn"></button>
+        </div>
+      <?php endif; ?>
     </div>
   </div>
 </div>
@@ -590,20 +893,65 @@ layoutHeader('Inventory');
     const category = inventoryCategoryFilter.value;
     let visible = 0;
     inventoryRows.forEach(row => {
-      const matches = row.dataset.inventoryName.includes(query)
-        && (!category || row.dataset.inventoryCategory === category);
+      const matches = row.dataset.inventoryName.includes(query) &&
+        (!category || row.dataset.inventoryCategory === category);
       row.hidden = !matches;
       if (matches) visible++;
     });
     if (inventorySearchEmpty) inventorySearchEmpty.hidden = query === '' && category === '' || visible > 0;
-    if (inventoryResultCount) inventoryResultCount.textContent = query || category
-      ? `${visible} of ${inventoryRows.length} items match`
-      : `${inventoryRows.length} item${inventoryRows.length === 1 ? '' : 's'}`;
+    if (inventoryResultCount) inventoryResultCount.textContent = query || category ?
+      `${visible} of ${inventoryRows.length} items match` :
+      `${inventoryRows.length} item${inventoryRows.length === 1 ? '' : 's'}`;
   }
 
   inventorySearch.addEventListener('input', filterInventoryRows);
   inventoryCategoryFilter.addEventListener('change', filterInventoryRows);
 
+  // ---- Recent Activity: type filter + "Show more" paging ----
+  const logRows = Array.from(document.querySelectorAll('[data-log-entry]'));
+  const logDays = Array.from(document.querySelectorAll('[data-log-day]'));
+  const logMoreWrap = document.getElementById('activity-more-wrap');
+  const logMoreBtn = document.getElementById('activity-more-btn');
+  const logFilterEmpty = document.getElementById('activity-filter-empty');
+  const LOG_PAGE_SIZE = 12;
+  let logType = 'all';
+  let logLimit = LOG_PAGE_SIZE;
+
+  function renderActivity() {
+    let matched = 0,
+      shown = 0;
+    logRows.forEach(row => {
+      const ok = logType === 'all' || row.dataset.logType === logType;
+      if (ok) matched++;
+      const visible = ok && shown < logLimit;
+      if (visible) shown++;
+      row.hidden = !visible;
+    });
+    logDays.forEach(day => {
+      day.hidden = !day.querySelector('[data-log-entry]:not([hidden])');
+    });
+    if (logFilterEmpty) logFilterEmpty.hidden = matched > 0;
+    if (logMoreWrap) {
+      logMoreWrap.hidden = matched <= shown;
+      logMoreBtn.textContent = `Show more (${matched - shown})`;
+    }
+  }
+
+  document.querySelectorAll('[data-log-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      logType = btn.dataset.logFilter;
+      logLimit = LOG_PAGE_SIZE;
+      document.querySelectorAll('[data-log-filter]').forEach(b => b.classList.toggle('active', b === btn));
+      renderActivity();
+    });
+  });
+  if (logMoreBtn) logMoreBtn.addEventListener('click', () => {
+    logLimit += LOG_PAGE_SIZE;
+    renderActivity();
+  });
+  if (logRows.length) renderActivity();
+
+  // ---- Modals ----
   function openAddItemModal() {
     inventoryItemsAddedThisSession = false;
     ['new-item-name', 'new-item-unit'].forEach(id => document.getElementById(id).value = '');
@@ -647,7 +995,10 @@ layoutHeader('Inventory');
     formData.append('addon_quantity_per_unit', document.getElementById('new-addon-qty').value || 0);
     formData.append('csrf_token', '<?= csrfToken() ?>');
 
-    fetch('<?= APP_URL ?>/api/save_inventory_item.php', { method: 'POST', body: formData })
+    fetch('<?= APP_URL ?>/api/save_inventory_item.php', {
+        method: 'POST',
+        body: formData
+      })
       .then(r => r.json())
       .then(data => {
         if (data.success) {
