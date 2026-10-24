@@ -6,6 +6,25 @@
    includes/cart-drawer.php to be present on the page.
    ============================================================ */
 
+/* ── Small helpers ── */
+function escapeHtml(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
+}
+
+function formatPeso(amount) {
+  return "\u20b1" + Number(amount || 0).toFixed(2);
+}
+
 /* ── Toasts (replaces browser alert() for all inline feedback) ── */
 function showToast(type, message, timeout = 4500) {
   const icons = {
@@ -57,6 +76,8 @@ function renderCartBadge() {
   });
 }
 
+let cartLastFocus = null;
+
 function openCart() {
   // Pages that allow anonymous browsing (menu.php) can define
   // window.beforeOpenCart to intercept — e.g. show a sign-in prompt
@@ -66,65 +87,200 @@ function openCart() {
     window.beforeOpenCart() === false
   )
     return;
+  cartLastFocus = document.activeElement;
   renderCartSidebar();
   document.getElementById("cartSidebar").classList.add("open");
   document.getElementById("scrim").classList.add("open");
   document.getElementById("toastStack")?.classList.add("cart-open");
+  document.body.classList.add("cart-locked");
+  document
+    .querySelector("#cartSidebar .modal-close")
+    ?.focus({ preventScroll: true });
 }
 
 function closeCart() {
   document.getElementById("cartSidebar").classList.remove("open");
   document.getElementById("scrim").classList.remove("open");
   document.getElementById("toastStack")?.classList.remove("cart-open");
+  document.body.classList.remove("cart-locked");
+  if (cartLastFocus && typeof cartLastFocus.focus === "function") {
+    cartLastFocus.focus({ preventScroll: true });
+  }
+  cartLastFocus = null;
 }
 
-function renderCartSidebar() {
+/* ── Footer layout: scrolling options + pinned total/checkout ──
+   Works with the existing markup (ids unchanged) by wrapping the
+   existing elements, so every page that uses the drawer benefits
+   without editing its HTML. */
+function organizeCartFooter() {
+  const footer = document.getElementById("cartFooter");
+  if (!footer || footer.classList.contains("is-organized")) return;
+  const button = document.getElementById("proceedPaymentButton");
+  const startRow =
+    document.getElementById("cartSubtotalRow") ||
+    document.getElementById("cartTotal")?.closest(".cart-total-row");
+  if (!button || !startRow) return;
+  const children = Array.from(footer.children);
+  const splitAt = children.indexOf(startRow);
+  if (splitAt === -1) return;
+
+  const options = document.createElement("div");
+  options.className = "cart-footer-options";
+  const summary = document.createElement("div");
+  summary.className = "cart-footer-summary";
+  children.forEach((el, i) =>
+    (i < splitAt ? options : summary).appendChild(el),
+  );
+
+  const hint = document.createElement("p");
+  hint.id = "checkoutHint";
+  hint.className = "cart-checkout-hint";
+  hint.setAttribute("role", "status");
+  hint.hidden = true;
+  summary.insertBefore(hint, button);
+
+  footer.append(options, summary);
+  footer.classList.add("is-organized");
+}
+
+/* How many units of a product are allowed in total, if its stock is tracked */
+function cartStockCap(cart, productId) {
+  const caps = cart
+    .filter((i) => Number(i.productId) === Number(productId))
+    .filter(
+      (i) =>
+        i.stockMax !== null &&
+        i.stockMax !== undefined &&
+        Number.isFinite(Number(i.stockMax)),
+    )
+    .map((i) => Number(i.stockMax));
+  return caps.length ? Math.min(...caps) : null;
+}
+
+/* Resolve a cart item's thumbnail URL. Prefer the image saved with the item;
+   for older cart entries and reorders (which have none), reuse the image
+   already shown on the menu card when that page is open. */
+function cartItemImageSrc(item) {
+  if (item.image) {
+    const path = String(item.image)
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    return `${APP_URL}/../uploads/products/${path}`;
+  }
+  const menuImg = document
+    .getElementById("card-" + item.productId)
+    ?.querySelector(".menu-card-img img");
+  return menuImg ? menuImg.getAttribute("src") : "";
+}
+
+function cartLineHtml(item, cart) {
+  const id = escapeHtml(item.lineId);
+  const name = escapeHtml(item.name);
+  const cap = cartStockCap(cart, item.productId);
+  const productQty = cart
+    .filter((i) => Number(i.productId) === Number(item.productId))
+    .reduce((sum, i) => sum + Number(i.qty || 0), 0);
+  const atMax = cap !== null && productQty >= cap;
+
+  const imgSrc = cartItemImageSrc(item);
+  const thumb = imgSrc
+    ? `<img src="${escapeHtml(imgSrc)}" alt="" loading="lazy" onerror="this.parentNode.innerHTML='<i class=&quot;fa-solid fa-mug-hot&quot;></i>'">`
+    : '<i class="fa-solid fa-mug-hot" aria-hidden="true"></i>';
+
+  const chips = [item.size, item.sugar]
+    .filter(Boolean)
+    .map((t) => `<span class="cart-chip">${escapeHtml(t)}</span>`)
+    .concat(
+      (item.addons || []).map(
+        (a) => `<span class="cart-chip addon">+ ${escapeHtml(a)}</span>`,
+      ),
+    )
+    .join("");
+
+  return `
+    <div class="cart-line">
+      <div class="cart-line-thumb">${thumb}</div>
+      <div class="cart-line-main">
+        <div class="cart-line-top">
+          <div class="cart-line-name">${name}</div>
+          <button type="button" class="cart-line-remove" aria-label="Remove ${name} from cart" onclick="requestCartRemoval('${id}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+        </div>
+        ${chips ? `<div class="cart-line-tags">${chips}</div>` : ""}
+        ${item.note ? `<div class="cart-line-note">&ldquo;${escapeHtml(item.note)}&rdquo;</div>` : ""}
+        <div class="cart-line-bottom">
+          <div class="cart-line-qty" role="group" aria-label="Quantity for ${name}">
+            <button type="button" class="qty-btn" aria-label="Decrease quantity" ${item.qty <= 1 ? "disabled" : ""} onclick="cartChangeQty('${id}',-1)">\u2212</button>
+            <span aria-live="polite">${item.qty}</span>
+            <button type="button" class="qty-btn" aria-label="Increase quantity" ${atMax ? "disabled" : ""} onclick="cartChangeQty('${id}',1)">+</button>
+          </div>
+          <div class="cart-line-pricing">
+            <span class="cart-line-price">${formatPeso(item.unit_price * item.qty)}</span>
+            ${item.qty > 1 ? `<span class="cart-line-unit">${formatPeso(item.unit_price)} each</span>` : ""}
+          </div>
+        </div>
+        ${atMax ? '<div class="cart-line-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Maximum available quantity reached</div>' : ""}
+      </div>
+    </div>`;
+}
+
+function renderCartSidebar(refreshSlots = true) {
   const cart = getCart();
   const body = document.getElementById("cartBody");
   if (!body) return;
-  if (cart.length === 0) {
-    body.innerHTML =
-      '<div class="cart-empty-state"><i class="fa-solid fa-mug-hot" style="font-size:28px;opacity:.4"></i><p style="margin-top:12px">Your cart is empty.</p></div>';
-  } else {
-    body.innerHTML = cart
-      .map(
-        (item) => `
-      <div class="cart-line">
-        <div style="flex:1">
-          <div class="cart-line-name">${item.name}</div>
-          <div class="cart-line-meta">${[item.size, item.sugar, ...(item.addons || [])].filter(Boolean).join(" \u00b7 ")}</div>
-          <div class="cart-line-qty">
-            <button class="qty-btn" onclick="cartChangeQty('${item.lineId}',-1)">\u2212</button>
-            <span>${item.qty}</span>
-            <button class="qty-btn" onclick="cartChangeQty('${item.lineId}',1)">+</button>
-          </div>
-          <button type="button" class="cart-line-remove" onclick="requestCartRemoval('${item.lineId}')">Remove</button>
-        </div>
-        <div class="cart-line-price">\u20b1${(item.unit_price * item.qty).toFixed(2)}</div>
-      </div>
-    `,
-      )
-      .join("");
+
+  const itemCount = cart.reduce((s, i) => s + Number(i.qty || 0), 0);
+  document
+    .getElementById("cartSidebar")
+    ?.classList.toggle("is-empty", cart.length === 0);
+  const headerCount = document.getElementById("cartHeaderCount");
+  if (headerCount) {
+    headerCount.hidden = itemCount === 0;
+    headerCount.textContent = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
   }
+
+  if (cart.length === 0) {
+    body.innerHTML = `
+      <div class="cart-empty-state">
+        <div class="cart-empty-icon"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i></div>
+        <div class="cart-empty-title">Your cart is empty</div>
+        <p class="cart-empty-text">Pick a drink or snack from the menu and it will show up here.</p>
+        <button type="button" class="btn btn-primary" onclick="closeCart()">Browse the menu</button>
+      </div>`;
+  } else {
+    body.innerHTML = cart.map((item) => cartLineHtml(item, cart)).join("");
+  }
+
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
   const loyaltyCheckbox = document.getElementById("redeemLoyaltyCheckbox");
   if (loyaltyCheckbox) {
-    const eligible = Number(window.LOYALTY_BALANCE || 0) >= Number(window.LOYALTY_REDEEM_POINTS || 100)
-      && subtotal >= Number(window.LOYALTY_REDEEM_DISCOUNT || 10);
+    const eligible =
+      Number(window.LOYALTY_BALANCE || 0) >=
+        Number(window.LOYALTY_REDEEM_POINTS || 100) &&
+      subtotal >= Number(window.LOYALTY_REDEEM_DISCOUNT || 10);
     loyaltyCheckbox.disabled = !eligible;
     if (!eligible) loyaltyCheckbox.checked = false;
   }
   const redemption = getCartLoyaltyRedemption(subtotal);
   const total = subtotal - redemption.discount;
+
+  const subtotalRow = document.getElementById("cartSubtotalRow");
+  if (subtotalRow?.firstElementChild) {
+    subtotalRow.firstElementChild.textContent = `Subtotal \u00b7 ${itemCount} item${itemCount === 1 ? "" : "s"}`;
+  }
   const subtotalEl = document.getElementById("cartSubtotal");
-  if (subtotalEl) subtotalEl.textContent = "₱" + subtotal.toFixed(2);
+  if (subtotalEl) subtotalEl.textContent = formatPeso(subtotal);
   const discountRow = document.getElementById("cartLoyaltyDiscountRow");
   if (discountRow) discountRow.hidden = redemption.discount <= 0;
   const discountEl = document.getElementById("cartLoyaltyDiscount");
-  if (discountEl) discountEl.textContent = "−₱" + redemption.discount.toFixed(2);
+  if (discountEl)
+    discountEl.textContent = "\u2212" + formatPeso(redemption.discount);
   const totalEl = document.getElementById("cartTotal");
-  if (totalEl) totalEl.textContent = "\u20b1" + total.toFixed(2);
-  loadPickupSlots();
+  if (totalEl) totalEl.textContent = formatPeso(total);
+
+  if (refreshSlots) loadPickupSlots();
+  else updateProceedButton();
 }
 
 function getCartLoyaltyRedemption(amount) {
@@ -132,7 +288,8 @@ function getCartLoyaltyRedemption(amount) {
   const balance = Number(window.LOYALTY_BALANCE || 0);
   const pointsRequired = Number(window.LOYALTY_REDEEM_POINTS || 100);
   const discount = Number(window.LOYALTY_REDEEM_DISCOUNT || 10);
-  if (!checkbox?.checked || balance < pointsRequired || amount < discount) return { points: 0, discount: 0 };
+  if (!checkbox?.checked || balance < pointsRequired || amount < discount)
+    return { points: 0, discount: 0 };
   return { points: pointsRequired, discount };
 }
 
@@ -140,23 +297,31 @@ function cartChangeQty(lineId, d) {
   const cart = getCart();
   const item = cart.find((i) => i.lineId === lineId);
   if (!item) return;
-  const productItems = cart.filter((i) => Number(i.productId) === Number(item.productId));
+  const productItems = cart.filter(
+    (i) => Number(i.productId) === Number(item.productId),
+  );
   const stockCaps = productItems
-    .filter((i) => i.stockMax !== null && i.stockMax !== undefined && Number.isFinite(Number(i.stockMax)))
+    .filter(
+      (i) =>
+        i.stockMax !== null &&
+        i.stockMax !== undefined &&
+        Number.isFinite(Number(i.stockMax)),
+    )
     .map((i) => Number(i.stockMax));
-  const nextProductQty = productItems.reduce((sum, i) => sum + Number(i.qty || 0), 0) + d;
+  const nextProductQty =
+    productItems.reduce((sum, i) => sum + Number(i.qty || 0), 0) + d;
   if (d > 0 && stockCaps.length && nextProductQty > Math.min(...stockCaps)) {
     showToast("warning", `Estimated stock limit reached for ${item.name}.`);
     return;
   }
   item.qty = Math.max(1, item.qty + d);
   saveCart(cart);
-  renderCartSidebar();
+  renderCartSidebar(false);
 }
 
 function cartRemove(lineId) {
   saveCart(getCart().filter((i) => i.lineId !== lineId));
-  renderCartSidebar();
+  renderCartSidebar(false);
 }
 
 function requestCartRemoval(lineId) {
@@ -199,6 +364,7 @@ function confirmPendingAction() {
 }
 
 let pickupTimeManuallySelected = false;
+let pickupSlotsLoading = false;
 
 function todayInManila() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -209,11 +375,34 @@ function todayInManila() {
   }).format(new Date());
 }
 
-function updateProceedButton() {
+/* What (if anything) is stopping the customer from continuing? */
+function getCheckoutBlocker() {
+  if (getCart().length === 0) return "Add an item to continue.";
   const timeEl = document.getElementById("pickupTime");
+  if (!timeEl?.value || timeEl.options[timeEl.selectedIndex]?.disabled) {
+    return "Choose a pickup time to continue.";
+  }
+  const deliveryEl = document.getElementById("deliveryLocation");
+  if (deliveryEl && !deliveryEl.value.trim()) {
+    return "Enter your delivery location to continue.";
+  }
+  return "";
+}
+
+function updateProceedButton() {
   const button = document.getElementById("proceedPaymentButton");
-  if (!timeEl || !button) return;
-  button.disabled = !timeEl.value || timeEl.options[timeEl.selectedIndex]?.disabled;
+  if (!button) return;
+  const blocker = getCheckoutBlocker();
+  button.disabled = pickupSlotsLoading || !!blocker;
+  const hint = document.getElementById("checkoutHint");
+  if (hint) {
+    const show = !pickupSlotsLoading && !!blocker;
+    hint.hidden = !show;
+    hint.innerHTML = show
+      ? `<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span></span>`
+      : "";
+    if (show) hint.querySelector("span").textContent = blocker;
+  }
 }
 
 function loadPickupSlots() {
@@ -221,40 +410,54 @@ function loadPickupSlots() {
   const messageEl = document.getElementById("pickupSlotMessage");
   if (!timeEl) return;
   const previousValue = timeEl.value;
-  const previousWasAsap = !pickupTimeManuallySelected ||
+  const previousWasAsap =
+    !pickupTimeManuallySelected ||
     timeEl.options[timeEl.selectedIndex]?.dataset.asap === "true";
-  const button = document.getElementById("proceedPaymentButton");
-  if (button) button.disabled = true;
+  pickupSlotsLoading = true;
+  updateProceedButton();
   fetch(`${APP_URL}/api/pickup-slots.php?date=${todayInManila()}`)
     .then((r) => r.json())
     .then((slots) => {
       const available = slots.filter((slot) => !slot.full);
-      timeEl.innerHTML = slots.map((slot) =>
-        `<option value="${slot.value}" data-asap="${slot.asap ? "true" : "false"}" ${slot.full ? "disabled" : ""}>${slot.label}${slot.full ? " (full)" : ""}</option>`,
-      ).join("") || '<option value="">No times available</option>';
+      timeEl.innerHTML =
+        slots
+          .map(
+            (slot) =>
+              `<option value="${slot.value}" data-asap="${slot.asap ? "true" : "false"}" ${slot.full ? "disabled" : ""}>${slot.label}${slot.full ? " (full)" : ""}</option>`,
+          )
+          .join("") || '<option value="">No times available</option>';
 
       if (!available.length) {
         timeEl.value = "";
-        if (messageEl) messageEl.textContent = slots.length
-          ? "All pickup times are full for today."
-          : "Ordering is closed for today.";
+        if (messageEl)
+          messageEl.textContent = slots.length
+            ? "All pickup times are full for today."
+            : "Ordering is closed for today.";
       } else if (previousWasAsap) {
         timeEl.value = available[0].value;
-        if (messageEl) messageEl.textContent = "Pickup is available today only. ASAP follows the earliest available time.";
+        if (messageEl)
+          messageEl.textContent =
+            "Pickup is available today only. ASAP follows the earliest available time.";
       } else if (available.some((slot) => slot.value === previousValue)) {
         timeEl.value = previousValue;
-        if (messageEl) messageEl.textContent = "Pickup is available today only.";
+        if (messageEl)
+          messageEl.textContent = "Pickup is available today only.";
       } else {
         timeEl.value = "";
-        if (messageEl) messageEl.textContent = previousValue
-          ? "Your selected time has passed or filled up. Please choose another."
-          : "Pickup is available today only.";
+        if (messageEl)
+          messageEl.textContent = previousValue
+            ? "Your selected time has passed or filled up. Please choose another."
+            : "Pickup is available today only.";
       }
+      pickupSlotsLoading = false;
       updateProceedButton();
     })
     .catch(() => {
       timeEl.innerHTML = '<option value="">Could not load times</option>';
-      if (messageEl) messageEl.textContent = "Could not load pickup times. Please try again.";
+      if (messageEl)
+        messageEl.textContent =
+          "Could not load pickup times. Please try again.";
+      pickupSlotsLoading = false;
       updateProceedButton();
     });
 }
@@ -271,7 +474,10 @@ function reorder(orderId) {
       const cart = getCart();
       let skipped = 0;
       data.items.forEach((item) => {
-        if (!Number(item.is_available) || (Number(item.has_sizes) && !item.size)) {
+        if (
+          !Number(item.is_available) ||
+          (Number(item.has_sizes) && !item.size)
+        ) {
           skipped++;
           return;
         }
@@ -279,6 +485,7 @@ function reorder(orderId) {
           lineId: "l_" + Date.now() + Math.random().toString(16).slice(2),
           productId: item.product_id,
           name: item.name,
+          image: item.image_path || null,
           size: item.size || null,
           sugar: item.sugar || null,
           addons: item.addons || [],
@@ -289,13 +496,19 @@ function reorder(orderId) {
         });
       });
       if (!data.items.length || data.items.length === skipped) {
-        showToast("error", "The products in this order are no longer available to reorder.");
+        showToast(
+          "error",
+          "The products in this order are no longer available to reorder.",
+        );
         return;
       }
       saveCart(cart);
-      showToast(skipped ? "warning" : "success", skipped
-        ? `Available items added. ${skipped} unavailable item${skipped === 1 ? " was" : "s were"} skipped.`
-        : "Added to your cart with the original options and current prices!");
+      showToast(
+        skipped ? "warning" : "success",
+        skipped
+          ? `Available items added. ${skipped} unavailable item${skipped === 1 ? " was" : "s were"} skipped.`
+          : "Added to your cart with the original options and current prices!",
+      );
       openCart();
     })
     .catch(() => showToast("error", "Network error — please try again."));
@@ -315,25 +528,38 @@ function proceedToPayment() {
     return;
   }
   const pickupTimeEl = document.getElementById("pickupTime");
-  if (!pickupTimeEl?.value || pickupTimeEl.options[pickupTimeEl.selectedIndex]?.disabled) {
+  if (
+    !pickupTimeEl?.value ||
+    pickupTimeEl.options[pickupTimeEl.selectedIndex]?.disabled
+  ) {
     showToast("warning", "Please choose an available pickup time.");
     return;
   }
   const pickupDate = todayInManila();
   const pickupTime = pickupTimeEl.value;
-  const pickupTimestamp = new Date(`${pickupDate}T${pickupTime}:00+08:00`).getTime();
+  const pickupTimestamp = new Date(
+    `${pickupDate}T${pickupTime}:00+08:00`,
+  ).getTime();
   if (pickupTimestamp < Date.now() + 5 * 60 * 1000) {
     loadPickupSlots();
-    showToast("warning", "Pickup times must be at least 5 minutes from now. Choose another time.");
+    showToast(
+      "warning",
+      "Pickup times must be at least 5 minutes from now. Choose another time.",
+    );
     return;
   }
-  const subtotal = cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0);
+  const subtotal = cart.reduce(
+    (sum, item) => sum + item.unit_price * item.qty,
+    0,
+  );
   const redemption = getCartLoyaltyRedemption(subtotal);
-  document.getElementById("paymentAmount").textContent = "₱" + (subtotal - redemption.discount).toFixed(2);
+  document.getElementById("paymentAmount").textContent =
+    "₱" + (subtotal - redemption.discount).toFixed(2);
   const loyaltyRow = document.getElementById("paymentLoyaltyRow");
   if (loyaltyRow) loyaltyRow.hidden = redemption.discount <= 0;
   const loyaltyDiscount = document.getElementById("paymentLoyaltyDiscount");
-  if (loyaltyDiscount) loyaltyDiscount.textContent = `−₱${redemption.discount.toFixed(2)} (${redemption.points} points)`;
+  if (loyaltyDiscount)
+    loyaltyDiscount.textContent = `−₱${redemption.discount.toFixed(2)} (${redemption.points} points)`;
   document.getElementById("refNo").value = "";
   if (window.PAYMONGO_ENABLED) setupGatewayPaymentModal();
   document.getElementById("paymentModal").hidden = false;
@@ -353,7 +579,9 @@ function setupGatewayPaymentModal() {
   const hint = modal.querySelector("p.cart-hint");
   if (hint) hint.style.display = "none";
   const sub = modal.querySelector(".confirm-subheading");
-  if (sub) sub.textContent = "You'll be taken to GCash's secure payment page to pay for this order.";
+  if (sub)
+    sub.textContent =
+      "You'll be taken to GCash's secure payment page to pay for this order.";
   const btn = document.getElementById("submitPaymentButton");
   if (btn) {
     btn.disabled = false;
@@ -370,7 +598,10 @@ function submitOrder() {
   const pickupTimeEl = document.getElementById("pickupTime");
   if (cart.length === 0 || !pickupTimeEl?.value) {
     closePaymentModal();
-    showToast("warning", "Your cart or pickup time changed. Please review it and try again.");
+    showToast(
+      "warning",
+      "Your cart or pickup time changed. Please review it and try again.",
+    );
     return;
   }
   // Online GCash (PayMongo) needs no reference number; the manual flow does.
@@ -382,7 +613,10 @@ function submitOrder() {
       return;
     }
     if (refNo.replace(/\D/g, "").length !== (window.GCASH_REF_DIGITS || 13)) {
-      showToast("warning", `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`);
+      showToast(
+        "warning",
+        `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`,
+      );
       return;
     }
   }
@@ -396,7 +630,8 @@ function submitOrder() {
     reference_no: refNo,
     pay_via: useGateway ? "paymongo" : "manual",
     notes: document.getElementById("cartNotes").value.trim(),
-    delivery_location: document.getElementById("deliveryLocation")?.value.trim() || "",
+    delivery_location:
+      document.getElementById("deliveryLocation")?.value.trim() || "",
     pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
     redeem_points: !!document.getElementById("redeemLoyaltyCheckbox")?.checked,
@@ -422,10 +657,15 @@ function submitOrder() {
         saveCart([]);
         const redeemCheckbox = document.getElementById("redeemLoyaltyCheckbox");
         if (redeemCheckbox) redeemCheckbox.checked = false;
-        if (Number.isFinite(Number(res.loyalty_balance))) window.LOYALTY_BALANCE = Number(res.loyalty_balance);
+        if (Number.isFinite(Number(res.loyalty_balance)))
+          window.LOYALTY_BALANCE = Number(res.loyalty_balance);
         const loyaltyHint = document.getElementById("loyaltyCartHint");
-        if (loyaltyHint) loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · ${window.LOYALTY_REDEEM_POINTS || 100} points = ₱${Number(window.LOYALTY_REDEEM_DISCOUNT || 10).toFixed(2)} off`;
-        if (redeemCheckbox) redeemCheckbox.disabled = Number(window.LOYALTY_BALANCE || 0) < Number(window.LOYALTY_REDEEM_POINTS || 100);
+        if (loyaltyHint)
+          loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · ${window.LOYALTY_REDEEM_POINTS || 100} points = ₱${Number(window.LOYALTY_REDEEM_DISCOUNT || 10).toFixed(2)} off`;
+        if (redeemCheckbox)
+          redeemCheckbox.disabled =
+            Number(window.LOYALTY_BALANCE || 0) <
+            Number(window.LOYALTY_REDEEM_POINTS || 100);
         closePaymentModal();
         closeCart();
         openConfirmModal(res, { pickupLabel, pickupDate });
@@ -443,7 +683,9 @@ function submitOrder() {
     })
     .finally(() => {
       placeBtn.disabled = false;
-      placeBtn.textContent = window.PAYMONGO_ENABLED ? "Pay with GCash" : "Submit order";
+      placeBtn.textContent = window.PAYMONGO_ENABLED
+        ? "Pay with GCash"
+        : "Submit order";
     });
 }
 
@@ -455,17 +697,21 @@ function openConfirmModal(res, meta) {
   );
   document.getElementById("confPickup").textContent =
     `${dateLabel}, ${meta.pickupLabel}`;
-  document.getElementById("confPayment").textContent = "GCash — pending verification";
+  document.getElementById("confPayment").textContent =
+    "GCash — pending verification";
   document.getElementById("confTotal").textContent =
     "\u20b1" + Number(res.total).toFixed(2);
   const redeemedRow = document.getElementById("confPointsRedeemedRow");
   if (redeemedRow) redeemedRow.hidden = !(Number(res.points_redeemed) > 0);
   const redeemedEl = document.getElementById("confPointsRedeemed");
-  if (redeemedEl) redeemedEl.textContent = `${res.points_redeemed} points (₱${Number(res.loyalty_discount || 0).toFixed(2)} off)`;
+  if (redeemedEl)
+    redeemedEl.textContent = `${res.points_redeemed} points (₱${Number(res.loyalty_discount || 0).toFixed(2)} off)`;
   const earnedRow = document.getElementById("confPointsEarnedRow");
-  if (earnedRow) earnedRow.hidden = !(Number(res.points_expected_after_pickup) > 0);
+  if (earnedRow)
+    earnedRow.hidden = !(Number(res.points_expected_after_pickup) > 0);
   const earnedEl = document.getElementById("confPointsEarned");
-  if (earnedEl) earnedEl.textContent = `${res.points_expected_after_pickup} points`;
+  if (earnedEl)
+    earnedEl.textContent = `${res.points_expected_after_pickup} points`;
   document.getElementById("confirmModal").hidden = false;
 }
 
@@ -476,9 +722,25 @@ function closeConfirmModal() {
 /* ── Wiring: pickup-time refresh + keyboard support for pill-style pickers
    (size/sugar in the customize modal still use .pay-option styling) ── */
 document.addEventListener("DOMContentLoaded", () => {
+  organizeCartFooter();
+  const sidebar = document.getElementById("cartSidebar");
+  if (sidebar) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+    sidebar.setAttribute("aria-label", "Your order");
+  }
+
   document.addEventListener("click", (event) => {
     const link = event.target.closest('a[href$="/logout.php"]');
-    if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (
+      !link ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
     event.preventDefault();
     openActionConfirmation({
       title: "Sign out?",
@@ -487,23 +749,43 @@ document.addEventListener("DOMContentLoaded", () => {
       onConfirm: () => window.location.assign(link.href),
     });
   });
-  document.getElementById("actionConfirmModal")?.addEventListener("click", (event) => {
-    if (event.target.id === "actionConfirmModal") closeActionConfirmation();
-  });
+  document
+    .getElementById("actionConfirmModal")
+    ?.addEventListener("click", (event) => {
+      if (event.target.id === "actionConfirmModal") closeActionConfirmation();
+    });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !document.getElementById("actionConfirmModal")?.hidden) {
+    if (event.key !== "Escape") return;
+    if (!document.getElementById("actionConfirmModal")?.hidden) {
       closeActionConfirmation();
+      return;
+    }
+    // Close the drawer with Escape, but only if no other dialog is on top of it
+    if (
+      document.getElementById("cartSidebar")?.classList.contains("open") &&
+      !document.querySelector(".modal-overlay:not([hidden])")
+    ) {
+      closeCart();
     }
   });
-  document.getElementById("actionConfirmButton")?.addEventListener("click", confirmPendingAction);
-  document.getElementById("actionCancelButton")?.addEventListener("click", closeActionConfirmation);
+  document
+    .getElementById("actionConfirmButton")
+    ?.addEventListener("click", confirmPendingAction);
+  document
+    .getElementById("actionCancelButton")
+    ?.addEventListener("click", closeActionConfirmation);
   document.getElementById("pickupTime")?.addEventListener("change", () => {
     pickupTimeManuallySelected = true;
     const messageEl = document.getElementById("pickupSlotMessage");
     if (messageEl) messageEl.textContent = "Pickup is available today only.";
     updateProceedButton();
   });
-  document.getElementById("redeemLoyaltyCheckbox")?.addEventListener("change", renderCartSidebar);
+  document
+    .getElementById("deliveryLocation")
+    ?.addEventListener("input", updateProceedButton);
+  document
+    .getElementById("redeemLoyaltyCheckbox")
+    ?.addEventListener("change", () => renderCartSidebar(false));
   // Refresh while the drawer is open. If the selection is still the automatic
   // ASAP choice, it advances as time passes; an explicitly chosen time stays put.
   window.setInterval(() => {
