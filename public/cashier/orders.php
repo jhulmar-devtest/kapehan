@@ -9,14 +9,80 @@ if (isset($_GET['receipt'])) {
   exit;
 }
 
-// ── Load this cashier's orders ────────────────────────────────
-$filter = $_GET['status'] ?? 'all';
-$params = [currentUserId()];
-$where  = '';
-if ($filter !== 'all' && in_array($filter, ['pending', 'preparing', 'ready', 'claimed', 'cancelled'])) {
-  $where    = ' AND o.status = ?';
-  $params[] = $filter;
+// ── Filters ───────────────────────────────────────────────────
+$filterStatus   = $_GET['status']   ?? 'all';
+$filterType     = $_GET['type']     ?? 'all';
+$filterPayment  = $_GET['payment']  ?? 'all';
+$requestedSort  = $_GET['sort'] ?? 'newest';
+$filterSort     = in_array($requestedSort, ['newest', 'oldest'], true) ? $requestedSort : 'newest';
+$filterDateFrom = trim((string) ($_GET['date_from'] ?? ''));
+$filterDateTo   = trim((string) ($_GET['date_to'] ?? ''));
+$dateFilterError = '';
+$isValidDate = static function (string $value): bool {
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) return false;
+  $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+  return $date !== false && $date->format('Y-m-d') === $value;
+};
+if ($filterDateFrom !== '' && !$isValidDate($filterDateFrom)) $filterDateFrom = '';
+if ($filterDateTo !== '' && !$isValidDate($filterDateTo)) $filterDateTo = '';
+if ($filterDateFrom !== '' && $filterDateTo !== '' && $filterDateFrom > $filterDateTo) {
+  $dateFilterError = 'The start date must be on or before the end date.';
+  $filterDateFrom = $filterDateTo = '';
 }
+$today = date('Y-m-d');
+$quickDateRanges = [
+  'today' => ['label' => 'Today', 'from' => $today, 'to' => $today],
+  'yesterday' => ['label' => 'Yesterday', 'from' => date('Y-m-d', strtotime('-1 day')), 'to' => date('Y-m-d', strtotime('-1 day'))],
+  'last7' => ['label' => 'Last 7 days', 'from' => date('Y-m-d', strtotime('-6 days')), 'to' => $today],
+  'month' => ['label' => 'This month', 'from' => date('Y-m-01'), 'to' => $today],
+];
+$activeDatePreset = '';
+foreach ($quickDateRanges as $key => $range) {
+  if ($filterDateFrom === $range['from'] && $filterDateTo === $range['to']) $activeDatePreset = $key;
+}
+$activeDateLabel = 'All dates';
+if ($filterDateFrom !== '' && $filterDateTo !== '') {
+  $activeDateLabel = $filterDateFrom === $filterDateTo
+    ? date('M j, Y', strtotime($filterDateFrom))
+    : date('M j, Y', strtotime($filterDateFrom)) . ' – ' . date('M j, Y', strtotime($filterDateTo));
+} elseif ($filterDateFrom !== '') {
+  $activeDateLabel = 'From ' . date('M j, Y', strtotime($filterDateFrom));
+} elseif ($filterDateTo !== '') {
+  $activeDateLabel = 'Through ' . date('M j, Y', strtotime($filterDateTo));
+}
+$activeFilterCount = (int) ($filterStatus !== 'all')
+  + (int) ($filterType !== 'all')
+  + (int) ($filterPayment !== 'all')
+  + (int) ($filterDateFrom !== '' || $filterDateTo !== '')
+  + (int) ($filterSort !== 'newest');
+
+// Always scoped to the logged-in cashier's own orders
+$conditions = ['o.cashier_id = ?'];
+$params     = [currentUserId()];
+
+if ($filterStatus !== 'all' && in_array($filterStatus, ['pending', 'preparing', 'ready', 'claimed', 'cancelled'])) {
+  $conditions[] = 'o.status = ?';
+  $params[] = $filterStatus;
+}
+if ($filterType !== 'all' && in_array($filterType, ['walk-in', 'pre-order'])) {
+  $conditions[] = 'o.order_type = ?';
+  $params[] = $filterType;
+}
+if ($filterPayment !== 'all' && in_array($filterPayment, ['cash', 'GCash'])) {
+  $conditions[] = 'p.payment_method = ?';
+  $params[] = $filterPayment;
+}
+if ($filterDateFrom !== '') {
+  $conditions[] = 'o.created_at >= ?';
+  $params[] = $filterDateFrom . ' 00:00:00';
+}
+if ($filterDateTo !== '') {
+  $conditions[] = 'o.created_at < DATE_ADD(?, INTERVAL 1 DAY)';
+  $params[] = $filterDateTo . ' 00:00:00';
+}
+
+$where = implode(' AND ', $conditions);
+$dir   = $filterSort === 'oldest' ? 'ASC' : 'DESC';
 
 $stmt = $db->prepare(
   "SELECT o.*, p.payment_method, p.payment_status,
@@ -25,42 +91,454 @@ $stmt = $db->prepare(
    LEFT JOIN payments p ON o.id = p.order_id
    LEFT JOIN students s ON o.student_id = s.id
    LEFT JOIN faculty  f ON o.faculty_id = f.id
-   WHERE o.cashier_id = ? $where
-   ORDER BY o.created_at DESC
-   LIMIT 200"
+   WHERE $where
+   ORDER BY o.created_at $dir, o.id $dir
+   LIMIT 300"
 );
 $stmt->execute($params);
 $orders = $stmt->fetchAll();
 
-// Tab badge counts
+// Per-status counts (shown beside each status option in the filter)
 $countStmt = $db->prepare(
   "SELECT status, COUNT(*) AS cnt FROM orders WHERE cashier_id = ? GROUP BY status"
 );
 $countStmt->execute([currentUserId()]);
 $counts = [];
-foreach ($countStmt->fetchAll() as $r) $counts[$r['status']] = $r['cnt'];
+foreach ($countStmt->fetchAll() as $r) $counts[$r['status']] = (int) $r['cnt'];
 $counts['all'] = array_sum($counts);
 
 layoutHeader('Order History');
 ?>
 <style>
-  /* ── Table row hover ───────────────────────────────── */
   .orders-row {
     cursor: pointer;
     transition: background var(--transition-fast);
   }
 
-  .orders-row:hover {
-    background: var(--primary-subtle) !important;
+  .orders-heading-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: var(--primary-subtle);
+    color: var(--primary-color);
+    font-size: 18px;
+    flex: none
+  }
+
+  .orders-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px
+  }
+
+  .orders-filter-triggerbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 18px;
+    margin-bottom: 16px
+  }
+
+  .orders-filter-summary {
+    display: grid;
+    gap: 3px;
+    min-width: 0
+  }
+
+  .orders-filter-summary strong {
+    font-size: .86rem;
+    color: var(--text-color)
+  }
+
+  .orders-filter-summary span {
+    font-size: .78rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis
+  }
+
+  .orders-filter-trigger {
+    white-space: nowrap
+  }
+
+  .orders-filter-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    margin-left: 4px;
+    border-radius: 999px;
+    background: var(--primary-dark);
+    color: var(--text-on-primary);
+    font-size: .7rem;
+    font-weight: 800
+  }
+
+  .orders-filter-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(24, 18, 14, .56);
+    backdrop-filter: blur(3px)
+  }
+
+  .orders-filter-overlay.open {
+    display: flex
+  }
+
+  .orders-filter-modal {
+    width: min(100%, 680px);
+    max-height: min(90vh, 820px);
+    overflow: auto;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    animation: orders-filter-in .18s ease-out
+  }
+
+  @keyframes orders-filter-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(.99)
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1)
+    }
+  }
+
+  .orders-filter-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px;
+    border-bottom: 1px solid var(--border-color)
+  }
+
+  .orders-filter-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-weight: 800;
+    font-size: 1.08rem
+  }
+
+  .orders-filter-modal-title i {
+    color: var(--primary-color)
+  }
+
+  .orders-filter-modal-sub {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: .8rem
+  }
+
+  .orders-filter-close {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    cursor: pointer
+  }
+
+  .orders-filter-form {
+    padding: 20px 22px
+  }
+
+  .orders-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px
+  }
+
+  .orders-filter-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0
+  }
+
+  .orders-filter-field label,
+  .orders-filter-legend {
+    font-size: .72rem;
+    font-weight: 800;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .045em
+  }
+
+  .orders-filter-field .form-control {
+    width: 100%
+  }
+
+  .orders-date-fieldset {
+    grid-column: 1/-1;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin: 0;
+    min-width: 0
+  }
+
+  .orders-date-fieldset legend {
+    padding: 0 6px
+  }
+
+  .orders-date-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 6px
+  }
+
+  .orders-date-presets {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 13px
+  }
+
+  .orders-date-presets-label {
+    width: 100%;
+    font-size: .72rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-bottom: 2px
+  }
+
+  .orders-date-preset {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    padding: 6px 11px;
+    font-size: .76rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition-fast)
+  }
+
+  .orders-date-preset:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: var(--primary-subtle)
+  }
+
+  .orders-date-preset.active {
+    border-color: var(--primary-color);
+    background: var(--primary-subtle);
+    color: var(--primary-dark)
+  }
+
+  .orders-filter-error {
+    grid-column: 1/-1;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    font-size: .82rem
+  }
+
+  .orders-filter-modal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 15px 22px;
+    border-top: 1px solid var(--border-color);
+    background: var(--surface-raised)
+  }
+
+  .orders-filter-modal-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center
+  }
+
+  .orders-results-card {
+    overflow: hidden
+  }
+
+  .orders-results-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap
+  }
+
+  .orders-search {
+    position: relative;
+    flex: 1;
+    max-width: 390px;
+    min-width: min(100%, 240px)
+  }
+
+  .orders-search i {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none
+  }
+
+  .orders-search input {
+    padding-left: 38px
+  }
+
+  .orders-result-count {
+    font-size: .82rem;
+    color: var(--text-muted);
+    font-weight: 600
+  }
+
+  .orders-table-wrap {
+    overflow-x: auto
+  }
+
+  .orders-table {
+    min-width: 800px
+  }
+
+  .orders-table th {
+    white-space: nowrap
   }
 
   .orders-row:hover td {
-    color: var(--primary-color) !important;
+    background: var(--primary-subtle) !important
   }
 
   .orders-row:focus-visible {
     outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
+    outline-offset: -2px
+  }
+
+  .orders-table-order {
+    font-weight: 800;
+    color: var(--primary-color);
+    white-space: nowrap
+  }
+
+  .orders-customer {
+    font-weight: 650;
+    color: var(--text-color)
+  }
+
+  .orders-total {
+    font-weight: 800;
+    white-space: nowrap;
+    color: var(--text-color)
+  }
+
+  .orders-payment {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    white-space: nowrap
+  }
+
+  .orders-payment-method {
+    font-size: .82rem;
+    font-weight: 650;
+    color: var(--text-secondary)
+  }
+
+  .orders-date {
+    white-space: nowrap
+  }
+
+  .orders-date time {
+    display: block;
+    font-size: .75rem;
+    color: var(--text-muted);
+    margin-top: 2px
+  }
+
+  .orders-empty-search td {
+    text-align: center;
+    padding: 28px;
+    color: var(--text-muted)
+  }
+
+  @media(max-width:760px) {
+    .orders-filter-triggerbar {
+      padding: 12px
+    }
+
+    .orders-filter-summary span {
+      max-width: 55vw
+    }
+
+    .orders-filter-modal-head,
+    .orders-filter-form {
+      padding: 17px
+    }
+
+    .orders-filter-modal-foot {
+      padding: 13px 17px
+    }
+  }
+
+  @media(max-width:480px) {
+
+    .orders-filter-grid,
+    .orders-date-grid {
+      grid-template-columns: 1fr
+    }
+
+    .orders-date-fieldset,
+    .orders-filter-error {
+      grid-column: auto
+    }
+
+    .orders-filter-modal-foot {
+      align-items: stretch;
+      flex-direction: column-reverse
+    }
+
+    .orders-filter-modal-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr
+    }
+
+    .orders-filter-modal-actions .btn {
+      justify-content: center
+    }
+
+    .orders-filter-triggerbar {
+      align-items: flex-start
+    }
+
+    .orders-filter-trigger {
+      padding: 9px 11px
+    }
+
+    .orders-results-toolbar {
+      padding: 12px
+    }
+
+    .orders-search {
+      max-width: none;
+      width: 100%
+    }
   }
 
   /* ── Receipt Modal ─────────────────────────────────── */
@@ -190,10 +668,11 @@ layoutHeader('Order History');
 </style>
 
 <div class="page-header">
-  <div>
-    <div class="page-header-title">Order History</div>
-    <div class="page-header-sub">
-      <?= $counts['all'] ?? 0 ?> total orders · Click any row to view receipt
+  <div class="orders-title-wrap">
+    <span class="orders-heading-icon"><i class="fa-solid fa-receipt"></i></span>
+    <div>
+      <div class="page-header-title">Order History</div>
+      <div class="page-header-sub"><?= (int) ($counts['all'] ?? 0) ?> total orders · Review your sales and open an order receipt.</div>
     </div>
   </div>
   <div class="page-header-actions">
@@ -205,32 +684,101 @@ layoutHeader('Order History');
 
 <?php showFlash('global'); ?>
 
-<!-- Status filter tabs -->
-<div class="tab-bar mb-4">
-  <?php foreach (
-    [
-      'all'       => 'All',
-      'pending'   => 'Pending',
-      'preparing' => 'Preparing',
-      'ready'     => 'Ready',
-      'claimed'   => 'Claimed',
-      'cancelled' => 'Cancelled',
-    ] as $s => $lbl
-  ): ?>
-    <a href="?status=<?= $s ?>" class="tab-btn <?= $filter === $s ? 'active' : '' ?>">
-      <?= $lbl ?>
-      <?php if (($counts[$s] ?? 0) > 0): ?>
-        <span style="background:<?= $s === 'pending' ? 'var(--status-pending)' : ($s === 'all' ? 'var(--text-muted)' : 'var(--border-strong)') ?>;color:var(--text-on-primary);font-size:0.60rem;font-weight:700;padding:1px 6px;border-radius:var(--radius-full);margin-left:4px">
-          <?= $counts[$s] ?>
-        </span>
-      <?php endif; ?>
-    </a>
-  <?php endforeach; ?>
+<div class="card orders-filter-triggerbar">
+  <div class="orders-filter-summary">
+    <strong>Order filters and sorting</strong>
+    <span><?= $activeFilterCount ?> active filter<?= $activeFilterCount === 1 ? '' : 's' ?> · <?= e($activeDateLabel) ?> · <?= $filterSort === 'oldest' ? 'Oldest first' : 'Newest first' ?></span>
+  </div>
+  <button type="button" class="btn btn-primary orders-filter-trigger" onclick="openOrdersFilter()" aria-haspopup="dialog" aria-controls="orders-filter-overlay">
+    <i class="fa-solid fa-sliders"></i> Filter &amp; Sort
+    <?php if ($activeFilterCount > 0): ?><span class="orders-filter-count"><?= $activeFilterCount ?></span><?php endif; ?>
+  </button>
 </div>
 
-<div class="card">
-  <div style="overflow-x:auto">
-    <table class="data-table">
+<div class="orders-filter-overlay <?= $dateFilterError !== '' ? 'open' : '' ?>" id="orders-filter-overlay" <?= $dateFilterError !== '' ? '' : 'hidden' ?>>
+  <section class="orders-filter-modal" role="dialog" aria-modal="true" aria-labelledby="orders-filter-title">
+    <div class="orders-filter-modal-head">
+      <div>
+        <div class="orders-filter-modal-title" id="orders-filter-title"><i class="fa-solid fa-sliders"></i> Filter &amp; sort orders</div>
+        <div class="orders-filter-modal-sub">Narrow your orders by status, type, payment, or order date.</div>
+      </div>
+      <button type="button" class="orders-filter-close" onclick="closeOrdersFilter()" aria-label="Close filters"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form method="GET" class="orders-filter-form" id="orders-filter-form">
+      <div class="orders-filter-grid">
+        <div class="orders-filter-field">
+          <label for="orders-status-filter">Order status</label>
+          <select class="form-control" id="orders-status-filter" name="status">
+            <?php foreach (['all' => 'All statuses', 'pending' => 'Pending', 'preparing' => 'Preparing', 'ready' => 'Ready', 'claimed' => 'Claimed', 'cancelled' => 'Cancelled'] as $s => $l): ?>
+              <option value="<?= e($s) ?>" <?= $filterStatus === $s ? 'selected' : '' ?>><?= e($l) ?><?= $s !== 'all' && ($counts[$s] ?? 0) > 0 ? ' (' . (int) $counts[$s] . ')' : '' ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="orders-filter-field">
+          <label for="orders-type-filter">Order type</label>
+          <select class="form-control" id="orders-type-filter" name="type">
+            <option value="all" <?= $filterType === 'all' ? 'selected' : '' ?>>All types</option>
+            <option value="walk-in" <?= $filterType === 'walk-in' ? 'selected' : '' ?>>Walk-in</option>
+            <option value="pre-order" <?= $filterType === 'pre-order' ? 'selected' : '' ?>>Pre-order</option>
+          </select>
+        </div>
+        <div class="orders-filter-field">
+          <label for="orders-payment-filter">Payment method</label>
+          <select class="form-control" id="orders-payment-filter" name="payment">
+            <option value="all" <?= $filterPayment === 'all' ? 'selected' : '' ?>>All payment methods</option>
+            <option value="cash" <?= $filterPayment === 'cash' ? 'selected' : '' ?>>Cash</option>
+            <option value="GCash" <?= $filterPayment === 'GCash' ? 'selected' : '' ?>>GCash</option>
+          </select>
+        </div>
+        <div class="orders-filter-field">
+          <label for="orders-sort-filter">Sort by order date</label>
+          <select class="form-control" id="orders-sort-filter" name="sort">
+            <option value="newest" <?= $filterSort === 'newest' ? 'selected' : '' ?>>Newest first</option>
+            <option value="oldest" <?= $filterSort === 'oldest' ? 'selected' : '' ?>>Oldest first</option>
+          </select>
+        </div>
+        <fieldset class="orders-date-fieldset">
+          <legend class="orders-filter-legend">Specific order dates</legend>
+          <div class="orders-date-presets" role="group" aria-label="Quick date ranges">
+            <span class="orders-date-presets-label">Quick ranges</span>
+            <?php foreach ($quickDateRanges as $key => $range): ?>
+              <button type="button" class="orders-date-preset <?= $activeDatePreset === $key ? 'active' : '' ?>" data-date-from="<?= e($range['from']) ?>" data-date-to="<?= e($range['to']) ?>" aria-pressed="<?= $activeDatePreset === $key ? 'true' : 'false' ?>"><?= e($range['label']) ?></button>
+            <?php endforeach; ?>
+          </div>
+          <div class="orders-date-grid">
+            <div class="orders-filter-field">
+              <label for="orders-date-from">From date</label>
+              <input class="form-control" type="date" id="orders-date-from" name="date_from" value="<?= e($filterDateFrom) ?>">
+            </div>
+            <div class="orders-filter-field">
+              <label for="orders-date-to">To date</label>
+              <input class="form-control" type="date" id="orders-date-to" name="date_to" value="<?= e($filterDateTo) ?>">
+            </div>
+          </div>
+          <?php if ($dateFilterError !== ''): ?><div class="orders-filter-error" role="alert"><?= e($dateFilterError) ?></div><?php endif; ?>
+        </fieldset>
+      </div>
+    </form>
+    <div class="orders-filter-modal-foot">
+      <a href="?" class="btn btn-ghost"><i class="fa-solid fa-rotate-left"></i> Reset filters</a>
+      <div class="orders-filter-modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeOrdersFilter()">Cancel</button>
+        <button type="submit" form="orders-filter-form" class="btn btn-primary"><i class="fa-solid fa-check"></i> Apply filters</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="card orders-results-card">
+  <div class="orders-results-toolbar">
+    <label class="orders-search" for="orders-search">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input class="form-control" type="search" id="orders-search" placeholder="Search order number or customer" autocomplete="off">
+    </label>
+    <span class="orders-result-count" id="orders-result-count" aria-live="polite"><?= count($orders) ?> order<?= count($orders) === 1 ? '' : 's' ?> shown<?= count($orders) >= 300 ? ' · first 300' : '' ?></span>
+  </div>
+  <div class="orders-table-wrap">
+    <table class="data-table orders-table">
       <thead>
         <tr>
           <th>Order No.</th>
@@ -247,24 +795,36 @@ layoutHeader('Order History');
           <tr>
             <td colspan="7">
               <div class="empty-state">
-                <i class="fa-solid fa-receipt"></i>
-                <h3>No orders yet</h3>
-                <p>Orders you process will appear here.</p>
+                <i class="fa-solid fa-inbox"></i>
+                <h3><?= $activeFilterCount > 0 ? 'No matching orders' : 'No orders yet' ?></h3>
+                <p><?= $activeFilterCount > 0 ? 'Try another status, date range, or filter.' : 'Orders you process will appear here.' ?></p>
               </div>
             </td>
           </tr>
           <?php else: foreach ($orders as $o): ?>
-            <tr class="orders-row" role="button" tabindex="0" onclick="openReceipt(<?= $o['id'] ?>)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openReceipt(<?= $o['id'] ?>);}" title="Click to view receipt">
-              <td><strong><?= e($o['order_number']) ?></strong></td>
-              <td><?= e($o['customer']) ?></td>
+            <tr class="orders-row" data-order-id="<?= (int) $o['id'] ?>" data-order-search="<?= e(mb_strtolower($o['order_number'] . ' ' . $o['customer'])) ?>" tabindex="0" aria-label="View receipt for order <?= e($o['order_number']) ?>" onclick="openReceipt(<?= (int) $o['id'] ?>)" title="Click to view receipt">
+              <td><span class="orders-table-order"><?= e($o['order_number']) ?></span></td>
+              <td><span class="orders-customer"><?= e($o['customer']) ?></span></td>
               <td><span class="badge badge-<?= $o['order_type'] === 'walk-in' ? 'walkin' : 'preorder' ?>"><?= e($o['order_type']) ?></span></td>
-              <td class="num"><?= peso($o['total_amount']) ?></td>
-              <td><?= e($o['payment_method'] ?? '—') ?></td>
-              <td><span class="badge badge-<?= e($o['status']) ?>"><?= e($o['status']) ?></span></td>
-              <td class="text-muted"><?= date('M j, Y g:i A', strtotime($o['created_at'])) ?></td>
+              <td class="num orders-total"><?= peso($o['total_amount']) ?></td>
+              <?php $paymentBadge = match ($o['payment_status'] ?? '') {
+                'paid' => 'paid',
+                'refunded' => 'refunded',
+                'pending' => 'pending',
+                'failed' => 'cancelled',
+                default => ''
+              }; ?>
+              <td>
+                <div class="orders-payment"><span class="orders-payment-method"><?= e($o['payment_method'] ?? '—') ?></span><?php if ($paymentBadge !== ''): ?><span class="badge badge-<?= $paymentBadge ?>"><?= e(ucfirst($o['payment_status'])) ?></span><?php endif; ?></div>
+              </td>
+              <td><span class="badge badge-<?= e($o['status']) ?>"><?= e(ucfirst(str_replace('_', ' ', $o['status']))) ?></span></td>
+              <td class="orders-date"><strong><?= date('M j, Y', strtotime($o['created_at'])) ?></strong><time datetime="<?= e(date(DATE_ATOM, strtotime($o['created_at']))) ?>"><?= date('g:i A', strtotime($o['created_at'])) ?></time></td>
             </tr>
         <?php endforeach;
         endif; ?>
+        <?php if (!empty($orders)): ?><tr id="orders-search-empty" class="orders-empty-search" hidden>
+            <td colspan="7"><i class="fa-solid fa-magnifying-glass" style="display:block;font-size:1.2rem;margin-bottom:8px"></i>No orders match your search.</td>
+          </tr><?php endif; ?>
       </tbody>
     </table>
   </div>
@@ -384,12 +944,87 @@ layoutHeader('Order History');
     btn.title = 'Send to thermal printer';
   }
 
+  // ── Filter & Sort modal ────────────────────────────────────────────
+  const ordersFilterOverlay = document.getElementById('orders-filter-overlay');
+  const ordersFilterTrigger = document.querySelector('.orders-filter-trigger');
+  const orderDateFrom = document.getElementById('orders-date-from');
+  const orderDateTo = document.getElementById('orders-date-to');
+
+  function openOrdersFilter() {
+    ordersFilterOverlay.hidden = false;
+    ordersFilterOverlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('orders-status-filter').focus();
+  }
+
+  function closeOrdersFilter() {
+    ordersFilterOverlay.classList.remove('open');
+    ordersFilterOverlay.hidden = true;
+    document.body.style.overflow = '';
+    ordersFilterTrigger.focus();
+  }
+
+  ordersFilterOverlay.addEventListener('click', event => {
+    if (event.target === ordersFilterOverlay) closeOrdersFilter();
+  });
+
+  document.querySelectorAll('.orders-date-preset').forEach(button => {
+    button.addEventListener('click', () => {
+      orderDateFrom.value = button.dataset.dateFrom;
+      orderDateTo.value = button.dataset.dateTo;
+      document.querySelectorAll('.orders-date-preset').forEach(preset => {
+        const active = preset === button;
+        preset.classList.toggle('active', active);
+        preset.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    });
+  });
+  [orderDateFrom, orderDateTo].forEach(input => input.addEventListener('input', () => {
+    document.querySelectorAll('.orders-date-preset').forEach(button => {
+      button.classList.remove('active');
+      button.setAttribute('aria-pressed', 'false');
+    });
+  }));
+
+  // ── Live search ────────────────────────────────────────────────────
+  const ordersSearch = document.getElementById('orders-search');
+  const orderRows = Array.from(document.querySelectorAll('.orders-row'));
+  const ordersSearchEmpty = document.getElementById('orders-search-empty');
+  const ordersResultCount = document.getElementById('orders-result-count');
+
+  function filterOrderRows() {
+    const query = ordersSearch.value.trim().toLocaleLowerCase();
+    let visible = 0;
+    orderRows.forEach(row => {
+      const matches = row.dataset.orderSearch.includes(query);
+      row.hidden = !matches;
+      if (matches) visible++;
+    });
+    if (ordersSearchEmpty) ordersSearchEmpty.hidden = query === '' || visible > 0;
+    if (ordersResultCount) {
+      const suffix = orderRows.length >= 300 ? ' · first 300' : '';
+      ordersResultCount.textContent = query ?
+        `${visible} of ${orderRows.length} orders match${suffix}` :
+        `${orderRows.length} order${orderRows.length === 1 ? '' : 's'} shown${suffix}`;
+    }
+  }
+
+  ordersSearch?.addEventListener('input', filterOrderRows);
+  orderRows.forEach(row => row.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openReceipt(Number(row.dataset.orderId));
+    }
+  }));
+
   // ── Close on backdrop / Escape ─────────────────────────────────────
   document.getElementById('receipt-overlay').addEventListener('click', function(e) {
     if (e.target === this) closeReceipt();
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeReceipt();
+    if (e.key !== 'Escape') return;
+    if (!ordersFilterOverlay.hidden) closeOrdersFilter();
+    else closeReceipt();
   });
 </script>
 
