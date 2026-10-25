@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Sep 25, 2026 at 11:07 PM
+-- Generation Time: Oct 25, 2026
 -- Server version: 8.4.3
 -- PHP Version: 8.3.26
 
@@ -15,7 +15,7 @@ SET time_zone = "+00:00";
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8mb4 */;
+/*!40101 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci */;
 
 --
 -- Database: `kapehan_db`
@@ -28,12 +28,13 @@ SET time_zone = "+00:00";
 --
 
 CREATE TABLE `addons` (
-  `id` int NOT NULL,
+  `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
   `price` decimal(10,2) NOT NULL DEFAULT '0.00',
   `status` enum('active','inactive') NOT NULL DEFAULT 'active',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `addons`
@@ -51,12 +52,13 @@ INSERT INTO `addons` (`id`, `name`, `price`, `status`, `created_at`) VALUES
 --
 
 CREATE TABLE `admins` (
-  `id` int UNSIGNED NOT NULL,
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `full_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `username` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'bcrypt hash',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -76,7 +78,7 @@ INSERT INTO `admins` (`id`, `full_name`, `username`, `password`, `created_at`, `
 CREATE TABLE `app_settings` (
   `setting_key` varchar(80) NOT NULL,
   `setting_value` text
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `app_settings`
@@ -376,7 +378,7 @@ INSERT INTO `audit_log` (`id`, `actor_type`, `actor_id`, `action`, `target`, `ta
 --
 
 CREATE TABLE `cashiers` (
-  `id` int UNSIGNED NOT NULL,
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `full_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `username` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -387,7 +389,8 @@ CREATE TABLE `cashiers` (
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_by` int UNSIGNED NOT NULL COMMENT 'admin.id who created this account',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -655,15 +658,16 @@ CREATE TABLE `faculty` (
 --
 
 CREATE TABLE `inventory_items` (
-  `id` int UNSIGNED NOT NULL,
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` varchar(120) NOT NULL,
   `category` varchar(80) NOT NULL DEFAULT 'Other',
   `unit` varchar(20) NOT NULL COMMENT 'g, kg, ml, L, pcs',
   `quantity_on_hand` decimal(12,3) NOT NULL DEFAULT '0.000',
   `reorder_level` decimal(12,3) NOT NULL DEFAULT '0.000',
   `cost_per_unit` decimal(10,2) NOT NULL DEFAULT '0.00',
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `inventory_items`
@@ -753,7 +757,7 @@ CREATE TABLE `inventory_log` (
   `actor_role` varchar(20) DEFAULT NULL,
   `actor_id` int UNSIGNED DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -766,7 +770,7 @@ CREATE TABLE `inventory_order_deductions` (
   `actor_role` varchar(20) DEFAULT NULL,
   `actor_id` int UNSIGNED DEFAULT NULL,
   `processed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Table structure for table `inventory_order_reservations`
@@ -843,7 +847,7 @@ INSERT INTO `login_attempts` (`identifier_hash`, `attempts`, `locked_until`, `up
 --
 
 CREATE TABLE `orders` (
-  `id` int UNSIGNED NOT NULL,
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `order_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Human-readable e.g. ORD-20240101-0001',
   `order_type` enum('walk-in','pre-order') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `status` enum('pending','preparing','ready','claimed','cancelled','no_show') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
@@ -860,7 +864,8 @@ CREATE TABLE `orders` (
   `lock_expire_at` datetime DEFAULT NULL COMMENT 'When the lock expires (auto-unlock)',
   `pickup_time` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `pickup_date` date DEFAULT NULL,
-  `customer_arrived_at` datetime DEFAULT NULL
+  `customer_arrived_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -897,14 +902,15 @@ INSERT INTO `orders` (`id`, `order_number`, `order_type`, `status`, `student_id`
 --
 
 CREATE TABLE `order_details` (
-  `id` int UNSIGNED NOT NULL,
+  `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
   `order_id` int UNSIGNED NOT NULL,
   `product_id` int UNSIGNED NOT NULL,
   `quantity` tinyint NOT NULL,
   `price_at_time` decimal(8,2) NOT NULL COMMENT 'Snapshot price at time of order',
   `subtotal` decimal(10,2) NOT NULL COMMENT 'quantity * price_at_time',
-  `customization_note` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'e.g. Large · Less Sugar · +Oat Milk, +Extra Shot'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `customization_note` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'e.g. Large · Less Sugar · +Oat Milk, +Extra Shot',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `order_details`
@@ -958,7 +964,7 @@ CREATE TABLE `order_feedback` (
   `rating` tinyint NOT NULL,
   `comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -970,6 +976,9 @@ CREATE TABLE `payments` (
   `id` int UNSIGNED NOT NULL,
   `order_id` int UNSIGNED NOT NULL COMMENT 'One payment per order',
   `drawer_day_id` int UNSIGNED DEFAULT NULL,
+  `gateway` varchar(20) DEFAULT NULL,
+  `gateway_session_id` varchar(100) DEFAULT NULL,
+  `gateway_payment_id` varchar(100) DEFAULT NULL,
   `payment_method` enum('cash','online','GCash','PayMaya','Online Banking') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL,
   `change_given` decimal(10,2) NOT NULL DEFAULT '0.00',
@@ -978,6 +987,17 @@ CREATE TABLE `payments` (
   `paid_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `payment_webhook_events`
+--
+
+CREATE TABLE `payment_webhook_events` (
+  `event_key` varchar(190) NOT NULL,
+  `event_type` varchar(100) NOT NULL,
+  `received_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`event_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -1098,7 +1118,7 @@ INSERT INTO `products` (`id`, `category_id`, `name`, `description`, `has_sizes`,
 CREATE TABLE `product_addons` (
   `product_id` int UNSIGNED NOT NULL,
   `addon_id` int NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `product_addons`
@@ -1185,7 +1205,7 @@ CREATE TABLE `product_ingredients` (
   `inventory_item_id` int UNSIGNED NOT NULL,
   `size_label` varchar(30) NOT NULL DEFAULT '',
   `qty_per_unit` decimal(10,3) NOT NULL COMMENT 'amount consumed per 1 unit sold'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `product_ingredients` (`id`, `product_id`, `inventory_item_id`, `size_label`, `qty_per_unit`) VALUES
 ('1', '1', '3', '', '0.018'),
@@ -1578,7 +1598,7 @@ CREATE TABLE `addon_ingredients` (
   `qty_per_unit` decimal(12,3) NOT NULL COMMENT 'amount consumed per add-on selection',
   PRIMARY KEY (`addon_id`,`inventory_item_id`),
   KEY `idx_addon_ingredients_item` (`inventory_item_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `addon_ingredients` (`addon_id`, `inventory_item_id`, `qty_per_unit`) VALUES
 ('1', '3', '0.009'),
@@ -1639,6 +1659,9 @@ INSERT INTO `schema_migrations` (`version`, `checksum`, `applied_at`) VALUES
 ('2026_10_11_add_loyalty_points.sql', '9a6321c814e1f263d1b2b0f58e1bd95d01b36b5a3fb06742d3942fc6b9990341', '2026-10-19 00:00:00'),
 ('2026_10_19_add_addon_inventory_recipes.sql', '2fcc0720a68cb86d5b5aca3abcab3bb522cfd23d7f392cb3a8e983422efb6c7c', '2026-10-19 00:00:00'),
 ('2026_10_20_harden_order_integrity.sql', '27afd682bc45d884f77e6c83a1ea26b4c055ccdf867b4617229d9d7065c320d8', '2026-10-19 00:00:00'),
+('2026_10_21_add_audited_drawer_reopen.sql', 'e7a3297a80b3361c782ece0358a51c15e63ebed3b46f5dc2f123074e57f381ee', '2026-10-21 00:00:00'),
+('2026_10_21_admin_controls_drawer_open_and_reopen.sql', '7b45980dd9933b8c50334ba3e32a785a6e30eb388bba01d6d8ccebc9977c9179', '2026-10-21 00:00:00'),
+('2026_10_23_add_paymongo_gateway.sql', '13c81db5e1b7724d046b3aff6c16de26256935a92879f06afeab28add3c6fb04', '2026-10-23 00:00:00'),
 ('2026_10_23_high_priority_improvements.sql', '9bec7b5030fd5a6884f4d76afbf7aff4e0cffb87291d21cd623e10245eae8aaa', '2026-10-23 00:00:00'),
 ('2026_10_23_manage_inventory_categories.sql', 'e34297a738c6edbfe47e77c0c1a1adabef1f898c8cb264ad726129219c5d987d', '2026-10-23 00:00:00'),
 ('2026_10_25_add_registration_conflict_recovery.sql', 'aeed1239f0f35606a0e065c5f62b2e885a1f96b6fd729882b42b5bd9f665d1d2', '2026-10-25 00:00:00');
@@ -1676,7 +1699,7 @@ CREATE TABLE `product_ratings` (
   `faculty_id` int UNSIGNED DEFAULT NULL,
   `rating` tinyint NOT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1730,7 +1753,7 @@ CREATE TABLE `size_options` (
   `price_adjustment` decimal(8,2) NOT NULL DEFAULT '0.00',
   `sort_order` tinyint NOT NULL DEFAULT '0',
   `is_active` tinyint(1) NOT NULL DEFAULT '1'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `size_options`
@@ -1777,16 +1800,9 @@ INSERT INTO `students` (`id`, `full_name`, `student_id_no`, `course`, `email`, `
 --
 
 --
--- Indexes for table `addons`
---
-ALTER TABLE `addons`
-  ADD PRIMARY KEY (`id`);
-
---
 -- Indexes for table `admins`
 --
 ALTER TABLE `admins`
-  ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `username` (`username`);
 
 --
@@ -1807,7 +1823,6 @@ ALTER TABLE `audit_log`
 -- Indexes for table `cashiers`
 --
 ALTER TABLE `cashiers`
-  ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `username` (`username`),
   ADD UNIQUE KEY `email` (`email`),
   ADD KEY `fk_cashier_admin` (`created_by`);
@@ -1847,12 +1862,6 @@ ALTER TABLE `faculty`
   ADD UNIQUE KEY `email` (`email`);
 
 --
--- Indexes for table `inventory_items`
---
-ALTER TABLE `inventory_items`
-  ADD PRIMARY KEY (`id`);
-
---
 -- Indexes for table `inventory_log`
 --
 ALTER TABLE `inventory_log`
@@ -1876,7 +1885,6 @@ ALTER TABLE `login_attempts`
 -- Indexes for table `orders`
 --
 ALTER TABLE `orders`
-  ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `order_number` (`order_number`),
   ADD KEY `fk_order_cashier` (`cashier_id`),
   ADD KEY `idx_orders_status` (`status`),
@@ -1912,7 +1920,6 @@ CREATE TABLE `loyalty_points_ledger` (
 -- Indexes for table `order_details`
 --
 ALTER TABLE `order_details`
-  ADD PRIMARY KEY (`id`),
   ADD KEY `idx_od_order` (`order_id`),
   ADD KEY `idx_od_product` (`product_id`);
 
@@ -2006,28 +2013,10 @@ ALTER TABLE `students`
 --
 
 --
--- AUTO_INCREMENT for table `addons`
---
-ALTER TABLE `addons`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
-
---
--- AUTO_INCREMENT for table `admins`
---
-ALTER TABLE `admins`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
 -- AUTO_INCREMENT for table `audit_log`
 --
 ALTER TABLE `audit_log`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=254;
-
---
--- AUTO_INCREMENT for table `cashiers`
---
-ALTER TABLE `cashiers`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `cashier_sessions`
@@ -2054,28 +2043,10 @@ ALTER TABLE `faculty`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `inventory_items`
---
-ALTER TABLE `inventory_items`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
-
---
 -- AUTO_INCREMENT for table `inventory_log`
 --
 ALTER TABLE `inventory_log`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
-
---
--- AUTO_INCREMENT for table `orders`
---
-ALTER TABLE `orders`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
-
---
--- AUTO_INCREMENT for table `order_details`
---
-ALTER TABLE `order_details`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=32;
 
 --
 -- AUTO_INCREMENT for table `order_feedback`
@@ -2138,7 +2109,7 @@ ALTER TABLE `students`
 --
 DROP TABLE IF EXISTS `product_rating_summary`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `product_rating_summary`  AS SELECT `p`.`id` AS `product_id`, `p`.`name` AS `product_name`, `p`.`image_path` AS `image_path`, `c`.`name` AS `category_name`, count(`pr`.`id`) AS `total_ratings`, round(avg(`pr`.`rating`),2) AS `avg_rating`, sum((`pr`.`rating` = 5)) AS `five_star`, sum((`pr`.`rating` = 4)) AS `four_star`, sum((`pr`.`rating` = 3)) AS `three_star`, sum((`pr`.`rating` = 2)) AS `two_star`, sum((`pr`.`rating` = 1)) AS `one_star`, coalesce((select sum(`od`.`quantity`) from `order_details` `od` where (`od`.`product_id` = `p`.`id`)),0) AS `total_sold` FROM ((`products` `p` left join `categories` `c` on((`p`.`category_id` = `c`.`id`))) left join `product_ratings` `pr` on((`pr`.`product_id` = `p`.`id`))) GROUP BY `p`.`id`, `p`.`name`, `p`.`image_path`, `c`.`name` ;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY INVOKER VIEW `product_rating_summary`  AS SELECT `p`.`id` AS `product_id`, `p`.`name` AS `product_name`, `p`.`image_path` AS `image_path`, `c`.`name` AS `category_name`, count(`pr`.`id`) AS `total_ratings`, round(avg(`pr`.`rating`),2) AS `avg_rating`, sum((`pr`.`rating` = 5)) AS `five_star`, sum((`pr`.`rating` = 4)) AS `four_star`, sum((`pr`.`rating` = 3)) AS `three_star`, sum((`pr`.`rating` = 2)) AS `two_star`, sum((`pr`.`rating` = 1)) AS `one_star`, coalesce((select sum(`od`.`quantity`) from `order_details` `od` where (`od`.`product_id` = `p`.`id`)),0) AS `total_sold` FROM ((`products` `p` left join `categories` `c` on((`p`.`category_id` = `c`.`id`))) left join `product_ratings` `pr` on((`pr`.`product_id` = `p`.`id`))) GROUP BY `p`.`id`, `p`.`name`, `p`.`image_path`, `c`.`name` ;
 
 --
 -- Constraints for dumped tables
