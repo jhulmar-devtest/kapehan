@@ -33,22 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_loyalty_settings'])) {
   verifyCsrf();
-  $redeemPointsRaw = trim((string) ($_POST['loyalty_redeem_points'] ?? ''));
-  $discountRaw = trim((string) ($_POST['loyalty_redeem_discount'] ?? ''));
   $pointsPerTenRaw = trim((string) ($_POST['loyalty_points_per_10_spent'] ?? ''));
-  $redeemPoints = filter_var($redeemPointsRaw, FILTER_VALIDATE_INT);
   $pointsPerTen = filter_var($pointsPerTenRaw, FILTER_VALIDATE_INT);
-  $discount = filter_var($discountRaw, FILTER_VALIDATE_FLOAT);
-
-  if ($redeemPoints === false || $redeemPoints < 1 || $redeemPoints > 100000) {
-    flash('global', 'Points required must be a whole number from 1 to 100,000.', 'error');
-  } elseif ($discount === false || $discount <= 0 || $discount > 10) {
-    flash('global', 'Discount must be more than ₱0 and cannot exceed ₱10.', 'error');
-  } elseif ($pointsPerTen === false || $pointsPerTen < 0 || $pointsPerTen > 100) {
+  if ($pointsPerTen === false || $pointsPerTen < 0 || $pointsPerTen > 100) {
     flash('global', 'Points earned per ₱10 spent must be a whole number from 0 to 100.', 'error');
   } else {
-    setSetting('loyalty_redeem_points', (string) $redeemPoints);
-    setSetting('loyalty_redeem_discount', number_format(round($discount, 2), 2, '.', ''));
     setSetting('loyalty_points_per_10_spent', (string) $pointsPerTen);
     auditLog(ROLE_ADMIN, currentUserId(), 'update_loyalty_settings');
     flash('global', 'Loyalty rewards updated.', 'success');
@@ -109,8 +98,8 @@ $oldInput     = getOldInput();
 $gcashName    = $oldInput['gcash_payment_name']   ?? gcashPaymentName();
 $gcashNumber  = $oldInput['gcash_payment_number'] ?? gcashPaymentNumber();
 
-$activeCashiers = (int) $db->query("SELECT COUNT(*) FROM cashiers WHERE is_active = 1")->fetchColumn();
-$totalCashiers  = (int) $db->query("SELECT COUNT(*) FROM cashiers")->fetchColumn();
+$activeCashiers = (int) $db->query("SELECT COUNT(*) FROM cashiers WHERE is_active = 1 AND deleted_at IS NULL")->fetchColumn();
+$totalCashiers  = (int) $db->query("SELECT COUNT(*) FROM cashiers WHERE deleted_at IS NULL")->fetchColumn();
 
 $fb = $db->query("SELECT COUNT(*) AS total, ROUND(AVG(rating),2) AS avg_rating FROM order_feedback")->fetch();
 $feedbackTotal = (int) ($fb['total'] ?? 0);
@@ -227,25 +216,18 @@ layoutHeader('Settings');
 
 <div class="settings-section">
   <h2>Loyalty Rewards</h2>
-  <p class="sub">Set how customers earn and redeem points. Each order can receive one redemption only, with a maximum discount of ₱10.</p>
+  <p class="sub">Set the earn rate here. Manage each drink’s point cost and discount, customer balances, and audited adjustments on the Loyalty page.</p>
   <form method="POST">
     <?= csrfField() ?>
     <input type="hidden" name="save_loyalty_settings" value="1">
     <div class="settings-grid">
       <div class="form-group">
-        <label class="form-label" for="loyalty_redeem_points">Points required for a discount</label>
-        <input id="loyalty_redeem_points" type="number" name="loyalty_redeem_points" class="form-control" min="1" max="100000" step="1" required value="<?= (int) $loyaltyRules['redeem_points'] ?>">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="loyalty_redeem_discount">Discount per redemption (maximum ₱10)</label>
-        <input id="loyalty_redeem_discount" type="number" name="loyalty_redeem_discount" class="form-control" min="0.01" max="10.00" step="0.01" required value="<?= number_format($loyaltyRules['discount_cents'] / 100, 2, '.', '') ?>">
-      </div>
-      <div class="form-group">
         <label class="form-label" for="loyalty_points_per_10_spent">Points earned per ₱10 spent</label>
         <input id="loyalty_points_per_10_spent" type="number" name="loyalty_points_per_10_spent" class="form-control" min="0" max="100" step="1" required value="<?= (int) $loyaltyRules['points_per_10_spent'] ?>">
       </div>
     </div>
-    <button type="submit" class="btn btn-primary" style="margin-top:18px"><i class="fa-solid fa-floppy-disk"></i> Save Loyalty Rules</button>
+    <button type="submit" class="btn btn-primary" style="margin-top:18px"><i class="fa-solid fa-floppy-disk"></i> Save Earn Rate</button>
+    <a href="<?= APP_URL ?>/admin/loyalty.php" class="btn btn-secondary" style="margin-top:18px;margin-left:8px"><i class="fa-solid fa-users"></i> Manage Customers &amp; Drink Rewards</a>
   </form>
 </div>
 

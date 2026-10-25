@@ -41,6 +41,8 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
   echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/variables.css">' . "\n";
   echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/layout.css?v=' . (int) filemtime(__DIR__ . '/../assets/css/layout.css') . '">' . "\n";
   echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/components.css">' . "\n";
+  echo '  <link rel="stylesheet" href="' . $appUrl . '/../assets/css/password-toggle.css?v=' . (int) filemtime(__DIR__ . '/../assets/css/password-toggle.css') . '">' . "\n";
+  echo '  <script src="' . $appUrl . '/../assets/js/password-toggle.js?v=' . (int) filemtime(__DIR__ . '/../assets/js/password-toggle.js') . '" defer></script>' . "\n";
   if ($extraHead) echo '  ' . $extraHead . "\n";
   echo '</head>' . "\n";
   echo '<body' . $pickupAlertEndpoint . '>' . "\n";
@@ -66,6 +68,7 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
     $nav .= navItem('fa-boxes-stacked', 'Inventory',  $appUrl . '/admin/inventory.php', $pageTitle);
     $nav .= navItem('fa-flask',        'Recipes',    $appUrl . '/admin/recipes.php',   $pageTitle);
     $nav .= navItem('fa-cash-register', 'Cash Drawer', $appUrl . '/admin/cash-drawer.php', $pageTitle);
+    $nav .= navItem('fa-award',        'Loyalty',     $appUrl . '/admin/loyalty.php',   $pageTitle);
     $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
     $nav .= '<div class="nav-section-label">System</div>';
     try {

@@ -474,7 +474,7 @@ layoutHeader('Settings');
               <label class="form-label" for="current_password">Current Password <span style="color: var(--status-cancelled)">*</span></label>
               <div class="password-wrapper">
                 <input type="password" id="current_password" name="current_password" class="form-control" required autocomplete="current-password">
-                <button type="button" class="password-toggle" data-target="current_password" aria-label="Toggle password visibility">
+                <button type="button" class="password-toggle" data-target="current_password" aria-label="Show current password" aria-pressed="false">
                   <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
@@ -484,7 +484,7 @@ layoutHeader('Settings');
               <label class="form-label" for="new_password">New Password <span style="color: var(--status-cancelled)">*</span></label>
               <div class="password-wrapper">
                 <input type="password" id="new_password" name="new_password" class="form-control" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." autocomplete="new-password">
-                <button type="button" class="password-toggle" data-target="new_password" aria-label="Toggle password visibility">
+                <button type="button" class="password-toggle" data-target="new_password" aria-label="Show new password" aria-pressed="false">
                   <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
@@ -495,7 +495,7 @@ layoutHeader('Settings');
               <label class="form-label" for="confirm_password">Confirm New Password <span style="color: var(--status-cancelled)">*</span></label>
               <div class="password-wrapper">
                 <input type="password" id="confirm_password" name="confirm_password" class="form-control" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." autocomplete="new-password">
-                <button type="button" class="password-toggle" data-target="confirm_password" aria-label="Toggle password visibility">
+                <button type="button" class="password-toggle" data-target="confirm_password" aria-label="Show password confirmation" aria-pressed="false">
                   <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
@@ -532,8 +532,9 @@ layoutHeader('Settings');
       var inputId = this.getAttribute('data-target');
       var input = document.getElementById(inputId);
       var icon = this.querySelector('i');
+      var visible = input.type === 'password';
 
-      if (input.type === 'password') {
+      if (visible) {
         input.type = 'text';
         icon.classList.remove('fa-eye');
         icon.classList.add('fa-eye-slash');
@@ -542,6 +543,8 @@ layoutHeader('Settings');
         icon.classList.remove('fa-eye-slash');
         icon.classList.add('fa-eye');
       }
+      this.setAttribute('aria-label', (visible ? 'Hide ' : 'Show ') + (inputId === 'confirm_password' ? 'password confirmation' : inputId.replace('_', ' ')));
+      this.setAttribute('aria-pressed', String(visible));
     });
   });
 </script>

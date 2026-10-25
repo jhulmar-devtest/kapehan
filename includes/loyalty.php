@@ -3,8 +3,8 @@
 /**
  * Loyalty point rules and ledger operations.
  *
- * Loyalty rules are stored in app_settings. One redemption is allowed per
- * order, and the discount is always capped at P10.
+ * Earn rates live in app_settings; redemptions are configured per drink.
+ * Every earn, redemption, reversal, and manual adjustment is stored in the ledger.
  */
 
 function loyaltyLedgerAvailable(PDO $db): bool
@@ -31,12 +31,8 @@ function loyaltyAccountConfig(string $type): ?array
 
 function loyaltyRules(PDO $db): array
 {
-  $redeemPoints = filter_var(getSetting('loyalty_redeem_points', '100'), FILTER_VALIDATE_INT);
   $pointsPerTen = filter_var(getSetting('loyalty_points_per_10_spent', '1'), FILTER_VALIDATE_INT);
-  $discount = filter_var(getSetting('loyalty_redeem_discount', '10.00'), FILTER_VALIDATE_FLOAT);
   return [
-    'redeem_points' => max(1, min(100000, $redeemPoints === false ? 100 : $redeemPoints)),
-    'discount_cents' => max(1, min(1000, (int) round(($discount === false ? 10 : $discount) * 100))),
     'points_per_10_spent' => max(0, min(100, $pointsPerTen === false ? 1 : $pointsPerTen)),
   ];
 }
@@ -47,14 +43,68 @@ function loyaltyPointsFromSpend(PDO $db, float $amount): int
   return intdiv($cents, 1000) * loyaltyRules($db)['points_per_10_spent'];
 }
 
-function loyaltyRedemptionFor(PDO $db, int $balance, float $amount): array
+function loyaltyProductRewards(PDO $db): array
 {
-  $rules = loyaltyRules($db);
-  $amountCents = max(0, (int) round($amount * 100));
-  $canRedeem = $balance >= $rules['redeem_points'] && $amountCents >= $rules['discount_cents'];
+  if (!loyaltyLedgerAvailable($db)) return [];
+  $stmt = $db->query(
+    "SELECT r.product_id, p.name, p.price, r.points_required, r.discount_amount
+       FROM loyalty_product_rewards r
+       JOIN products p ON p.id = r.product_id
+       JOIN categories c ON c.id = p.category_id
+      WHERE r.is_active = 1 AND p.is_available = 1 AND c.name != 'Add-ons'
+      ORDER BY p.name, p.id"
+  );
+  return array_map(static fn(array $row): array => [
+    'product_id' => (int) $row['product_id'],
+    'name' => (string) $row['name'],
+    'price' => (float) $row['price'],
+    'points_required' => (int) $row['points_required'],
+    'discount_amount' => (float) $row['discount_amount'],
+  ], $stmt->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/** Validate a reward against a priced order detail, never client-supplied prices. */
+function loyaltyRedemptionForProduct(PDO $db, int $balance, int $productId, array $details, float $availableTotal): array
+{
+  $empty = ['points' => 0, 'discount' => 0.0, 'product_id' => null, 'product_name' => null, 'message' => 'Choose a valid drink reward.'];
+  if ($productId < 1) return $empty;
+  $stmt = $db->prepare(
+    "SELECT r.product_id, r.points_required, r.discount_amount, p.name, p.price
+       FROM loyalty_product_rewards r
+       JOIN products p ON p.id = r.product_id
+       JOIN categories c ON c.id = p.category_id
+      WHERE r.product_id = ? AND r.is_active = 1 AND p.is_available = 1 AND c.name != 'Add-ons'" . ($db->inTransaction() ? ' FOR UPDATE' : '')
+  );
+  $stmt->execute([$productId]);
+  $reward = $stmt->fetch(PDO::FETCH_ASSOC);
+  if (!$reward) return [...$empty, 'message' => 'That drink has no active loyalty reward.'];
+
+  $line = null;
+  foreach ($details as $detail) {
+    if ((int) ($detail['product_id'] ?? 0) === $productId) {
+      $line = $detail;
+      break;
+    }
+  }
+  if ($line === null) return [...$empty, 'message' => 'Add the selected reward drink to the order first.'];
+  if ($balance < (int) $reward['points_required']) {
+    return [...$empty, 'message' => 'This account no longer has enough points for that drink reward.'];
+  }
+
+  $discountCents = (int) round((float) $reward['discount_amount'] * 100);
+  $productCents = (int) round((float) $reward['price'] * 100);
+  $lineCents = (int) round((float) ($line['price'] ?? $line['unit_price'] ?? $line['sub'] ?? 0) * 100);
+  $availableCents = max(0, (int) round($availableTotal * 100));
+  if ($discountCents < 1 || $discountCents > $productCents || $discountCents > $lineCents || $discountCents > $availableCents) {
+    return [...$empty, 'message' => 'The selected reward no longer matches this drink price or order total.'];
+  }
+
   return [
-    'points' => $canRedeem ? $rules['redeem_points'] : 0,
-    'discount' => $canRedeem ? $rules['discount_cents'] / 100 : 0.0,
+    'points' => (int) $reward['points_required'],
+    'discount' => $discountCents / 100,
+    'product_id' => (int) $reward['product_id'],
+    'product_name' => (string) $reward['name'],
+    'message' => null,
   ];
 }
 
@@ -94,10 +144,12 @@ function loyaltyRedeemForOrder(
   float $amount,
   bool $requested,
   string $actorType,
-  ?int $actorId
+  ?int $actorId,
+  ?int $rewardProductId = null,
+  array $details = []
 ): array {
   if (!$db->inTransaction()) throw new LogicException('Loyalty redemption must run inside the order transaction.');
-  if (!$requested) return ['points' => 0, 'discount' => 0.0, 'balance' => loyaltyPointsBalance($db, $customerType, $customerId)];
+  if (!$requested) return ['points' => 0, 'discount' => 0.0, 'balance' => loyaltyPointsBalance($db, $customerType, $customerId), 'product_id' => null, 'product_name' => null];
   if (!loyaltyLedgerAvailable($db)) throw new RuntimeException('Loyalty points are unavailable until the database migration is applied.');
 
   $config = loyaltyAccountConfig($customerType);
@@ -107,32 +159,30 @@ function loyaltyRedeemForOrder(
   if (!$lock->fetchColumn()) throw new RuntimeException('That loyalty account is no longer active.');
 
   $balance = loyaltyPointsBalance($db, $customerType, $customerId);
-  $rules = loyaltyRules($db);
-  $redemption = loyaltyRedemptionFor($db, $balance, $amount);
-  if ($redemption['points'] < $rules['redeem_points']) {
-    throw new RuntimeException($balance < $rules['redeem_points']
-      ? 'This account no longer has enough points to redeem.'
-      : 'The order total must be at least ₱' . number_format($rules['discount_cents'] / 100, 2) . ' to redeem points.');
-  }
+  $redemption = loyaltyRedemptionForProduct($db, $balance, (int) $rewardProductId, $details, $amount);
+  if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
 
   $db->prepare(
-    "INSERT INTO loyalty_points_ledger (customer_type, customer_id, order_id, entry_type, points_delta, amount_value, actor_type, actor_id, note)
-     VALUES (?, ?, ?, 'redeem', ?, ?, ?, ?, ?)"
+    "INSERT INTO loyalty_points_ledger (customer_type, customer_id, order_id, reward_product_id, entry_type, points_delta, amount_value, actor_type, actor_id, note)
+     VALUES (?, ?, ?, ?, 'redeem', ?, ?, ?, ?, ?)"
   )->execute([
     $customerType,
     $customerId,
     $orderId,
+    $redemption['product_id'],
     -$redemption['points'],
     $redemption['discount'],
     $actorType,
     $actorId,
-    'Redeemed at checkout',
+    'Redeemed for ' . $redemption['product_name'] . ' (product #' . $redemption['product_id'] . ')',
   ]);
 
   return [
     'points' => $redemption['points'],
     'discount' => $redemption['discount'],
     'balance' => $balance - $redemption['points'],
+    'product_id' => $redemption['product_id'],
+    'product_name' => $redemption['product_name'],
   ];
 }
 
@@ -204,12 +254,13 @@ function loyaltyReverseOrder(PDO $db, int $orderId, string $actorType, ?int $act
     if ($exists->fetchColumn()) continue;
     $delta = (int) $entry['points_delta'];
     $db->prepare(
-      'INSERT INTO loyalty_points_ledger (customer_type, customer_id, order_id, entry_type, points_delta, amount_value, actor_type, actor_id, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO loyalty_points_ledger (customer_type, customer_id, order_id, reward_product_id, entry_type, points_delta, amount_value, actor_type, actor_id, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )->execute([
       $entry['customer_type'],
       $entry['customer_id'],
       $orderId,
+      $entry['reward_product_id'],
       $reverseType,
       -$delta,
       $entry['amount_value'],
@@ -226,7 +277,7 @@ function loyaltyHistory(PDO $db, string $customerType, int $customerId, int $lim
   if (!$config || $customerId < 1 || !loyaltyLedgerAvailable($db)) return [];
   $limit = max(1, min(100, $limit));
   $stmt = $db->prepare(
-    'SELECT l.entry_type, l.points_delta, l.amount_value, l.note, l.created_at, o.order_number
+    'SELECT l.entry_type, l.points_delta, l.amount_value, l.reward_product_id, l.note, l.actor_type, l.actor_id, l.created_at, o.order_number
        FROM loyalty_points_ledger l LEFT JOIN orders o ON o.id = l.order_id
       WHERE l.customer_type = ? AND l.customer_id = ?
       ORDER BY l.created_at DESC, l.id DESC LIMIT ' . $limit
@@ -239,7 +290,7 @@ function loyaltyHistoryForOrder(PDO $db, int $orderId): array
 {
   if (!loyaltyLedgerAvailable($db)) return [];
   $stmt = $db->prepare(
-    'SELECT entry_type, points_delta, amount_value FROM loyalty_points_ledger WHERE order_id = ? ORDER BY id ASC'
+    'SELECT entry_type, points_delta, amount_value, reward_product_id, note FROM loyalty_points_ledger WHERE order_id = ? ORDER BY id ASC'
   );
   $stmt->execute([$orderId]);
   return $stmt->fetchAll(PDO::FETCH_ASSOC);

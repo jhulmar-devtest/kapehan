@@ -64,6 +64,7 @@ $items = $items ?? [];
 
     <?php foreach (($loyaltyEntries ?? []) as $loyaltyEntry): ?>
       <?php if ($loyaltyEntry['entry_type'] === 'redeem'): ?>
+        <div class="rcpt-total-row"><span class="rcpt-total-lbl">Reward drink</span><span class="rcpt-total-val"><?= e($loyaltyEntry['note'] ?? 'Drink reward') ?></span></div>
         <div class="rcpt-total-row"><span class="rcpt-total-lbl">Points redeemed</span><span class="rcpt-total-val"><?= number_format(abs((int)$loyaltyEntry['points_delta'])) ?> pts (<?= peso($loyaltyEntry['amount_value']) ?> off)</span></div>
       <?php elseif ($loyaltyEntry['entry_type'] === 'earn'): ?>
         <div class="rcpt-total-row"><span class="rcpt-total-lbl">Points earned</span><span class="rcpt-total-val">+<?= number_format((int)$loyaltyEntry['points_delta']) ?> pts</span></div>

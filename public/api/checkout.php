@@ -50,6 +50,8 @@ $deliveryLocation = $role === ROLE_FACULTY
 $pickupDate  = sanitizeString($data['pickup_date'] ?? '', 10);
 $pickupTime  = sanitizeString($data['pickup_time'] ?? '', 10);
 $redeemPoints = filter_var($data['redeem_points'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$redeemProductId = filter_var($data['redeem_product_id'] ?? 0, FILTER_VALIDATE_INT);
+$redeemProductId = $redeemProductId === false ? 0 : max(0, (int) $redeemProductId);
 
 // Pickup is same-day only. Validate the chosen slot itself rather than
 // rejecting orders just because the current time is outside store hours.
@@ -162,11 +164,8 @@ try {
     $accountLock = $db->prepare('SELECT id FROM ' . $accountConfig['table'] . ' WHERE id = ? AND is_active = 1 FOR UPDATE');
     $accountLock->execute([$customerId]);
     if (!$accountLock->fetchColumn()) throw new RuntimeException('Your account cannot redeem points right now.');
-    $loyaltyRules = loyaltyRules($db);
-    $redemption = loyaltyRedemptionFor($db, loyaltyPointsBalance($db, $role, $customerId), $total);
-    if ($redemption['points'] < $loyaltyRules['redeem_points']) {
-      throw new RuntimeException('You need at least ' . number_format($loyaltyRules['redeem_points']) . ' points and a ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' order to redeem.');
-    }
+    $redemption = loyaltyRedemptionForProduct($db, loyaltyPointsBalance($db, $role, $customerId), $redeemProductId, $details, $total);
+    if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
   }
   $total = round($total - $redemption['discount'], 2);
 
@@ -224,7 +223,7 @@ try {
     )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
   }
 
-  $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId);
+  $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId, $redeemProductId, $details);
 
   $db->commit();
   auditLog($role, currentUserId(), 'place_preorder', 'orders', $orderId);
@@ -267,6 +266,7 @@ try {
     'total'        => $total,
     'points_redeemed' => $redemptionResult['points'],
     'loyalty_discount' => $redemptionResult['discount'],
+    'loyalty_reward_product' => $redemptionResult['product_name'],
     'loyalty_balance' => $redemptionResult['balance'],
     'points_expected_after_pickup' => loyaltyPointsFromSpend($db, $total),
     'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",

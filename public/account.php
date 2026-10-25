@@ -30,6 +30,7 @@ if (!$user) {
 
 $loyaltyReady = loyaltyLedgerAvailable($db);
 $loyaltyRules = loyaltyRules($db);
+$loyaltyProductRewards = $loyaltyReady ? loyaltyProductRewards($db) : [];
 $loyaltyBalance = loyaltyPointsBalance($db, $role, $userId);
 $loyaltyEntries = loyaltyHistory($db, $role, $userId, 30);
 
@@ -124,8 +125,10 @@ $ordersUrl = APP_URL . '/orders.php';
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/password-toggle.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/password-toggle.css') ?>">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/account-shell.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/account-shell.css') ?>">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
+  <script src="<?= APP_URL ?>/../assets/js/password-toggle.js?v=<?= (int) filemtime(__DIR__ . '/../assets/js/password-toggle.js') ?>" defer></script>
   <style>
     /* ── Page-specific styles only — shared header/sidebar/subnav now live in account-shell.css ── */
     .profile-card {
@@ -571,7 +574,8 @@ $ordersUrl = APP_URL . '/orders.php';
 
         <section class="loyalty-panel" aria-labelledby="loyaltyHeading">
           <div class="profile-card-title" id="loyaltyHeading" style="font-size:1.1rem"><i class="fa-solid fa-star" style="color:#a46a3b"></i> Loyalty Points</div>
-          <div class="profile-card-sub" style="margin-bottom:0"><?= $loyaltyReady ? 'Earn ' . number_format($loyaltyRules['points_per_10_spent']) . ' point' . ($loyaltyRules['points_per_10_spent'] === 1 ? '' : 's') . ' for every ₱10 you pay. Redeem ' . number_format($loyaltyRules['redeem_points']) . ' points for ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' off an order (once per order).' : 'Loyalty points will be available after the database migration is applied.' ?></div>
+          <div class="profile-card-sub" style="margin-bottom:8px"><?= $loyaltyReady ? 'Earn ' . number_format($loyaltyRules['points_per_10_spent']) . ' point' . ($loyaltyRules['points_per_10_spent'] === 1 ? '' : 's') . ' for every ₱10 you pay. Redeem points for the specific drinks listed below; one reward may be used per order.' : 'Loyalty points will be available after the database migration is applied.' ?></div>
+          <?php if ($loyaltyProductRewards): ?><ul style="margin:0 0 12px 18px;font-size:.82rem;color:var(--text-muted)"><?php foreach ($loyaltyProductRewards as $reward): ?><li><?= e($reward['name']) ?> — <?= number_format($reward['points_required']) ?> points for ₱<?= number_format($reward['discount_amount'], 2) ?> off one drink</li><?php endforeach; ?></ul><?php else: ?><div class="profile-card-sub" style="margin-bottom:12px">There are no active drink rewards right now.</div><?php endif; ?>
           <div class="loyalty-balance">
             <div><strong><?= number_format($loyaltyBalance) ?></strong><span>available points</span></div>
             <i class="fa-solid fa-mug-hot" style="font-size:1.8rem;opacity:.85" aria-hidden="true"></i>
@@ -593,7 +597,7 @@ $ordersUrl = APP_URL . '/orders.php';
                   <?php foreach ($loyaltyEntries as $entry):
                     $labels = [
                       'earn' => 'Order earned',
-                      'redeem' => 'Redeemed at checkout',
+                      'redeem' => 'Drink reward redeemed',
                       'earn_reversal' => 'Earned points reversed',
                       'redeem_reversal' => 'Redeemed points restored',
                       'adjustment' => 'Points adjustment',

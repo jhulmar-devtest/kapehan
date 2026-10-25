@@ -149,7 +149,7 @@ try {
   }
   if ($command !== 'apply') throw new InvalidArgumentException('Usage: php database/migrate.php [status|apply|baseline-existing]');
   if (!$applied && $files) {
-    throw new RuntimeException('Migration history is empty. For an existing, already-up-to-date database, run baseline-existing once. Fresh installs should import database/kapehan_db.sql, which includes migration history.');
+    throw new RuntimeException('Migration history is empty. For an existing, already-up-to-date database, run baseline-existing once. Fresh installs should import database/kapehan_amang.sql, which includes migration history.');
   }
 
   foreach ($files as $file) {

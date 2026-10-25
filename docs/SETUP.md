@@ -17,7 +17,7 @@ anyone who clones the repo to try it out.
 
 1. **Clone the repo** into your server stack's www folder.
    - Laragon: `C:\laragon\www\kapehan`
-   - XAMPP: `C:\xampp\htdocs\kapehan`
+   - XAMPP: `C:\xampp\htdocs\kapehan-amang`
    - The folder name matters — see step 4.
 
 2. **Install dependencies:**
@@ -31,7 +31,7 @@ anyone who clones the repo to try it out.
 
 3. **Create your database:**
    - Open phpMyAdmin (or any MySQL client).
-   - Create a database named `kapehan_db`.
+   - Create a database named `kapehan_amang`.
    - Import `database/kapehan_db.sql` into it. This already includes every
      column added by the files in `database/migrations/` — you don't need to
      run those separately on a fresh database. They're only there in case
@@ -57,6 +57,8 @@ anyone who clones the repo to try it out.
      ```
      php -r "echo bin2hex(random_bytes(32));"
      ```
+     If PowerShell says `php` is not recognized with XAMPP, use
+     `C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(32));"` instead.
 
    **`config/secrets.php` is gitignored — never commit it.** Every group
    member creates their own from the example file. This is intentional:

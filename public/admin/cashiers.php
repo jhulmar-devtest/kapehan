@@ -17,12 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_cashier'])) {
   $pwErr = validatePassword($pass);
   if ($pwErr) $errors[] = $pwErr;
   // Check username unique
-  $chk = $db->prepare("SELECT id FROM cashiers WHERE username=?");
+  $chk = $db->prepare("SELECT id FROM cashiers WHERE username=? AND deleted_at IS NULL");
   $chk->execute([$user]);
   if ($chk->fetch()) $errors[] = 'Username already taken.';
   // Check email unique if provided
   if (!empty($email)) {
-    $chk = $db->prepare("SELECT id FROM cashiers WHERE email=?");
+    $chk = $db->prepare("SELECT id FROM cashiers WHERE email=? AND deleted_at IS NULL");
     $chk->execute([$email]);
     if ($chk->fetch()) $errors[] = 'Email already in use.';
   }
@@ -41,13 +41,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_cashier'])) {
 // Toggle active
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_cashier'])) {
   verifyCsrf();
-  $id = (int)$_POST['cashier_id'];
-  $db->prepare("UPDATE cashiers SET is_active=NOT is_active WHERE id=?")->execute([$id]);
-  flash('global', 'Cashier status updated.', 'success');
+  $id = filter_var($_POST['cashier_id'] ?? null, FILTER_VALIDATE_INT);
+  if (!$id || $id < 1) {
+    flash('global', 'Invalid cashier account.', 'error');
+    redirect(APP_URL . '/admin/cashiers.php');
+  }
+  $stmt = $db->prepare("UPDATE cashiers SET is_active=NOT is_active WHERE id=? AND deleted_at IS NULL");
+  $stmt->execute([$id]);
+  flash('global', $stmt->rowCount() ? 'Cashier status updated.' : 'Cashier account was not found.', $stmt->rowCount() ? 'success' : 'error');
   redirect(APP_URL . '/admin/cashiers.php');
 }
 
-$cashiers = $db->query("SELECT c.*,a.full_name AS created_by_name FROM cashiers c LEFT JOIN admins a ON c.created_by=a.id ORDER BY c.created_at DESC")->fetchAll();
+// A scalar lookup prevents duplicate admin IDs from multiplying cashier rows.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_cashier'])) {
+  verifyCsrf();
+  $id = filter_var($_POST['cashier_id'] ?? null, FILTER_VALIDATE_INT);
+  if (!$id || $id < 1) {
+    flash('global', 'Invalid cashier account.', 'error');
+    redirect(APP_URL . '/admin/cashiers.php');
+  }
+
+  try {
+    $db->beginTransaction();
+    $stmt = $db->prepare('SELECT id, full_name, is_active, deleted_at FROM cashiers WHERE id = ? FOR UPDATE');
+    $stmt->execute([$id]);
+    $cashier = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$cashier || $cashier['deleted_at'] !== null) throw new RuntimeException('Cashier account was not found.');
+    if ((int) $cashier['is_active'] === 1) throw new RuntimeException('Deactivate this cashier before deleting the account.');
+
+    // Keep the row as an archived identity so existing orders and drawer records
+    // retain their cashier name. Login credentials and contact details are removed.
+    $deletedUsername = '__deleted_cashier_' . (int) $id . '_' . bin2hex(random_bytes(4));
+    $unusablePassword = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+    $db->prepare('UPDATE cashiers SET deleted_at = NOW(), username = ?, email = NULL, email_verified = 0, email_verified_at = NULL, password = ?, pos_pin = NULL WHERE id = ? AND is_active = 0 AND deleted_at IS NULL')
+      ->execute([$deletedUsername, $unusablePassword, $id]);
+    if ($db->query('SELECT ROW_COUNT()')->fetchColumn() != 1) throw new RuntimeException('Cashier account changed before it could be deleted.');
+    $db->commit();
+    auditLog(ROLE_ADMIN, currentUserId(), 'delete_cashier', 'cashiers', (int) $id);
+    flash('global', 'Cashier account deleted. Its sales and drawer history are retained for audit.', 'success');
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    error_log('Admin cashier deletion failed: ' . $e->getMessage());
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Unable to delete this cashier account.', 'error');
+  }
+  redirect(APP_URL . '/admin/cashiers.php');
+}
+
+$cashiers = $db->query("SELECT c.*,
+    (SELECT a.full_name FROM admins a WHERE a.id = c.created_by ORDER BY a.full_name LIMIT 1) AS created_by_name
+  FROM cashiers c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC, c.id DESC")->fetchAll();
 layoutHeader('Cashiers');
 ?>
 <div class="page-header">
@@ -105,12 +147,22 @@ layoutHeader('Cashiers');
                 <form method="POST">
                   <?= csrfField() ?>
                   <input type="hidden" name="toggle_cashier" value="1">
-                  <input type="hidden" name="cashier_id" value="<?= $c['id'] ?>">
+                  <input type="hidden" name="cashier_id" value="<?= (int) $c['id'] ?>">
                   <button type="submit" class="btn <?= $c['is_active'] ? 'btn-danger' : 'btn-ghost' ?> btn-sm">
                     <i class="fa-solid <?= $c['is_active'] ? 'fa-ban' : 'fa-check' ?>"></i>
                     <?= $c['is_active'] ? 'Deactivate' : 'Activate' ?>
                   </button>
                 </form>
+                <?php if (!(int) $c['is_active']): ?>
+                  <form method="POST" style="margin-top:6px" onsubmit="return confirm('Delete this cashier login? Past orders and drawer records will keep the cashier name for reporting.');">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="delete_cashier" value="1">
+                    <input type="hidden" name="cashier_id" value="<?= (int) $c['id'] ?>">
+                    <button type="submit" class="btn btn-danger btn-sm" aria-label="Delete <?= e($c['full_name']) ?>">
+                      <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete
+                    </button>
+                  </form>
+                <?php endif; ?>
               </td>
             </tr>
         <?php endforeach;

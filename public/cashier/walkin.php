@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $loyaltyType = sanitizeString($_POST['loyalty_customer_type'] ?? '');
   $loyaltyIdentifier = sanitizeString($_POST['loyalty_customer_identifier'] ?? '', 30);
   $redeemPoints = ($_POST['redeem_points'] ?? '') === '1';
+  $redeemProductId = max(0, (int) ($_POST['loyalty_reward_product_id'] ?? 0));
   if ($loyaltyType !== '' && !in_array($loyaltyType, [ROLE_STUDENT, ROLE_FACULTY], true)) $loyaltyType = '';
   if ($loyaltyIdentifier === '') $loyaltyType = '';
   if ($redeemPoints && $loyaltyType === '') {
@@ -102,13 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $redemption = ['points' => 0, 'discount' => 0.0];
       if ($redeemPoints) {
         $customerBalance = loyaltyPointsBalance($db, $loyaltyType, $customerId);
-        $loyaltyRules = loyaltyRules($db);
-        $redemption = loyaltyRedemptionFor($db, $customerBalance, $total);
-        if ($redemption['points'] < $loyaltyRules['redeem_points']) {
-          throw new RuntimeException($customerBalance < $loyaltyRules['redeem_points']
-            ? 'This account no longer has enough points to redeem.'
-            : 'The order total must be at least ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' to redeem points.');
-        }
+        $redemption = loyaltyRedemptionForProduct($db, $customerBalance, $redeemProductId, $details, $total);
+        if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
       }
       $total = round($total - $redemption['discount'], 2);
       if ($payMethod === 'GCash') {
@@ -150,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $paymentId = (int)$db->lastInsertId();
 
       if ($customer) {
-        loyaltyRedeemForOrder($db, $loyaltyType, $customerId, $orderId, $total + $redemption['discount'], $redeemPoints, ROLE_CASHIER, (int) currentUserId());
+        loyaltyRedeemForOrder($db, $loyaltyType, $customerId, $orderId, $total + $redemption['discount'], $redeemPoints, ROLE_CASHIER, (int) currentUserId(), $redeemProductId, $details);
         loyaltyAwardOrder($db, $orderId, ROLE_CASHIER, (int) currentUserId());
       }
 
@@ -186,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
 }
 
 $loyaltyRules = loyaltyRules($db);
+$loyaltyProductRewards = loyaltyProductRewards($db);
 
 // Fetch all products, explicitly selecting parent_id and attaching total_sold via the summary view
 $allProducts = $db->query(
@@ -1580,6 +1577,7 @@ layoutHeader('Walk-in POS', '');
   <input type="hidden" name="loyalty_customer_type" id="loyalty-type-data">
   <input type="hidden" name="loyalty_customer_identifier" id="loyalty-identifier-data">
   <input type="hidden" name="redeem_points" id="redeem-points-data" value="0">
+  <input type="hidden" name="loyalty_reward_product_id" id="loyalty-reward-product-data" value="0">
 </form>
 
 <div class="pos-wrap">
@@ -1757,8 +1755,10 @@ layoutHeader('Walk-in POS', '');
         </div>
         <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
-          <input type="checkbox" id="pos-redeem-points" disabled> Redeem <?= number_format($loyaltyRules['redeem_points']) ?> points for ₱<?= number_format($loyaltyRules['discount_cents'] / 100, 2) ?> off
+          <input type="checkbox" id="pos-redeem-points" disabled> Redeem points for one drink reward
         </label>
+        <label for="pos-loyalty-reward-product" style="display:block;margin-top:8px;font-size:12px;color:var(--text-muted)">Reward drink in this order</label>
+        <select id="pos-loyalty-reward-product" class="form-control" disabled><option value="">Look up a customer and add a reward drink</option></select>
       </div>
     </div>
 
@@ -1867,6 +1867,7 @@ layoutHeader('Walk-in POS', '');
                             echo json_encode($images, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                             ?>;
   const cashDrawerOpen = <?= $drawerReady ? 'true' : 'false' ?>;
+  const POS_LOYALTY_PRODUCT_REWARDS = <?= json_encode($loyaltyProductRewards, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 </script>
 
 <script>
@@ -1913,11 +1914,12 @@ layoutHeader('Walk-in POS', '');
     const discount = _discountType !== 'none' ? Math.round(vatExcl * 0.20 * 100) / 100 : 0;
     const afterPrivilege = Math.round((subtotal - discount) * 100) / 100;
     const redeemBox = document.getElementById('pos-redeem-points');
-    const pointsRequired = <?= (int) $loyaltyRules['redeem_points'] ?>;
-    const discountValue = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
-    const eligible = (_loyaltyCustomer?.balance || 0) >= pointsRequired && afterPrivilege >= discountValue;
-    const loyaltyPoints = redeemBox?.checked && eligible ? pointsRequired : 0;
-    const loyaltyDiscount = loyaltyPoints ? discountValue : 0;
+    const rewardProductId = Number(document.getElementById('pos-loyalty-reward-product')?.value || 0);
+    const reward = POS_LOYALTY_PRODUCT_REWARDS.find(item => Number(item.product_id) === rewardProductId);
+    const rewardInCart = Object.values(cart).some(item => Number(item.productId) === rewardProductId && Number(item.price) >= Number(reward?.discount_amount || 0));
+    const eligible = !!reward && rewardInCart && (_loyaltyCustomer?.balance || 0) >= Number(reward.points_required) && afterPrivilege >= Number(reward.discount_amount);
+    const loyaltyPoints = redeemBox?.checked && eligible ? Number(reward.points_required) : 0;
+    const loyaltyDiscount = loyaltyPoints ? Number(reward.discount_amount) : 0;
     const total = Math.round((afterPrivilege - loyaltyDiscount) * 100) / 100;
     return {
       subtotal,
@@ -1925,6 +1927,8 @@ layoutHeader('Walk-in POS', '');
       discount,
       loyaltyPoints,
       loyaltyDiscount,
+      loyaltyRewardName: loyaltyPoints ? reward.name : '',
+      loyaltyRewardProductId: loyaltyPoints ? rewardProductId : 0,
       total
     };
   }
@@ -1961,8 +1965,8 @@ layoutHeader('Walk-in POS', '');
       if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
       _loyaltyCustomer = data.account;
       result.textContent = `${data.account.name} · ${data.account.balance} points available`;
-      redeem.disabled = data.account.balance < <?= (int) $loyaltyRules['redeem_points'] ?>;
-      redeem.title = data.account.balance < <?= (int) $loyaltyRules['redeem_points'] ?> ? 'At least <?= number_format($loyaltyRules['redeem_points']) ?> points are needed to redeem.' : '';
+      redeem.disabled = data.account.balance < Math.min(...POS_LOYALTY_PRODUCT_REWARDS.map(item => Number(item.points_required)), Infinity);
+      redeem.title = redeem.disabled ? 'This account does not have enough points for an active drink reward.' : '';
     } catch (error) {
       result.textContent = error.message;
     } finally {
@@ -1989,10 +1993,17 @@ layoutHeader('Walk-in POS', '');
     renderCart();
   });
   document.getElementById('pos-redeem-points').addEventListener('change', () => {
-    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < <?= (int) $loyaltyRules['redeem_points'] ?>) {
+    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < 1) {
       document.getElementById('pos-redeem-points').checked = false;
-      document.getElementById('loyalty-customer-result').textContent = 'The order must be at least ₱<?= number_format($loyaltyRules['discount_cents'] / 100, 2) ?> to redeem points.';
+      document.getElementById('loyalty-customer-result').textContent = 'Choose a configured reward drink that is in this order.';
     }
+    renderCart();
+    if (_payMethod === 'cash') calcChange();
+    else onGcashRefInput();
+  });
+  document.getElementById('pos-loyalty-reward-product').addEventListener('change', () => {
+    const rewardId = Number(document.getElementById('pos-loyalty-reward-product').value || 0);
+    document.getElementById('pos-redeem-points').checked = rewardId > 0;
     renderCart();
     if (_payMethod === 'cash') calcChange();
     else onGcashRefInput();
@@ -2069,6 +2080,11 @@ layoutHeader('Walk-in POS', '');
 
     if (keys.length === 0) {
       el.innerHTML = '<div class="pos-cart-empty"><i class="fa-solid fa-mug-hot"></i><span>Tap products to add</span></div>';
+      const rewardSelect = document.getElementById('pos-loyalty-reward-product');
+      rewardSelect.replaceChildren(new Option('Add an eligible drink to the order', ''));
+      rewardSelect.disabled = true;
+      document.getElementById('pos-redeem-points').checked = false;
+      document.getElementById('pos-redeem-points').disabled = true;
       document.getElementById('pos-totals-block').style.display = 'none';
       document.getElementById('pos-total').textContent = '₱0.00';
       document.getElementById('pos-process-btn').disabled = true;
@@ -2107,9 +2123,25 @@ layoutHeader('Walk-in POS', '');
     });
     el.innerHTML = html;
 
+    const rewardSelect = document.getElementById('pos-loyalty-reward-product');
+    const rewardCheckbox = document.getElementById('pos-redeem-points');
+    const previousRewardId = rewardSelect.value;
+    const productIdsInCart = new Set(Object.values(cart).map(item => Number(item.productId)));
+    const rewardChoices = POS_LOYALTY_PRODUCT_REWARDS.filter(item =>
+      productIdsInCart.has(Number(item.product_id)) &&
+      Object.values(cart).some(line => Number(line.productId) === Number(item.product_id) && Number(line.price) >= Number(item.discount_amount)) &&
+      Number(_loyaltyCustomer?.balance || 0) >= Number(item.points_required)
+    );
+    rewardSelect.replaceChildren(new Option(rewardChoices.length ? 'Choose a drink reward' : 'Add an eligible drink to the order', ''));
+    rewardChoices.forEach(item => rewardSelect.add(new Option(`${item.name} · ${item.points_required} pts for ₱${Number(item.discount_amount).toFixed(2)} off`, String(item.product_id))));
+    if (rewardChoices.some(item => String(item.product_id) === previousRewardId)) rewardSelect.value = previousRewardId;
+    rewardSelect.disabled = rewardChoices.length === 0;
+    rewardCheckbox.disabled = rewardChoices.length === 0;
+    if (!rewardSelect.value) rewardCheckbox.checked = false;
+
     let fin = getFinancials(getSubtotal());
     const redeemControl = document.getElementById('pos-redeem-points');
-    if (redeemControl.checked && fin.loyaltyPoints < <?= (int) $loyaltyRules['redeem_points'] ?>) {
+    if (redeemControl.checked && fin.loyaltyPoints < 1) {
       redeemControl.checked = false;
       fin = getFinancials(getSubtotal());
     }
@@ -2127,7 +2159,7 @@ layoutHeader('Walk-in POS', '');
     }
     const loyaltyRow = document.getElementById('tot-loyalty-row');
     loyaltyRow.style.display = fin.loyaltyDiscount > 0 ? '' : 'none';
-    document.getElementById('tot-loyalty-lbl').textContent = `Loyalty discount (${fin.loyaltyPoints} points)`;
+    document.getElementById('tot-loyalty-lbl').textContent = `Reward: ${fin.loyaltyRewardName} (${fin.loyaltyPoints} points)`;
     document.getElementById('tot-loyalty').textContent = '−₱' + fin.loyaltyDiscount.toFixed(2);
     document.getElementById('pos-total').textContent = '₱' + fin.total.toFixed(2);
     document.getElementById('pos-process-btn').disabled = !cashDrawerOpen;
@@ -2336,6 +2368,7 @@ layoutHeader('Walk-in POS', '');
     document.getElementById('loyalty-type-data').value = _loyaltyCustomer?.type || '';
     document.getElementById('loyalty-identifier-data').value = _loyaltyCustomer?.identifier || '';
     document.getElementById('redeem-points-data').value = document.getElementById('pos-redeem-points').checked ? '1' : '0';
+    document.getElementById('loyalty-reward-product-data').value = fin.loyaltyRewardProductId;
 
     closeCashModal();
     document.getElementById('order-form').submit();

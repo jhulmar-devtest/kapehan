@@ -25,6 +25,8 @@ $loggedIn   = isLoggedIn() && in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true
 $db = Database::getInstance();
 $loyaltyReady = loyaltyLedgerAvailable($db);
 $loyaltyRules = loyaltyRules($db);
+$loyaltyProductRewards = $loyaltyReady ? loyaltyProductRewards($db) : [];
+$minRewardPoints = $loyaltyProductRewards ? min(array_column($loyaltyProductRewards, 'points_required')) : PHP_INT_MAX;
 $loyaltyBalance = $loggedIn ? loyaltyPointsBalance($db, $role, (int) currentUserId()) : 0;
 $products = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id,
@@ -112,7 +114,9 @@ $storeClose = getSetting('store_close_time', '20:00');
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
+  <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/password-toggle.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/password-toggle.css') ?>">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/cart-drawer.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/cart-drawer.css') ?>">
+  <script src="<?= APP_URL ?>/../assets/js/password-toggle.js?v=<?= (int) filemtime(__DIR__ . '/../assets/js/password-toggle.js') ?>" defer></script>
   <style>
     *,
     *::before,
@@ -1585,9 +1589,11 @@ $storeClose = getSetting('store_close_time', '20:00');
         <?php endif; ?>
 
         <div class="loyalty-cart-option">
-          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyBalance >= $loyaltyRules['redeem_points'] ? '' : 'disabled' ?>> Redeem points</label>
-          <span id="loyaltyCartHint"><?= $loyaltyReady ? number_format($loyaltyBalance) . ' points available · ' . number_format($loyaltyRules['redeem_points']) . ' points = ₱' . number_format($loyaltyRules['discount_cents'] / 100, 2) . ' off' : 'Points will be available after the loyalty database migration is applied.' ?></span>
+          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyProductRewards && $loyaltyBalance >= $minRewardPoints ? '' : 'disabled' ?>> Redeem points</label>
+          <span id="loyaltyCartHint"><?= $loyaltyReady ? number_format($loyaltyBalance) . ' points available · choose a reward drink in your cart' : 'Points will be available after the loyalty database migration is applied.' ?></span>
         </div>
+        <label for="loyaltyRewardProduct" class="cart-hint" style="display:block;margin-top:8px">Reward drink in this order</label>
+        <select id="loyaltyRewardProduct" class="field-select" disabled><option value="">Add an eligible reward drink to your cart</option></select>
         <div class="cart-total-row loyalty-subtotal-row" id="cartSubtotalRow" style="margin-top:12px">
           <span>Subtotal</span><span id="cartSubtotal">₱0.00</span>
         </div>
@@ -1749,8 +1755,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
     window.GCASH_REF_DIGITS = <?= (int) GCASH_REF_DIGITS ?>;
     window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;
-    window.LOYALTY_REDEEM_POINTS = <?= (int) $loyaltyRules['redeem_points'] ?>;
-    window.LOYALTY_REDEEM_DISCOUNT = <?= json_encode($loyaltyRules['discount_cents'] / 100) ?>;
+    window.LOYALTY_PRODUCT_REWARDS = <?= json_encode($loyaltyProductRewards, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;
     if (!IS_LOGGED_IN) {
       sessionStorage.removeItem('shop_cart');

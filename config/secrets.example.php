@@ -18,7 +18,7 @@
 // Laragon default: user 'root', empty password. XAMPP is the same
 // unless you changed it. Adjust if your local MySQL is different.
 define('DB_HOST',    'localhost');
-define('DB_NAME',    'kapehan_db');
+define('DB_NAME',    'kapehan_amang');
 define('DB_USER',    'root');
 define('DB_PASS',    '');
 define('DB_CHARSET', 'utf8mb4');

@@ -122,6 +122,7 @@ $p->sep('-');
 $p->amount('TOTAL', $total, true);
 foreach ($loyaltyEntries as $entry) {
   if ($entry['entry_type'] === 'redeem') {
+    $p->row('Reward', $entry['note'] ?? 'Drink reward');
     $p->row('Redeemed', number_format(abs((int)$entry['points_delta'])) . ' pts / P' . number_format((float)$entry['amount_value'], 2));
   } elseif ($entry['entry_type'] === 'earn') {
     $p->row('Points earned', '+' . (int)$entry['points_delta']);

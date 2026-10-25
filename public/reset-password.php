@@ -661,7 +661,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <div class="password-wrapper">
                 <input type="password" name="new_password" id="new-password" class="field-input"
                   placeholder="8+ chars, upper/lowercase, number, symbol" minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." required autocomplete="new-password">
-                <button type="button" class="btn-toggle-password" onclick="togglePassword('new-password', this)" tabindex="-1">
+                <button type="button" class="btn-toggle-password" onclick="togglePassword('new-password', this)" aria-label="Show new password" aria-pressed="false">
                   <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
@@ -672,7 +672,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <div class="password-wrapper">
                 <input type="password" name="confirm_password" id="confirm-password" class="field-input"
                   placeholder="Repeat password" minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[\p{P}\p{S}]).{8,}" title="Use at least 8 characters with a lowercase letter, uppercase letter, number, and special character." required autocomplete="new-password">
-                <button type="button" class="btn-toggle-password" onclick="togglePassword('confirm-password', this)" tabindex="-1">
+                <button type="button" class="btn-toggle-password" onclick="togglePassword('confirm-password', this)" aria-label="Show password confirmation" aria-pressed="false">
                   <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
@@ -764,10 +764,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         input.type = 'text';
         icon.classList.remove('fa-eye');
         icon.classList.add('fa-eye-slash');
+        btn.setAttribute('aria-label', 'Hide password');
+        btn.setAttribute('aria-pressed', 'true');
       } else {
         input.type = 'password';
         icon.classList.remove('fa-eye-slash');
         icon.classList.add('fa-eye');
+        btn.setAttribute('aria-label', 'Show password');
+        btn.setAttribute('aria-pressed', 'false');
       }
     }
   </script>
