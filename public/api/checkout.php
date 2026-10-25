@@ -178,6 +178,7 @@ try {
   // Retry with a freshly generated number on that specific collision
   // instead of surfacing it to the customer.
   $maxAttempts = 5;
+  $orderNo = '';
   for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
     $orderNo = generateOrderNumber();
     try {

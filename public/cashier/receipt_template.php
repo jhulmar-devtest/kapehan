@@ -14,6 +14,9 @@
  * Output: pure HTML for the receipt paper (no wrapper divs, no buttons).
  * The caller is responsible for the surrounding page/modal chrome.
  */
+
+$order = $order ?? [];
+$items = $items ?? [];
 ?>
 <div class="rcpt-paper">
 
