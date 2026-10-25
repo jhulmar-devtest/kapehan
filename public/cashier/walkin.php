@@ -119,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       // ringing up orders at the same moment — exactly the situation a
       // busy till hits most often. Retrying regenerates a fresh number
       // instead of failing an order the cashier already collected cash for.
+      $orderNo = '';
       $maxAttempts = 5;
       for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
         $orderNo = generateOrderNumber();
@@ -237,6 +238,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 
@@ -765,6 +767,7 @@ layoutHeader('Walk-in POS', '');
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
   }
 
@@ -1758,7 +1761,9 @@ layoutHeader('Walk-in POS', '');
           <input type="checkbox" id="pos-redeem-points" disabled> Redeem points for one drink reward
         </label>
         <label for="pos-loyalty-reward-product" style="display:block;margin-top:8px;font-size:12px;color:var(--text-muted)">Reward drink in this order</label>
-        <select id="pos-loyalty-reward-product" class="form-control" disabled><option value="">Look up a customer and add a reward drink</option></select>
+        <select id="pos-loyalty-reward-product" class="form-control" disabled>
+          <option value="">Look up a customer and add a reward drink</option>
+        </select>
       </div>
     </div>
 

@@ -31,16 +31,26 @@ function loyaltyAccountConfig(string $type): ?array
 
 function loyaltyRules(PDO $db): array
 {
-  $pointsPerTen = filter_var(getSetting('loyalty_points_per_10_spent', '1'), FILTER_VALIDATE_INT);
+  $spendPerPointRaw = trim(getSetting('loyalty_spend_per_point', ''));
+  if ($spendPerPointRaw !== '' && is_numeric($spendPerPointRaw)) {
+    $spendPerPoint = max(0.0, min(100000.0, (float) $spendPerPointRaw));
+  } else {
+    // Keep existing installations on their current earn rate until the admin
+    // saves the new spend-per-point setting from the Loyalty page.
+    $pointsPerTen = filter_var(getSetting('loyalty_points_per_10_spent', '1'), FILTER_VALIDATE_INT);
+    $pointsPerTen = max(0, min(100, $pointsPerTen === false ? 1 : $pointsPerTen));
+    $spendPerPoint = $pointsPerTen > 0 ? 10 / $pointsPerTen : 0.0;
+  }
   return [
-    'points_per_10_spent' => max(0, min(100, $pointsPerTen === false ? 1 : $pointsPerTen)),
+    'spend_per_point' => $spendPerPoint,
   ];
 }
 
 function loyaltyPointsFromSpend(PDO $db, float $amount): int
 {
   $cents = max(0, (int) round($amount * 100));
-  return intdiv($cents, 1000) * loyaltyRules($db)['points_per_10_spent'];
+  $thresholdCents = (int) round(loyaltyRules($db)['spend_per_point'] * 100);
+  return $thresholdCents > 0 ? intdiv($cents, $thresholdCents) : 0;
 }
 
 function loyaltyProductRewards(PDO $db): array

@@ -11,7 +11,6 @@
 // ============================================================
 
 require_once __DIR__ . '/../../config/init.php';
-require_once __DIR__ . '/../../includes/loyalty.php';
 requireRole(ROLE_ADMIN);
 $db = Database::getInstance();
 
@@ -28,20 +27,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
   }
   auditLog(ROLE_ADMIN, currentUserId(), 'update_settings');
   flash('global', 'Settings saved.', 'success');
-  redirect(APP_URL . '/admin/settings.php');
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_loyalty_settings'])) {
-  verifyCsrf();
-  $pointsPerTenRaw = trim((string) ($_POST['loyalty_points_per_10_spent'] ?? ''));
-  $pointsPerTen = filter_var($pointsPerTenRaw, FILTER_VALIDATE_INT);
-  if ($pointsPerTen === false || $pointsPerTen < 0 || $pointsPerTen > 100) {
-    flash('global', 'Points earned per ₱10 spent must be a whole number from 0 to 100.', 'error');
-  } else {
-    setSetting('loyalty_points_per_10_spent', (string) $pointsPerTen);
-    auditLog(ROLE_ADMIN, currentUserId(), 'update_loyalty_settings');
-    flash('global', 'Loyalty rewards updated.', 'success');
-  }
   redirect(APP_URL . '/admin/settings.php');
 }
 
@@ -93,7 +78,6 @@ $storeOpen   = getSetting('store_open_time', '07:00');
 $storeClose  = getSetting('store_close_time', '20:00');
 $slotInterval = getSetting('pickup_slot_interval_minutes', '15');
 $slotCapacity = getSetting('pickup_slot_capacity', '6');
-$loyaltyRules = loyaltyRules($db);
 $oldInput     = getOldInput();
 $gcashName    = $oldInput['gcash_payment_name']   ?? gcashPaymentName();
 $gcashNumber  = $oldInput['gcash_payment_number'] ?? gcashPaymentNumber();
@@ -108,176 +92,361 @@ $feedbackAvg   = $fb['avg_rating'] ?? null;
 layoutHeader('Settings');
 ?>
 <style>
+  .admin-settings {
+    display: grid;
+    gap: 18px
+  }
+
+  .admin-settings .page-header {
+    margin-bottom: 0
+  }
+
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    padding: 22px;
-    margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: var(--shadow-xs);
   }
 
-  .settings-section h2 {
-    font-size: 16px;
-    margin-bottom: 4px;
+  .settings-section-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 19px 22px 16px;
+    border-bottom: 1px solid var(--border-color)
   }
 
-  .settings-section .sub {
-    font-size: 13px;
+  .settings-section-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: var(--primary-subtle);
+    color: var(--primary-color)
+  }
+
+  .settings-section-head h2 {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.35
+  }
+
+  .settings-section-head .sub {
+    max-width: 720px;
+    margin: 4px 0 0;
     color: var(--text-muted);
-    margin-bottom: 18px;
+    font-size: 12px;
+    line-height: 1.55
+  }
+
+  .settings-section-body {
+    padding: 19px 22px 22px
   }
 
   .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
     gap: 16px;
+  }
+
+  .settings-grid .form-group {
+    min-width: 0;
+    margin: 0
+  }
+
+  .settings-form-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px
+  }
+
+  .settings-form-actions .btn {
+    min-width: 140px
+  }
+
+  .settings-confirm {
+    max-width: 460px;
+    margin-top: 17px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised)
+  }
+
+  .settings-confirm-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 800
+  }
+
+  .settings-confirm-title i {
+    color: var(--primary-color)
+  }
+
+  .settings-confirm .form-hint {
+    margin-bottom: 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45
+  }
+
+  .settings-shortcuts {
+    display: grid;
+    gap: 12px
+  }
+
+  .settings-shortcuts-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px
+  }
+
+  .settings-shortcuts-title h2 {
+    margin: 0;
+    font-size: 15px
+  }
+
+  .settings-shortcuts-title p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 11px
   }
 
   .link-card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px;
+    gap: 14px;
   }
 
   .link-card {
+    position: relative;
     display: block;
+    min-height: 150px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    padding: 20px;
-    transition: box-shadow .15s ease, transform .15s ease;
+    padding: 19px;
+    transition: box-shadow var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
   }
 
   .link-card:hover {
+    border-color: var(--border-strong);
     box-shadow: var(--shadow-sm);
-    transform: translateY(-2px);
+    transform: translateY(-2px)
+  }
+
+  .link-card:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px
   }
 
   .link-card-icon {
+    display: grid;
+    place-items: center;
     width: 40px;
     height: 40px;
     border-radius: var(--radius-sm);
     background: var(--primary-subtle);
     color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 12px;
-    font-size: 17px;
+    margin-bottom: 13px;
+    font-size: 16px;
+  }
+
+  .link-card:nth-child(2) .link-card-icon {
+    background: var(--accent-subtle);
+    color: var(--secondary-color)
+  }
+
+  .link-card:nth-child(3) .link-card-icon {
+    background: var(--status-preparing-bg);
+    color: var(--status-preparing)
   }
 
   .link-card-title {
-    font-weight: 700;
-    font-size: 14.5px;
     margin-bottom: 4px;
+    font-size: 13px;
+    font-weight: 800
   }
 
   .link-card-stat {
-    font-size: 13px;
     color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5
+  }
+
+  .link-card-arrow {
+    position: absolute;
+    top: 21px;
+    right: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    transition: transform var(--transition-fast), color var(--transition-fast)
+  }
+
+  .link-card:hover .link-card-arrow {
+    transform: translateX(3px);
+    color: var(--primary-color)
+  }
+
+  @media(max-width:640px) {
+    .settings-section-head {
+      padding: 16px
+    }
+
+    .settings-section-body {
+      padding: 16px
+    }
+
+    .settings-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 12px
+    }
+
+    .settings-form-actions {
+      flex-wrap: wrap
+    }
+
+    .settings-form-actions .btn {
+      flex: 1
+    }
+
+    .settings-shortcuts-title {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 3px
+    }
+  }
+
+  @media(max-width:420px) {
+    .settings-grid {
+      grid-template-columns: 1fr
+    }
+
+    .settings-form-actions .btn {
+      width: 100%
+    }
   }
 </style>
 
-<div class="page-header">
-  <div>
-    <div class="page-header-title">Settings</div>
-    <div class="page-header-sub">Store rules, cashier accounts, feedback, and account access</div>
+<div class="admin-settings">
+  <div class="page-header">
+    <div>
+      <div class="page-header-title">Settings</div>
+      <div class="page-header-sub">Manage store operations and payment details. Loyalty earning and rewards are managed on the Loyalty page.</div>
+    </div>
   </div>
-</div>
-<?php showFlash('global'); ?>
+  <?php showFlash('global'); ?>
 
-<div class="settings-section">
-  <h2>Store &amp; Ordering Rules</h2>
-  <p class="sub">These control the pickup scheduler and the cash pre-order policy on the customer-facing shop.</p>
-  <form method="POST">
-    <?= csrfField() ?>
-    <input type="hidden" name="save_settings" value="1">
-    <div class="settings-grid">
-      <div class="form-group">
-        <label class="form-label">Store Opens</label>
-        <input type="time" name="store_open_time" class="form-control" value="<?= e($storeOpen) ?>">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Store Closes</label>
-        <input type="time" name="store_close_time" class="form-control" value="<?= e($storeClose) ?>">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Pickup Slot Length (minutes)</label>
-        <input type="number" name="pickup_slot_interval_minutes" class="form-control" min="5" step="5" value="<?= e($slotInterval) ?>">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Orders per Pickup Slot</label>
-        <input type="number" name="pickup_slot_capacity" class="form-control" min="1" value="<?= e($slotCapacity) ?>">
+  <div class="settings-section">
+    <div class="settings-section-head"><span class="settings-section-icon"><i class="fa-solid fa-clock"></i></span>
+      <div>
+        <h2>Store and ordering rules</h2>
+        <p class="sub">Set the hours shown to customers and control pickup slot timing and capacity.</p>
       </div>
     </div>
-    <button type="submit" class="btn btn-primary" style="margin-top:18px"><i class="fa-solid fa-floppy-disk"></i> Save Settings</button>
-  </form>
-</div>
+    <div class="settings-section-body">
+      <form method="POST">
+        <?= csrfField() ?><input type="hidden" name="save_settings" value="1">
+        <div class="settings-grid">
+          <div class="form-group">
+            <label class="form-label" for="store-open-time">Store opens</label>
+            <input id="store-open-time" type="time" name="store_open_time" class="form-control" value="<?= e($storeOpen) ?>">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="store-close-time">Store closes</label>
+            <input id="store-close-time" type="time" name="store_close_time" class="form-control" value="<?= e($storeClose) ?>">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pickup-slot-length">Pickup slot length</label>
+            <input id="pickup-slot-length" type="number" name="pickup_slot_interval_minutes" class="form-control" min="5" step="5" value="<?= e($slotInterval) ?>"><small class="form-hint">Minutes per pickup window</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pickup-slot-capacity">Orders per pickup slot</label>
+            <input id="pickup-slot-capacity" type="number" name="pickup_slot_capacity" class="form-control" min="1" value="<?= e($slotCapacity) ?>"><small class="form-hint">Maximum scheduled orders in each window</small>
+          </div>
+        </div>
+        <div class="settings-form-actions"><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save store rules</button></div>
+      </form>
+    </div>
+  </div>
 
-<div class="settings-section">
-  <h2>Loyalty Rewards</h2>
-  <p class="sub">Set the earn rate here. Manage each drink’s point cost and discount, customer balances, and audited adjustments on the Loyalty page.</p>
-  <form method="POST">
-    <?= csrfField() ?>
-    <input type="hidden" name="save_loyalty_settings" value="1">
-    <div class="settings-grid">
-      <div class="form-group">
-        <label class="form-label" for="loyalty_points_per_10_spent">Points earned per ₱10 spent</label>
-        <input id="loyalty_points_per_10_spent" type="number" name="loyalty_points_per_10_spent" class="form-control" min="0" max="100" step="1" required value="<?= (int) $loyaltyRules['points_per_10_spent'] ?>">
+  <div class="settings-section">
+    <div class="settings-section-head"><span class="settings-section-icon"><i class="fa-solid fa-wallet"></i></span>
+      <div>
+        <h2>GCash payment recipient</h2>
+        <p class="sub">Customers use this account to pay for pre-orders. Verify the name and number carefully before saving.</p>
       </div>
     </div>
-    <button type="submit" class="btn btn-primary" style="margin-top:18px"><i class="fa-solid fa-floppy-disk"></i> Save Earn Rate</button>
-    <a href="<?= APP_URL ?>/admin/loyalty.php" class="btn btn-secondary" style="margin-top:18px;margin-left:8px"><i class="fa-solid fa-users"></i> Manage Customers &amp; Drink Rewards</a>
-  </form>
-</div>
-
-<div class="settings-section">
-  <h2>GCash Payment Recipient</h2>
-  <p class="sub">Customers see this name and number when paying for pre-orders. Double-check the number &mdash; payments go straight to this account.</p>
-  <form method="POST">
-    <?= csrfField() ?>
-    <input type="hidden" name="save_gcash" value="1">
-    <div class="settings-grid">
-      <div class="form-group">
-        <label class="form-label">Account Name</label>
-        <input type="text" name="gcash_payment_name" class="form-control" maxlength="100" required value="<?= e($gcashName) ?>" placeholder="e.g. Juan D.">
-      </div>
-      <div class="form-group">
-        <label class="form-label">GCash Number</label>
-        <input type="tel" name="gcash_payment_number" class="form-control" inputmode="numeric" required value="<?= e($gcashNumber) ?>" placeholder="09XXXXXXXXX">
-      </div>
+    <div class="settings-section-body">
+      <form method="POST">
+        <?= csrfField() ?><input type="hidden" name="save_gcash" value="1">
+        <div class="settings-grid">
+          <div class="form-group">
+            <label class="form-label" for="gcash-name">Account name</label>
+            <input id="gcash-name" type="text" name="gcash_payment_name" class="form-control" maxlength="100" required value="<?= e($gcashName) ?>" placeholder="e.g. Juan D.">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="gcash-number">GCash number</label>
+            <input id="gcash-number" type="tel" name="gcash_payment_number" class="form-control" inputmode="numeric" required value="<?= e($gcashNumber) ?>" placeholder="09XXXXXXXXX">
+          </div>
+        </div>
+        <div class="settings-confirm">
+          <div class="settings-confirm-title"><i class="fa-solid fa-shield-halved"></i> Confirm it’s you</div>
+          <p class="form-hint">Enter your admin password to protect changes to where customer payments are sent.</p>
+          <div class="form-group"><label class="form-label" for="gcash-confirm-password">Admin password</label><input id="gcash-confirm-password" type="password" name="confirm_password" class="form-control" autocomplete="current-password" required placeholder="Enter your password"></div>
+        </div>
+        <div class="settings-form-actions"><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save payment recipient</button></div>
+      </form>
     </div>
-    <div class="settings-grid" style="margin-top:16px">
-      <div class="form-group">
-        <label class="form-label">Your Password (to confirm)</label>
-        <input type="password" name="confirm_password" class="form-control" autocomplete="current-password" required placeholder="Enter your admin password">
-      </div>
+  </div>
+
+  <section class="settings-shortcuts">
+    <div class="settings-shortcuts-title">
+      <h2>Management shortcuts</h2>
+      <p>Related admin tools</p>
     </div>
-    <button type="submit" class="btn btn-primary" style="margin-top:18px"><i class="fa-solid fa-floppy-disk"></i> Save Recipient</button>
-  </form>
-</div>
+    <div class="link-card-grid">
+      <a href="<?= APP_URL ?>/admin/loyalty.php" class="link-card">
+        <i class="fa-solid fa-arrow-up-right-from-square link-card-arrow" aria-hidden="true"></i>
+        <div class="link-card-icon"><i class="fa-solid fa-award"></i></div>
+        <div class="link-card-title">Loyalty Program</div>
+        <div class="link-card-stat">Set spend per point, drink rewards, and customer adjustments</div>
+      </a>
 
-<div class="link-card-grid">
-  <a href="<?= APP_URL ?>/admin/cashiers.php" class="link-card">
-    <div class="link-card-icon"><i class="fa-solid fa-users"></i></div>
-    <div class="link-card-title">Cashier Accounts</div>
-    <div class="link-card-stat"><?= $activeCashiers ?> active of <?= $totalCashiers ?> total</div>
-  </a>
+      <a href="<?= APP_URL ?>/admin/cashiers.php" class="link-card">
+        <i class="fa-solid fa-arrow-up-right-from-square link-card-arrow" aria-hidden="true"></i>
+        <div class="link-card-icon"><i class="fa-solid fa-users"></i></div>
+        <div class="link-card-title">Cashier Accounts</div>
+        <div class="link-card-stat"><?= $activeCashiers ?> active of <?= $totalCashiers ?> total</div>
+      </a>
 
-  <a href="<?= APP_URL ?>/admin/feedback.php" class="link-card">
-    <div class="link-card-icon"><i class="fa-solid fa-star"></i></div>
-    <div class="link-card-title">Feedback Moderation</div>
-    <div class="link-card-stat">
-      <?= $feedbackTotal ?> review<?= $feedbackTotal !== 1 ? 's' : '' ?>
-      <?php if ($feedbackAvg !== null): ?> &middot; <?= $feedbackAvg ?> ★ avg<?php endif; ?>
+      <a href="<?= APP_URL ?>/admin/feedback.php" class="link-card">
+        <i class="fa-solid fa-arrow-up-right-from-square link-card-arrow" aria-hidden="true"></i>
+        <div class="link-card-icon"><i class="fa-solid fa-star"></i></div>
+        <div class="link-card-title">Feedback Moderation</div>
+        <div class="link-card-stat">
+          <?= $feedbackTotal ?> review<?= $feedbackTotal !== 1 ? 's' : '' ?>
+          <?php if ($feedbackAvg !== null): ?> &middot; <?= $feedbackAvg ?> ★ avg<?php endif; ?>
+        </div>
+      </a>
+
+      <a href="<?= APP_URL ?>/settings.php" class="link-card">
+        <i class="fa-solid fa-arrow-up-right-from-square link-card-arrow" aria-hidden="true"></i>
+        <div class="link-card-icon"><i class="fa-solid fa-id-badge"></i></div>
+        <div class="link-card-title">My Admin Profile</div>
+        <div class="link-card-stat">Change your name, email, or password</div>
+      </a>
     </div>
-  </a>
-
-  <a href="<?= APP_URL ?>/settings.php" class="link-card">
-    <div class="link-card-icon"><i class="fa-solid fa-id-badge"></i></div>
-    <div class="link-card-title">My Admin Profile</div>
-    <div class="link-card-stat">Change your name, email, or password</div>
-  </a>
+  </section>
 </div>
 
 <?php layoutFooter(); ?>
