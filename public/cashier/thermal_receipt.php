@@ -193,7 +193,8 @@ header('Content-Type: application/json');
 echo json_encode(sendToYichip($raw));
 exit;
 
-function sendToYichip(string $data): array {
+function sendToYichip(string $data): array
+{
   $tmp = tempnam(sys_get_temp_dir(), 'rcpt_') . '.bin';
   if (file_put_contents($tmp, $data) === false) {
     return ['success' => false, 'error' => 'Cannot write temp file'];

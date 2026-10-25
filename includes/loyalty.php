@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Loyalty point rules and ledger operations.
  *

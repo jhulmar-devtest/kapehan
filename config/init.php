@@ -28,11 +28,9 @@ date_default_timezone_set('Asia/Manila');
 //    Loaded first because constants.php's APP_URL computation and
 //    database.php both need values it defines.
 if (!file_exists(__DIR__ . '/secrets.php')) {
-  die(
-    'Setup needed: config/secrets.php is missing. Copy config/secrets.example.php ' .
+  die('Setup needed: config/secrets.php is missing. Copy config/secrets.example.php ' .
     'to config/secrets.php and fill in your own database/mail credentials. ' .
-    'This file is intentionally left out of git — see README.md.'
-  );
+    'This file is intentionally left out of git — see README.md.');
 }
 require_once __DIR__ . '/secrets.php';
 

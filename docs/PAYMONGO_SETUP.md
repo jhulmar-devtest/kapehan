@@ -9,9 +9,11 @@ GCash-reference flow. To switch back at any time: empty the key.
 ## One-time setup
 
 1. **Back up your database**, then apply the migration:
+
    ```
    php database/migrate.php apply
    ```
+
    (No PHP on the command line? Run `database/migrations/2026_10_23_add_paymongo_gateway.sql`
    in phpMyAdmin instead.) **Do this first.** The cashier pre-orders page reads
    the new columns.
@@ -20,9 +22,11 @@ GCash-reference flow. To switch back at any time: empty the key.
    Developers > API Keys > copy the **secret** key (`sk_test_...`).
 
 3. **Start ngrok** and keep it running (do not restart it before the defense):
+
    ```
    ngrok http 80
    ```
+
    Open the shop **through the ngrok https address** from now on (login, menu,
    everything). The customer is sent back to the same address after paying, and
    their login only exists on the address they signed in on.
@@ -65,13 +69,13 @@ GCash-reference flow. To switch back at any time: empty the key.
 
 ## If something goes wrong
 
-| Problem | Likely cause |
-|---|---|
-| "Online payment is not available right now" | Wrong/missing secret key, or PHP cURL cannot verify SSL. On XAMPP set `PAYMONGO_CA_BUNDLE` to the path of a `cacert.pem` file. Check the PHP error log. |
+| Problem                                      | Likely cause                                                                                                                                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "Online payment is not available right now"  | Wrong/missing secret key, or PHP cURL cannot verify SSL. On XAMPP set `PAYMONGO_CA_BUNDLE` to the path of a `cacert.pem` file. Check the PHP error log.                                                            |
 | Paid, but the order stays "Awaiting payment" | The webhook did not arrive or was rejected: wrong webhook secret, ngrok address changed (update the webhook URL in PayMongo), or wrong base path. PayMongo's dashboard shows each delivery and lets you resend it. |
-| Cashier page shows a database error | The migration was not applied (step 1). |
-| Redirect after paying shows a login page | You opened the shop on `localhost` instead of the ngrok address. |
-| ngrok shows a warning page the first time | Normal for free ngrok. Click through once. |
+| Cashier page shows a database error          | The migration was not applied (step 1).                                                                                                                                                                            |
+| Redirect after paying shows a login page     | You opened the shop on `localhost` instead of the ngrok address.                                                                                                                                                   |
+| ngrok shows a warning page the first time    | Normal for free ngrok. Click through once.                                                                                                                                                                         |
 
 ## Known limits (fine for a demo, worth knowing)
 

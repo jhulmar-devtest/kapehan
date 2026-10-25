@@ -105,7 +105,9 @@ layoutHeader('Cash Drawer');
 
 <?php showFlash('global'); ?>
 <?php if ($errorMessage !== ''): ?>
-  <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i><div><?= e($errorMessage) ?></div></div>
+  <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i>
+    <div><?= e($errorMessage) ?></div>
+  </div>
 <?php endif; ?>
 <?php if ($report): ?>
   <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
@@ -118,7 +120,9 @@ layoutHeader('Cash Drawer');
 
 <?php if (!$drawer): ?>
   <div class="card" style="max-width:720px">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-cash-register"></i> Open today’s drawer</div></div>
+    <div class="card-header">
+      <div class="card-title"><i class="fa-solid fa-cash-register"></i> Open today’s drawer</div>
+    </div>
     <div class="card-body">
       <p class="text-muted mb-4">Count the starting cash physically in the shared drawer. The amount and your admin account will be recorded for today.</p>
       <form method="POST" style="display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap">
@@ -130,18 +134,45 @@ layoutHeader('Cash Drawer');
   </div>
 <?php elseif ($report['status'] === 'open'): ?>
   <?php if ($report['business_date'] < $today): ?>
-    <div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation"></i><div>The previous drawer day is still open. Ask a cashier to count and close it before starting today’s drawer.</div></div>
+    <div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation"></i>
+      <div>The previous drawer day is still open. Ask a cashier to count and close it before starting today’s drawer.</div>
+    </div>
   <?php endif; ?>
   <div class="stats-grid">
-    <div class="stat-card stat-gold"><div class="stat-icon gold"><i class="fa-solid fa-wallet"></i></div><div class="stat-content"><div class="stat-label">Starting Fund</div><div class="stat-value"><?= peso($report['opening_amount']) ?></div><div class="stat-sub">Entered by <?= e($report['opened_by_name']) ?> · <?= date('g:i A', strtotime($report['opened_at'])) ?></div></div></div>
-    <div class="stat-card stat-red"><div class="stat-icon red"><i class="fa-solid fa-calculator"></i></div><div class="stat-content"><div class="stat-label">Expected Cash</div><div class="stat-value"><?= peso($expectedNow) ?></div><div class="stat-sub">Starting fund + net cash activity</div></div></div>
-    <div class="stat-card stat-green"><div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div><div class="stat-content"><div class="stat-label">Drawer Status</div><div class="stat-value">Open</div><div class="stat-sub">Business date: <?= date('F j, Y', strtotime($report['business_date'])) ?></div></div></div>
+    <div class="stat-card stat-gold">
+      <div class="stat-icon gold"><i class="fa-solid fa-wallet"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Starting Fund</div>
+        <div class="stat-value"><?= peso($report['opening_amount']) ?></div>
+        <div class="stat-sub">Entered by <?= e($report['opened_by_name']) ?> · <?= date('g:i A', strtotime($report['opened_at'])) ?></div>
+      </div>
+    </div>
+    <div class="stat-card stat-red">
+      <div class="stat-icon red"><i class="fa-solid fa-calculator"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Expected Cash</div>
+        <div class="stat-value"><?= peso($expectedNow) ?></div>
+        <div class="stat-sub">Starting fund + net cash activity</div>
+      </div>
+    </div>
+    <div class="stat-card stat-green">
+      <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Drawer Status</div>
+        <div class="stat-value">Open</div>
+        <div class="stat-sub">Business date: <?= date('F j, Y', strtotime($report['business_date'])) ?></div>
+      </div>
+    </div>
   </div>
 <?php else: ?>
-  <div class="alert alert-warning mb-4"><i class="fa-solid fa-lock"></i><div>Closed by <strong><?= e($report['closed_by_name'] ?? 'Cashier') ?></strong> at <?= date('M j, g:i A', strtotime($report['closed_at'])) ?>. Counted <?= peso($report['closing_amount']) ?>; variance <?= peso($report['variance']) ?>.</div></div>
+  <div class="alert alert-warning mb-4"><i class="fa-solid fa-lock"></i>
+    <div>Closed by <strong><?= e($report['closed_by_name'] ?? 'Cashier') ?></strong> at <?= date('M j, g:i A', strtotime($report['closed_at'])) ?>. Counted <?= peso($report['closing_amount']) ?>; variance <?= peso($report['variance']) ?>.</div>
+  </div>
   <?php if ($canReopenToday): ?>
     <div class="card" style="max-width:760px">
-      <div class="card-header"><div class="card-title"><i class="fa-solid fa-arrow-rotate-left"></i> Reopen today’s drawer</div></div>
+      <div class="card-header">
+        <div class="card-title"><i class="fa-solid fa-arrow-rotate-left"></i> Reopen today’s drawer</div>
+      </div>
       <div class="card-body">
         <p class="text-muted mb-3">If this was closed by mistake, recount the cash physically in the drawer. The original close and this admin-authorized recount will both stay in the audit trail.</p>
         <form method="POST" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-3);align-items:end">
@@ -154,13 +185,17 @@ layoutHeader('Cash Drawer');
       </div>
     </div>
   <?php else: ?>
-    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i><div>This drawer day cannot be reopened because it was not closed today. Start today’s drawer if no other drawer is open.</div></div>
+    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i>
+      <div>This drawer day cannot be reopened because it was not closed today. Start today’s drawer if no other drawer is open.</div>
+    </div>
   <?php endif; ?>
 <?php endif; ?>
 
 <?php if ($report): ?>
   <div class="card mt-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-list-check"></i> Close/reopen audit trail</div></div>
+    <div class="card-header">
+      <div class="card-title"><i class="fa-solid fa-list-check"></i> Close/reopen audit trail</div>
+    </div>
     <div class="card-body" style="display:grid;gap:12px">
       <?php if (empty($report['closure_events'])): ?><div class="text-muted">No drawer closes or reopens recorded.</div><?php else: ?>
         <?php foreach ($report['closure_events'] as $event): ?>
@@ -180,16 +215,19 @@ layoutHeader('Cash Drawer');
   $savedReadings = $readingStmt->fetchAll(PDO::FETCH_ASSOC);
   if ($savedReadings):
 ?>
-  <div class="card mt-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div></div>
-    <div class="card-body" style="display:grid;gap:8px">
-      <?php foreach ($savedReadings as $savedReading): ?>
-        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
-          <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
-        </a>
-      <?php endforeach; ?>
+    <div class="card mt-4">
+      <div class="card-header">
+        <div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div>
+      </div>
+      <div class="card-body" style="display:grid;gap:8px">
+        <?php foreach ($savedReadings as $savedReading): ?>
+          <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
+            <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
+          </a>
+        <?php endforeach; ?>
+      </div>
     </div>
-  </div>
-<?php endif; endif; ?>
+<?php endif;
+endif; ?>
 <?php require __DIR__ . '/../../includes/register-reading-modal.php'; ?>
 <?php layoutFooter(); ?>

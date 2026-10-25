@@ -20,7 +20,8 @@
  *   echo e($user['full_name']);   // Safe: shows text as-is
  *   echo $user['full_name'];      // UNSAFE: could inject HTML/JS
  */
-function e(mixed $value): string {
+function e(mixed $value): string
+{
   return htmlspecialchars((string)$value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
@@ -32,7 +33,8 @@ function e(mixed $value): string {
  * Formats a number as Philippine Peso currency.
  * Example: peso(1234.5) → "₱1,234.50"
  */
-function peso(float|int|string $amount): string {
+function peso(float|int|string $amount): string
+{
   return '₱' . number_format((float)$amount, 2);
 }
 
@@ -47,7 +49,8 @@ function peso(float|int|string $amount): string {
  * Uses the database to count today's orders so the number is always
  * accurate even if the app restarts.
  */
-function generateOrderNumber(): string {
+function generateOrderNumber(): string
+{
   $db   = Database::getInstance();
   $stmt = $db->prepare(
     "SELECT COUNT(*) FROM orders WHERE DATE(created_at) = CURDATE()"
@@ -66,7 +69,8 @@ function generateOrderNumber(): string {
  * Trims whitespace, strips HTML tags, and enforces a max length.
  * Use on text fields like names, descriptions, etc.
  */
-function sanitizeString(string $input, int $maxLength = 255): string {
+function sanitizeString(string $input, int $maxLength = 255): string
+{
   $clean = strip_tags(trim($input));
   return mb_substr($clean, 0, $maxLength);
 }
@@ -79,7 +83,8 @@ function sanitizeString(string $input, int $maxLength = 255): string {
  * Rules: at least 8 characters, with a lowercase letter, uppercase
  * letter, number, and punctuation or symbol.
  */
-function validatePassword(string $password): ?string {
+function validatePassword(string $password): ?string
+{
   if (mb_strlen($password, 'UTF-8') < 8) {
     return 'Password must be at least 8 characters long.';
   }
@@ -102,12 +107,15 @@ function validatePassword(string $password): ?string {
  * Release ID and email values held by expired, never-verified signups.
  * Keep the account row inactive so any related audit/history records remain intact.
  */
-function expireUnverifiedRegistrations(PDO $db): int {
+function expireUnverifiedRegistrations(PDO $db): int
+{
   $released = 0;
-  foreach ([
-    ROLE_STUDENT => ['table' => 'students', 'identifier' => 'student_id_no'],
-    ROLE_FACULTY => ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
-  ] as $role => $config) {
+  foreach (
+    [
+      ROLE_STUDENT => ['table' => 'students', 'identifier' => 'student_id_no'],
+      ROLE_FACULTY => ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
+    ] as $role => $config
+  ) {
     $stmt = $db->query(
       "SELECT id FROM {$config['table']}
        WHERE email_verified = 0 AND is_active = 1
@@ -148,7 +156,8 @@ function expireUnverifiedRegistrations(PDO $db): int {
  *   jsonResponse(['success' => true, 'message' => 'Order created']);
  *   jsonResponse(['success' => false, 'message' => 'Not found'], 404);
  */
-function jsonResponse(array $data, int $statusCode = 200): never {
+function jsonResponse(array $data, int $statusCode = 200): never
+{
   http_response_code($statusCode);
   header('Content-Type: application/json; charset=utf-8');
   echo json_encode($data);
@@ -160,7 +169,8 @@ function jsonResponse(array $data, int $statusCode = 200): never {
  *
  * Returns true if the request was made via AJAX (fetch/XMLHttpRequest).
  */
-function isAjax(): bool {
+function isAjax(): bool
+{
   return isset($_SERVER['HTTP_X_REQUESTED_WITH'])
     && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 }
@@ -172,7 +182,8 @@ function isAjax(): bool {
  *
  * Redirects to a URL and stops execution.
  */
-function redirect(string $url): never {
+function redirect(string $url): never
+{
   header('Location: ' . $url);
   exit;
 }
@@ -183,7 +194,8 @@ function redirect(string $url): never {
  * Redirects to the page the user came from (using Referer header).
  * If no Referer is available, redirects to $fallback.
  */
-function redirectBack(string $fallback = ''): never {
+function redirectBack(string $fallback = ''): never
+{
   $fallback = $fallback ?: APP_URL . '/login.php';
   $back = $_SERVER['HTTP_REFERER'] ?? $fallback;
   redirect($back);
@@ -199,7 +211,8 @@ function redirectBack(string $fallback = ''): never {
  * Stores a message in the session to be shown once.
  * $type can be: 'success', 'error', 'warning', 'info'
  */
-function flash(string $key, string $message, string $type = 'success'): void {
+function flash(string $key, string $message, string $type = 'success'): void
+{
   $_SESSION['flash'][$key] = ['message' => $message, 'type' => $type];
 }
 
@@ -209,7 +222,8 @@ function flash(string $key, string $message, string $type = 'success'): void {
  * Retrieves and DELETES a flash message.
  * Returns null if no message with that key exists.
  */
-function getFlash(string $key): ?array {
+function getFlash(string $key): ?array
+{
   if (isset($_SESSION['flash'][$key])) {
     $msg = $_SESSION['flash'][$key];
     unset($_SESSION['flash'][$key]);
@@ -227,7 +241,8 @@ function getFlash(string $key): ?array {
  * pattern as flash()/getFlash() above. Never pass $_FILES here — only
  * text fields (the uploaded file itself can't survive a redirect).
  */
-function flashOldInput(array $data): void {
+function flashOldInput(array $data): void
+{
   unset($data['csrf_token']); // no reason to round-trip this
   $_SESSION['old_input'] = $data;
 }
@@ -239,7 +254,8 @@ function flashOldInput(array $data): void {
  * Returns null if there isn't any (the normal case — most page loads
  * aren't redisplaying a failed submission).
  */
-function getOldInput(): ?array {
+function getOldInput(): ?array
+{
   if (isset($_SESSION['old_input'])) {
     $data = $_SESSION['old_input'];
     unset($_SESSION['old_input']);
@@ -254,7 +270,8 @@ function getOldInput(): ?array {
  * Outputs the flash message as an HTML toast notification.
  * Call this in pages where you want to display feedback.
  */
-function showFlash(string $key): void {
+function showFlash(string $key): void
+{
   $flash = getFlash($key);
   if (!$flash) return;
 
@@ -292,7 +309,8 @@ function showFlash(string $key): void {
  * instead, and auto-dismisses using the same logic every other toast
  * on these pages already uses.
  */
-function showFlashAsToast(string $key): void {
+function showFlashAsToast(string $key): void
+{
   $flash = getFlash($key);
   if (!$flash) return;
 
@@ -326,7 +344,8 @@ function showFlashAsToast(string $key): void {
  * database/migrations/add_login_attempts_table.sql) so the lock holds
  * regardless of which session or browser is doing the attempting.
  */
-function checkLoginAttempts(string $identifier): bool {
+function checkLoginAttempts(string $identifier): bool
+{
   $hash = md5($identifier);
   $db = Database::getInstance();
   $stmt = $db->prepare("SELECT locked_until FROM login_attempts WHERE identifier_hash = ?");
@@ -348,7 +367,8 @@ function checkLoginAttempts(string $identifier): bool {
  *
  * Increments the failed attempt counter. Locks after 5 attempts.
  */
-function recordFailedLogin(string $identifier): void {
+function recordFailedLogin(string $identifier): void
+{
   $hash = md5($identifier);
   $db = Database::getInstance();
 
@@ -369,7 +389,8 @@ function recordFailedLogin(string $identifier): void {
  *
  * Called after a successful login to reset the counter.
  */
-function clearLoginAttempts(string $identifier): void {
+function clearLoginAttempts(string $identifier): void
+{
   $db = Database::getInstance();
   $db->prepare("DELETE FROM login_attempts WHERE identifier_hash = ?")->execute([md5($identifier)]);
 }
@@ -420,7 +441,8 @@ function auditLog(
  *
  * Returns null if valid, error message string if invalid.
  */
-function validateStudentId(string $id): ?string {
+function validateStudentId(string $id): ?string
+{
   $id = trim($id);
   if (!preg_match('/^\d{4}-\d{5}[A-Z]$/', $id)) {
     return 'Student ID must be in format: 2316-00001C (4 digits, hyphen, 5 digits, 1 uppercase letter)';
@@ -436,7 +458,8 @@ function validateStudentId(string $id): ?string {
  *
  * Returns null if valid, error message string if invalid.
  */
-function validateFacultyId(string $id): ?string {
+function validateFacultyId(string $id): ?string
+{
   $id = trim($id);
   if (!preg_match('/^\d{4}-\d{4}$/', $id)) {
     return 'Faculty ID must be in format: 2023-0001 (4 digits, hyphen, 4 digits)';
@@ -450,7 +473,8 @@ function validateFacultyId(string $id): ?string {
  * Masks an email address for display: j***n@gmail.com
  * Used in OTP verification screens.
  */
-function maskEmail(string $email): string {
+function maskEmail(string $email): string
+{
   $parts = explode('@', $email);
   if (count($parts) !== 2) {
     return '***@***.***';
@@ -474,7 +498,8 @@ function maskEmail(string $email): string {
  * Falls back to $default if the table/row doesn't exist yet, so this is safe
  * to call even before the migration has been run.
  */
-function getSetting(string $key, string $default = ''): string {
+function getSetting(string $key, string $default = ''): string
+{
   static $cache = [];
   if (array_key_exists($key, $cache)) return $cache[$key];
   try {
@@ -494,7 +519,8 @@ function getSetting(string $key, string $default = ''): string {
  *
  * Inserts or updates a row in app_settings.
  */
-function setSetting(string $key, string $value): void {
+function setSetting(string $key, string $value): void
+{
   $db = Database::getInstance();
   $db->prepare(
     "INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
@@ -510,12 +536,14 @@ function setSetting(string $key, string $value): void {
  * the GCASH_PAYMENT_* constants from config/secrets.php so existing installs
  * keep working until an admin saves a value.
  */
-function gcashPaymentName(): string {
+function gcashPaymentName(): string
+{
   $v = trim(getSetting('gcash_payment_name', ''));
   return $v !== '' ? $v : (string) GCASH_PAYMENT_NAME;
 }
 
-function gcashPaymentNumber(): string {
+function gcashPaymentNumber(): string
+{
   $v = trim(getSetting('gcash_payment_number', ''));
   return $v !== '' ? $v : (string) GCASH_PAYMENT_NUMBER;
 }
@@ -531,22 +559,26 @@ function gcashPaymentNumber(): string {
  *                        used this reference (failed/refunded ones don't count).
  */
 /** True when online GCash via PayMongo is configured (secret key present). */
-function paymongoEnabled(): bool {
+function paymongoEnabled(): bool
+{
   return defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== '';
 }
 
-function normalizeGcashRef(string $raw): string {
+function normalizeGcashRef(string $raw): string
+{
   return preg_replace('/\D+/', '', $raw);
 }
 
-function gcashRefError(string $normalized): ?string {
+function gcashRefError(string $normalized): ?string
+{
   if (strlen($normalized) !== GCASH_REF_DIGITS) {
     return 'Please enter the ' . GCASH_REF_DIGITS . '-digit GCash reference number from your receipt.';
   }
   return null;
 }
 
-function gcashRefInUse(PDO $db, string $normalized): bool {
+function gcashRefInUse(PDO $db, string $normalized): bool
+{
   $stmt = $db->prepare(
     "SELECT 1 FROM payments
       WHERE payment_method = 'GCash'
@@ -565,7 +597,8 @@ function gcashRefInUse(PDO $db, string $normalized): bool {
  * dashes ignored) and returns 09XXXXXXXXX, or null if it isn't a valid PH
  * mobile number.
  */
-function normalizePhMobile(string $raw): ?string {
+function normalizePhMobile(string $raw): ?string
+{
   $d = preg_replace('/[\s\-()]/', '', $raw);
   if (preg_match('/^\+?63(9\d{9})$/', $d, $m)) return '0' . $m[1];
   if (preg_match('/^0(9\d{9})$/', $d, $m))      return '0' . $m[1];
@@ -605,7 +638,8 @@ function normalizePhMobile(string $raw): ?string {
  * query: includes cat_name, avg_rating, has_addons) ready to render
  * with the existing menu-card markup/JS.
  */
-function getSpotlightProducts(int $limit = 5): array {
+function getSpotlightProducts(int $limit = 5): array
+{
   $db = Database::getInstance();
 
   $hasAddonsExpr = "CASE WHEN EXISTS (

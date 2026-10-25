@@ -256,18 +256,22 @@ layoutHeader('QR Scanner', '');
   .result-card.review {
     border-color: var(--color-warning-border);
   }
+
   .result-card.review .result-header {
     background: var(--color-warning-bg);
     border-bottom-color: var(--color-warning-border);
   }
+
   .result-card.review .result-icon {
     background: var(--color-warning);
   }
+
   .result-actions {
     display: flex;
     gap: 8px;
     padding: 0 16px 16px;
   }
+
   .result-actions .btn {
     flex: 1;
   }
@@ -615,7 +619,10 @@ layoutHeader('QR Scanner', '');
     const csrfInput = document.querySelector('input[name="csrf_token"]');
     if (csrfInput) fd.append('csrf_token', csrfInput.value);
 
-    const res = await fetch(url, { method: 'POST', body: fd });
+    const res = await fetch(url, {
+      method: 'POST',
+      body: fd
+    });
     const text = await res.text();
     dbg(`Response: ${text.substring(0, 100)}`);
     try {

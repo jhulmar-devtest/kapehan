@@ -47,9 +47,12 @@ function cashierSessionEndLabel(array $session, string $timeFormat = 'g:i A'): s
   if (empty($session['logout_at'])) return 'Still logged in';
   $label = date($timeFormat, strtotime($session['logout_at']));
   switch ($session['logout_reason'] ?? null) {
-    case 'timeout':     return $label . ' (auto, inactive)';
-    case 'deactivated': return $label . ' (account deactivated)';
-    default:            return $label;
+    case 'timeout':
+      return $label . ' (auto, inactive)';
+    case 'deactivated':
+      return $label . ' (account deactivated)';
+    default:
+      return $label;
   }
 }
 
@@ -139,7 +142,7 @@ function cashDrawerReportData(PDO $db, int $drawerId): ?array
   // close, and label those separately in the report.
   $nextDayAt = date('Y-m-d H:i:s', strtotime($drawer['business_date'] . ' +1 day'));
   $stmt = $db->prepare(
-     "SELECT s.login_at, s.logout_at, s.logout_reason,
+    "SELECT s.login_at, s.logout_at, s.logout_reason,
             EXISTS (
               SELECT 1 FROM cash_drawer_closures e
               LEFT JOIN cash_drawer_reopens r ON r.closure_id = e.id
@@ -222,9 +225,22 @@ function createCashRegisterReading(PDO $db, int $drawerId, string $readingType, 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   $insert->execute([
-    $drawerId, $readingType, $drawer['business_date'], $issuedAt, $activityThrough, $issuerRole, $issuerId,
-    round($salesTotal, 2), $transactionCount, round($cashSales, 2), round($nonCashSales, 2),
-    $expectedCash, $countedCash, $variance, (float)$movements['cash_in'], (float)$movements['cash_out'],
+    $drawerId,
+    $readingType,
+    $drawer['business_date'],
+    $issuedAt,
+    $activityThrough,
+    $issuerRole,
+    $issuerId,
+    round($salesTotal, 2),
+    $transactionCount,
+    round($cashSales, 2),
+    round($nonCashSales, 2),
+    $expectedCash,
+    $countedCash,
+    $variance,
+    (float)$movements['cash_in'],
+    (float)$movements['cash_out'],
   ]);
   return (int)$db->lastInsertId();
 }

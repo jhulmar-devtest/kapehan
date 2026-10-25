@@ -16,7 +16,8 @@
  * @param int $length  Number of digits (default: OTP_LENGTH constant)
  * @return string       The generated OTP
  */
-function generateOtp(int $length = OTP_LENGTH): string {
+function generateOtp(int $length = OTP_LENGTH): string
+{
   $otp = '';
   for ($i = 0; $i < $length; $i++) {
     $otp .= random_int(0, 9);
@@ -38,7 +39,8 @@ function generateOtp(int $length = OTP_LENGTH): string {
  *
  * @return bool             True if stored successfully
  */
-function storeOtp(string $userType, int $userId, string $email, string $otp, string $purpose): bool {
+function storeOtp(string $userType, int $userId, string $email, string $otp, string $purpose): bool
+{
   try {
     $db = Database::getInstance();
 
@@ -76,7 +78,8 @@ function storeOtp(string $userType, int $userId, string $email, string $otp, str
  *
  * @return array            ['valid' => bool, 'message' => string]
  */
-function validateOtp(string $userType, int $userId, string $otp, string $purpose): array {
+function validateOtp(string $userType, int $userId, string $otp, string $purpose): array
+{
   try {
     $db = Database::getInstance();
 
@@ -121,7 +124,6 @@ function validateOtp(string $userType, int $userId, string $otp, string $purpose
     $stmt->execute([$record['id']]);
 
     return ['valid' => true, 'message' => 'Verification successful.'];
-
   } catch (PDOException $e) {
     error_log("Failed to validate OTP: " . $e->getMessage());
     return ['valid' => false, 'message' => 'An error occurred. Please try again.'];
@@ -139,7 +141,8 @@ function validateOtp(string $userType, int $userId, string $otp, string $purpose
  *
  * @return bool             True if can resend, false if cooldown active
  */
-function canResendOtp(string $userType, int $userId, string $purpose): bool {
+function canResendOtp(string $userType, int $userId, string $purpose): bool
+{
   try {
     $db = Database::getInstance();
 
@@ -159,7 +162,6 @@ function canResendOtp(string $userType, int $userId, string $purpose): bool {
     $cooldownEnd = $created + OTP_RESEND_COOLDOWN;
 
     return time() >= $cooldownEnd;
-
   } catch (PDOException $e) {
     return true; // On error, allow resend
   }
@@ -176,7 +178,8 @@ function canResendOtp(string $userType, int $userId, string $purpose): bool {
  *
  * @return int              Seconds remaining (0 if can resend now)
  */
-function getOtpCooldownRemaining(string $userType, int $userId, string $purpose): int {
+function getOtpCooldownRemaining(string $userType, int $userId, string $purpose): int
+{
   try {
     $db = Database::getInstance();
 
@@ -197,7 +200,6 @@ function getOtpCooldownRemaining(string $userType, int $userId, string $purpose)
     $remaining = $cooldownEnd - time();
 
     return max(0, $remaining);
-
   } catch (PDOException $e) {
     return 0;
   }
@@ -214,7 +216,8 @@ function getOtpCooldownRemaining(string $userType, int $userId, string $purpose)
  *
  * @return array|null      OTP record or null if not found
  */
-function getOtpByEmail(string $email, string $purpose): ?array {
+function getOtpByEmail(string $email, string $purpose): ?array
+{
   try {
     $db = Database::getInstance();
 
@@ -227,7 +230,6 @@ function getOtpByEmail(string $email, string $purpose): ?array {
     $record = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $record ?: null;
-
   } catch (PDOException $e) {
     return null;
   }
@@ -244,7 +246,8 @@ function getOtpByEmail(string $email, string $purpose): ?array {
  *
  * @return array           ['valid' => bool, 'message' => string, 'record' => array|null]
  */
-function validateOtpByEmail(string $email, string $otp, string $purpose): array {
+function validateOtpByEmail(string $email, string $otp, string $purpose): array
+{
   try {
     $db = Database::getInstance();
 
@@ -285,7 +288,6 @@ function validateOtpByEmail(string $email, string $otp, string $purpose): array 
     $stmt->execute([$record['id']]);
 
     return ['valid' => true, 'message' => 'Verification successful.', 'record' => $record];
-
   } catch (PDOException $e) {
     error_log("Failed to validate OTP by email: " . $e->getMessage());
     return ['valid' => false, 'message' => 'An error occurred. Please try again.', 'record' => null];
@@ -300,7 +302,8 @@ function validateOtpByEmail(string $email, string $otp, string $purpose): array 
  *
  * @return int  Number of records deleted
  */
-function cleanupExpiredOtps(): int {
+function cleanupExpiredOtps(): int
+{
   try {
     $db = Database::getInstance();
     $stmt = $db->prepare("DELETE FROM email_otps WHERE expires_at < NOW()");

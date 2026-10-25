@@ -410,9 +410,9 @@ layoutHeader('Feedback');
                 </td>
                 <td>
                   <?= e($fb['customer_name'] ?? '—') ?><br>
-                    <small style="color:var(--text-muted)">
-                  <?= e($fb['customer_id'] ?? '') ?>
-                    </small>
+                  <small style="color:var(--text-muted)">
+                    <?= e($fb['customer_id'] ?? '') ?>
+                  </small>
                 </td>
 
                 <td><?= $fb['cashier_name'] ? e($fb['cashier_name']) : '<span class="text-muted">—</span>' ?></td>

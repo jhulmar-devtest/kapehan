@@ -509,10 +509,31 @@ layoutHeader('Ordering');
 <?php showFlash('global'); ?>
 
 <style>
-  .ordering-section-head{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:4px 0 18px}
-  .ordering-section-head h2{font-size:1.35rem;margin:0 0 4px}
-  .ordering-section-head p{color:var(--text-muted);margin:0;font-size:.9rem}
-  @media(max-width:760px){.ordering-section-head{align-items:flex-start;flex-direction:column}}
+  .ordering-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    margin: 4px 0 18px
+  }
+
+  .ordering-section-head h2 {
+    font-size: 1.35rem;
+    margin: 0 0 4px
+  }
+
+  .ordering-section-head p {
+    color: var(--text-muted);
+    margin: 0;
+    font-size: .9rem
+  }
+
+  @media(max-width:760px) {
+    .ordering-section-head {
+      align-items: flex-start;
+      flex-direction: column
+    }
+  }
 </style>
 
 <!-- ══════════════ Sub-tabs (item 13) ══════════════ -->
@@ -533,32 +554,177 @@ layoutHeader('Ordering');
 
 <div id="ordering-tab-products" style="<?= $activeSubtab === 'products' ? '' : 'display:none' ?>">
   <style>
-    .ordering-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
-    .ordering-summary{padding:16px 18px;display:flex;align-items:center;gap:13px}
-    .ordering-summary-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--surface-raised);color:var(--primary-color);flex:none}
-    .ordering-summary>div>span{display:block;font-size:.78rem;color:var(--text-muted)}
-    .ordering-summary strong{display:block;font-size:1.35rem;line-height:1.2;margin-top:2px}
-    .product-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:15px 18px;border-bottom:1px solid var(--border-color)}
-    .product-search{position:relative;width:min(100%,340px)}
-    .product-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none}
-    .product-search input{padding-left:36px}
-    .product-result-count{color:var(--text-muted);font-size:.82rem;white-space:nowrap}
-    .product-filter-bar{display:flex;align-items:center;gap:8px;overflow-x:auto;padding:0 0 12px;margin-bottom:16px}
-    .product-filter-label{font-size:.8rem;font-weight:700;color:var(--text-muted);white-space:nowrap;margin-right:3px}
-    .product-filter-bar .tab-btn{white-space:nowrap}
-    .product-cell{display:flex;align-items:center;gap:12px;min-width:210px}
-    .product-thumb{width:44px;height:44px;object-fit:cover;border-radius:10px;border:1px solid var(--border-color);flex:none}
-    .product-thumb-placeholder{display:grid;place-items:center;background:var(--surface-raised);color:var(--text-muted)}
-    .product-description{color:var(--text-muted);font-size:.78rem;margin-top:3px;max-width:370px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .product-status{display:flex;align-items:center;gap:8px}
-    .product-status .switch{flex:none}
-    .product-status-copy{display:grid;gap:3px}
-    .product-status-note{font-size:.72rem;color:var(--text-muted)}
-    .ordering-empty-search td{text-align:center;padding:28px;color:var(--text-muted)}
-    @media(max-width:760px){.ordering-summary-grid{grid-template-columns:1fr}.product-toolbar{align-items:flex-start;flex-direction:column}.product-search{width:100%}}
+    .ordering-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px
+    }
+
+    .ordering-summary {
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      gap: 13px
+    }
+
+    .ordering-summary-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: var(--surface-raised);
+      color: var(--primary-color);
+      flex: none
+    }
+
+    .ordering-summary>div>span {
+      display: block;
+      font-size: .78rem;
+      color: var(--text-muted)
+    }
+
+    .ordering-summary strong {
+      display: block;
+      font-size: 1.35rem;
+      line-height: 1.2;
+      margin-top: 2px
+    }
+
+    .product-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--border-color)
+    }
+
+    .product-search {
+      position: relative;
+      width: min(100%, 340px)
+    }
+
+    .product-search i {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none
+    }
+
+    .product-search input {
+      padding-left: 36px
+    }
+
+    .product-result-count {
+      color: var(--text-muted);
+      font-size: .82rem;
+      white-space: nowrap
+    }
+
+    .product-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 0 0 12px;
+      margin-bottom: 16px
+    }
+
+    .product-filter-label {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      white-space: nowrap;
+      margin-right: 3px
+    }
+
+    .product-filter-bar .tab-btn {
+      white-space: nowrap
+    }
+
+    .product-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 210px
+    }
+
+    .product-thumb {
+      width: 44px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      flex: none
+    }
+
+    .product-thumb-placeholder {
+      display: grid;
+      place-items: center;
+      background: var(--surface-raised);
+      color: var(--text-muted)
+    }
+
+    .product-description {
+      color: var(--text-muted);
+      font-size: .78rem;
+      margin-top: 3px;
+      max-width: 370px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .product-status {
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .product-status .switch {
+      flex: none
+    }
+
+    .product-status-copy {
+      display: grid;
+      gap: 3px
+    }
+
+    .product-status-note {
+      font-size: .72rem;
+      color: var(--text-muted)
+    }
+
+    .ordering-empty-search td {
+      text-align: center;
+      padding: 28px;
+      color: var(--text-muted)
+    }
+
+    @media(max-width:760px) {
+      .ordering-summary-grid {
+        grid-template-columns: 1fr
+      }
+
+      .product-toolbar {
+        align-items: flex-start;
+        flex-direction: column
+      }
+
+      .product-search {
+        width: 100%
+      }
+    }
   </style>
   <div class="ordering-section-head">
-    <div><h2>Products</h2><p>Manage availability, pricing, and product setup.</p></div>
+    <div>
+      <h2>Products</h2>
+      <p>Manage availability, pricing, and product setup.</p>
+    </div>
     <div class="page-header-actions">
       <?php if (!empty($assignableCats)): ?>
         <a class="btn btn-primary" href="<?= e(APP_URL) ?>/admin/product-setup.php"><i class="fa-solid fa-plus"></i> Add Product</a>
@@ -570,9 +736,15 @@ layoutHeader('Ordering');
   </div>
 
   <div class="ordering-summary-grid">
-    <div class="card ordering-summary"><span class="ordering-summary-icon"><i class="fa-solid fa-mug-hot"></i></span><div><span>Products in view</span><strong><?= count($products) ?></strong></div></div>
-    <div class="card ordering-summary"><span class="ordering-summary-icon" style="color:var(--color-success)"><i class="fa-solid fa-circle-check"></i></span><div><span>Available to order</span><strong><?= $availableProductCount ?></strong></div></div>
-    <div class="card ordering-summary"><span class="ordering-summary-icon" style="color:var(--status-cancelled)"><i class="fa-solid fa-circle-pause"></i></span><div><span>Paused / low stock</span><strong><?= $pausedProductCount + $stockBlockedProductCount ?></strong></div></div>
+    <div class="card ordering-summary"><span class="ordering-summary-icon"><i class="fa-solid fa-mug-hot"></i></span>
+      <div><span>Products in view</span><strong><?= count($products) ?></strong></div>
+    </div>
+    <div class="card ordering-summary"><span class="ordering-summary-icon" style="color:var(--color-success)"><i class="fa-solid fa-circle-check"></i></span>
+      <div><span>Available to order</span><strong><?= $availableProductCount ?></strong></div>
+    </div>
+    <div class="card ordering-summary"><span class="ordering-summary-icon" style="color:var(--status-cancelled)"><i class="fa-solid fa-circle-pause"></i></span>
+      <div><span>Paused / low stock</span><strong><?= $pausedProductCount + $stockBlockedProductCount ?></strong></div>
+    </div>
   </div>
 
   <!-- Category Filter Tabs -->
@@ -616,22 +788,22 @@ layoutHeader('Ordering');
                 <?php $productSearchText = strtolower($p['name'] . ' ' . ($p['description'] ?? '') . ' ' . $p['cat_name']); ?>
                 <td>
                   <div class="product-cell" data-product-search="<?= e($productSearchText) ?>">
-                  <?php if ($p['image_path'] && file_exists(UPLOAD_DIR . $p['image_path'])): ?>
-                    <img src="<?= $imgBase . e($p['image_path']) ?>" class="product-thumb" alt="">
-                  <?php else: ?>
-                    <div class="product-thumb product-thumb-placeholder" aria-hidden="true">
-                      <i class="fa-solid fa-mug-hot"></i>
+                    <?php if ($p['image_path'] && file_exists(UPLOAD_DIR . $p['image_path'])): ?>
+                      <img src="<?= $imgBase . e($p['image_path']) ?>" class="product-thumb" alt="">
+                    <?php else: ?>
+                      <div class="product-thumb product-thumb-placeholder" aria-hidden="true">
+                        <i class="fa-solid fa-mug-hot"></i>
+                      </div>
+                    <?php endif; ?>
+                    <div>
+                      <strong><?= e($p['name']) ?></strong>
+                      <?php if (!empty($p['spotlight_pinned'])): ?>
+                        <i class="fa-solid fa-star" title="Pinned to Spotlight" style="color:var(--accent-color);font-size:11px;margin-left:4px"></i>
+                      <?php endif; ?>
+                      <?php if ($p['description']): ?>
+                        <div class="product-description" title="<?= e($p['description']) ?>"><?= e($p['description']) ?></div>
+                      <?php endif; ?>
                     </div>
-                  <?php endif; ?>
-                  <div>
-                    <strong><?= e($p['name']) ?></strong>
-                    <?php if (!empty($p['spotlight_pinned'])): ?>
-                      <i class="fa-solid fa-star" title="Pinned to Spotlight" style="color:var(--accent-color);font-size:11px;margin-left:4px"></i>
-                    <?php endif; ?>
-                    <?php if ($p['description']): ?>
-                      <div class="product-description" title="<?= e($p['description']) ?>"><?= e($p['description']) ?></div>
-                    <?php endif; ?>
-                  </div>
                   </div>
                 </td>
                 <td><?= e($p['cat_name']) ?></td>
@@ -641,24 +813,28 @@ layoutHeader('Ordering');
                     <?= csrfField() ?>
                     <input type="hidden" name="toggle_id" value="<?= $p['id'] ?>">
                     <div class="product-status"><label class="switch" title="Toggle product availability">
-                      <input type="checkbox" aria-label="Toggle availability for <?= e($p['name']) ?>" onchange="handleToggle(this)" <?= $p['is_available'] ? 'checked' : '' ?>>
-                      <span class="switch-slider"></span>
-                    </label><div class="product-status-copy">
-                    <?php if ($p['is_available'] && !($stockAvailability[(int) $p['id']] ?? true)): ?>
-                      <span class="badge badge-cancelled">Low stock</span><span class="product-status-note">Recipe stock is short</span>
-                    <?php elseif (!$p['is_available']): ?>
-                      <span class="badge badge-cancelled">Paused</span>
-                    <?php else: ?>
-                      <span class="badge badge-ready">Available</span>
-                    <?php endif; ?>
-                    </div></div>
+                        <input type="checkbox" aria-label="Toggle availability for <?= e($p['name']) ?>" onchange="handleToggle(this)" <?= $p['is_available'] ? 'checked' : '' ?>>
+                        <span class="switch-slider"></span>
+                      </label>
+                      <div class="product-status-copy">
+                        <?php if ($p['is_available'] && !($stockAvailability[(int) $p['id']] ?? true)): ?>
+                          <span class="badge badge-cancelled">Low stock</span><span class="product-status-note">Recipe stock is short</span>
+                        <?php elseif (!$p['is_available']): ?>
+                          <span class="badge badge-cancelled">Paused</span>
+                        <?php else: ?>
+                          <span class="badge badge-ready">Available</span>
+                        <?php endif; ?>
+                      </div>
+                    </div>
                   </form>
                 </td>
                 <td><a class="btn btn-ghost btn-sm" href="<?= e(APP_URL) ?>/admin/product-setup.php?id=<?= (int) $p['id'] ?>"><i class="fa-solid fa-pen"></i> Edit setup</a></td>
               </tr>
           <?php endforeach;
           endif; ?>
-          <tr class="ordering-empty-search" id="product-search-empty" hidden><td colspan="5"><i class="fa-solid fa-magnifying-glass" style="font-size:1.2rem;display:block;margin-bottom:7px"></i>No products match your search.</td></tr>
+          <tr class="ordering-empty-search" id="product-search-empty" hidden>
+            <td colspan="5"><i class="fa-solid fa-magnifying-glass" style="font-size:1.2rem;display:block;margin-bottom:7px"></i>No products match your search.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -668,32 +844,177 @@ layoutHeader('Ordering');
 
 <div id="ordering-tab-categories" style="<?= $activeSubtab === 'categories' ? '' : 'display:none' ?>">
   <style>
-    .category-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
-    .category-summary{padding:17px 19px;display:grid;gap:4px}
-    .category-summary strong{font-size:1.65rem;line-height:1.1;color:var(--text-color)}
-    .category-summary small{color:var(--text-muted)}
-    .category-manager-list{display:grid;gap:14px}
-    .category-group-card{overflow:hidden}
-    .category-group-header{padding:17px 20px;display:flex;justify-content:space-between;align-items:center;gap:16px}
-    .category-group-identity,.category-sub-identity{display:flex;align-items:center;gap:12px;min-width:0}
-    .category-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--surface-raised);color:var(--primary-color);font-size:17px;flex:none}
-    .category-group-identity h2{font-size:1rem;margin:0 0 3px}
-    .category-group-identity p{font-size:.82rem;color:var(--text-muted);margin:0}
-    .category-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
-    .category-actions form{margin:0}
-    .category-sub-list{border-top:1px solid var(--border-color);padding:4px 20px 4px 74px}
-    .category-sub-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid var(--border-color)}
-    .category-sub-row:last-child{border-bottom:0}
-    .category-sub-identity>i{color:var(--color-success);width:18px;text-align:center}
-    .category-sub-identity div{display:grid;gap:2px}
-    .category-sub-identity span{font-size:.78rem;color:var(--text-muted)}
-    .category-group-empty{border-top:1px solid var(--border-color);padding:13px 20px 5px 74px;color:var(--text-muted);font-size:.84rem}
-    .category-group-footer{padding:0 20px 14px 74px}
-    .category-empty-state{text-align:center;padding:44px 24px}
-    .category-empty-state>i{font-size:2rem;color:var(--primary-color);margin-bottom:8px}
-    .category-empty-state h2{font-size:1.1rem;margin:0 0 7px}
-    .category-empty-state p{color:var(--text-muted);margin:0 auto 16px;max-width:470px}
-    @media(max-width:760px){.category-summary-grid{grid-template-columns:1fr}.category-group-header,.category-sub-row{align-items:flex-start;flex-direction:column}.category-actions{justify-content:flex-start}.category-sub-list,.category-group-empty,.category-group-footer{padding-left:20px}}
+    .category-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px
+    }
+
+    .category-summary {
+      padding: 17px 19px;
+      display: grid;
+      gap: 4px
+    }
+
+    .category-summary strong {
+      font-size: 1.65rem;
+      line-height: 1.1;
+      color: var(--text-color)
+    }
+
+    .category-summary small {
+      color: var(--text-muted)
+    }
+
+    .category-manager-list {
+      display: grid;
+      gap: 14px
+    }
+
+    .category-group-card {
+      overflow: hidden
+    }
+
+    .category-group-header {
+      padding: 17px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px
+    }
+
+    .category-group-identity,
+    .category-sub-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0
+    }
+
+    .category-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: var(--surface-raised);
+      color: var(--primary-color);
+      font-size: 17px;
+      flex: none
+    }
+
+    .category-group-identity h2 {
+      font-size: 1rem;
+      margin: 0 0 3px
+    }
+
+    .category-group-identity p {
+      font-size: .82rem;
+      color: var(--text-muted);
+      margin: 0
+    }
+
+    .category-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      flex-wrap: wrap
+    }
+
+    .category-actions form {
+      margin: 0
+    }
+
+    .category-sub-list {
+      border-top: 1px solid var(--border-color);
+      padding: 4px 20px 4px 74px
+    }
+
+    .category-sub-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-color)
+    }
+
+    .category-sub-row:last-child {
+      border-bottom: 0
+    }
+
+    .category-sub-identity>i {
+      color: var(--color-success);
+      width: 18px;
+      text-align: center
+    }
+
+    .category-sub-identity div {
+      display: grid;
+      gap: 2px
+    }
+
+    .category-sub-identity span {
+      font-size: .78rem;
+      color: var(--text-muted)
+    }
+
+    .category-group-empty {
+      border-top: 1px solid var(--border-color);
+      padding: 13px 20px 5px 74px;
+      color: var(--text-muted);
+      font-size: .84rem
+    }
+
+    .category-group-footer {
+      padding: 0 20px 14px 74px
+    }
+
+    .category-empty-state {
+      text-align: center;
+      padding: 44px 24px
+    }
+
+    .category-empty-state>i {
+      font-size: 2rem;
+      color: var(--primary-color);
+      margin-bottom: 8px
+    }
+
+    .category-empty-state h2 {
+      font-size: 1.1rem;
+      margin: 0 0 7px
+    }
+
+    .category-empty-state p {
+      color: var(--text-muted);
+      margin: 0 auto 16px;
+      max-width: 470px
+    }
+
+    @media(max-width:760px) {
+      .category-summary-grid {
+        grid-template-columns: 1fr
+      }
+
+      .category-group-header,
+      .category-sub-row {
+        align-items: flex-start;
+        flex-direction: column
+      }
+
+      .category-actions {
+        justify-content: flex-start
+      }
+
+      .category-sub-list,
+      .category-group-empty,
+      .category-group-footer {
+        padding-left: 20px
+      }
+    }
   </style>
   <div class="ordering-section-head">
     <div>
@@ -729,7 +1050,10 @@ layoutHeader('Ordering');
           <header class="category-group-header">
             <div class="category-group-identity">
               <span class="category-icon"><i class="fa-solid fa-folder"></i></span>
-              <div><h2><?= e($group['name']) ?></h2><p><?= count($groupChildren) ?> subcategor<?= count($groupChildren) === 1 ? 'y' : 'ies' ?> · <?= number_format($groupProductCount) ?> product<?= $groupProductCount === 1 ? '' : 's' ?></p></div>
+              <div>
+                <h2><?= e($group['name']) ?></h2>
+                <p><?= count($groupChildren) ?> subcategor<?= count($groupChildren) === 1 ? 'y' : 'ies' ?> · <?= number_format($groupProductCount) ?> product<?= $groupProductCount === 1 ? '' : 's' ?></p>
+              </div>
             </div>
             <div class="category-actions">
               <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($groupData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
@@ -747,7 +1071,9 @@ layoutHeader('Ordering');
                 $subData = ['id' => (int)$sub['id'], 'name' => $sub['name']];
               ?>
                 <div class="category-sub-row">
-                  <div class="category-sub-identity"><i class="fa-solid fa-folder-open"></i><div><strong><?= e($sub['name']) ?></strong><span><?= number_format($subCount) ?> product<?= $subCount === 1 ? '' : 's' ?></span></div></div>
+                  <div class="category-sub-identity"><i class="fa-solid fa-folder-open"></i>
+                    <div><strong><?= e($sub['name']) ?></strong><span><?= number_format($subCount) ?> product<?= $subCount === 1 ? '' : 's' ?></span></div>
+                  </div>
                   <div class="category-actions">
                     <a class="btn btn-sm btn-ghost" href="<?= e(APP_URL) ?>/admin/product-setup.php?category_id=<?= (int)$sub['id'] ?>"><i class="fa-solid fa-plus"></i> Add product</a>
                     <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($subData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
@@ -772,15 +1098,73 @@ layoutHeader('Ordering');
 <!-- Drink size presets used by products that offer customer size choices. -->
 <div id="ordering-tab-sizes" style="<?= $activeSubtab === 'sizes' ? '' : 'display:none' ?>">
   <style>
-    .size-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
-    .size-summary{padding:16px 18px;display:flex;align-items:center;gap:12px}
-    .size-summary-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:var(--surface-raised);color:var(--primary-color);flex:none}
-    .size-summary>div>span{display:block;color:var(--text-muted);font-size:.78rem}
-    .size-summary strong{display:block;font-size:1.35rem;line-height:1.2;margin-top:2px}
-    .size-help{display:flex;align-items:flex-start;gap:10px;padding:13px 16px;border-radius:var(--radius-md);background:var(--surface-raised);color:var(--text-muted);font-size:.83rem;margin-bottom:16px}
-    .size-help i{color:var(--primary-color);margin-top:2px}
-    .size-actions{display:flex;align-items:center;gap:7px;white-space:nowrap}
-    @media(max-width:760px){.size-summary-grid{grid-template-columns:1fr}}
+    .size-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px
+    }
+
+    .size-summary {
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px
+    }
+
+    .size-summary-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: var(--surface-raised);
+      color: var(--primary-color);
+      flex: none
+    }
+
+    .size-summary>div>span {
+      display: block;
+      color: var(--text-muted);
+      font-size: .78rem
+    }
+
+    .size-summary strong {
+      display: block;
+      font-size: 1.35rem;
+      line-height: 1.2;
+      margin-top: 2px
+    }
+
+    .size-help {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 13px 16px;
+      border-radius: var(--radius-md);
+      background: var(--surface-raised);
+      color: var(--text-muted);
+      font-size: .83rem;
+      margin-bottom: 16px
+    }
+
+    .size-help i {
+      color: var(--primary-color);
+      margin-top: 2px
+    }
+
+    .size-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap
+    }
+
+    @media(max-width:760px) {
+      .size-summary-grid {
+        grid-template-columns: 1fr
+      }
+    }
   </style>
   <div class="ordering-section-head">
     <div>
@@ -794,13 +1178,22 @@ layoutHeader('Ordering');
     </div>
   </div>
   <div class="size-summary-grid">
-    <div class="card size-summary"><span class="size-summary-icon"><i class="fa-solid fa-ruler-combined"></i></span><div><span>Size options</span><strong><?= count($sizeOptions) ?></strong></div></div>
-    <div class="card size-summary"><span class="size-summary-icon" style="color:var(--color-success)"><i class="fa-solid fa-circle-check"></i></span><div><span>Shown to customers</span><strong><?= $activeSizeCount ?></strong></div></div>
-    <div class="card size-summary"><span class="size-summary-icon" style="color:var(--text-muted)"><i class="fa-solid fa-eye-slash"></i></span><div><span>Hidden</span><strong><?= count($sizeOptions) - $activeSizeCount ?></strong></div></div>
+    <div class="card size-summary"><span class="size-summary-icon"><i class="fa-solid fa-ruler-combined"></i></span>
+      <div><span>Size options</span><strong><?= count($sizeOptions) ?></strong></div>
+    </div>
+    <div class="card size-summary"><span class="size-summary-icon" style="color:var(--color-success)"><i class="fa-solid fa-circle-check"></i></span>
+      <div><span>Shown to customers</span><strong><?= $activeSizeCount ?></strong></div>
+    </div>
+    <div class="card size-summary"><span class="size-summary-icon" style="color:var(--text-muted)"><i class="fa-solid fa-eye-slash"></i></span>
+      <div><span>Hidden</span><strong><?= count($sizeOptions) - $activeSizeCount ?></strong></div>
+    </div>
   </div>
   <div class="size-help"><i class="fa-solid fa-circle-info"></i><span>Price adjustments are added to a product’s base price for each selected size. Inactive sizes stay saved but are hidden from customers.</span></div>
   <div class="card">
-    <div class="card-header"><div class="card-title">Drink sizes</div><div class="text-muted" style="font-size:.82rem">Sort order controls the order shown during checkout.</div></div>
+    <div class="card-header">
+      <div class="card-title">Drink sizes</div>
+      <div class="text-muted" style="font-size:.82rem">Sort order controls the order shown during checkout.</div>
+    </div>
     <div style="overflow-x:auto">
       <table class="data-table">
         <thead>
@@ -823,15 +1216,17 @@ layoutHeader('Ordering');
                 <td><strong><?= $s['price_adjustment'] > 0 ? '+' . peso($s['price_adjustment']) : peso($s['price_adjustment']) ?></strong></td>
                 <td><?= (int) $s['sort_order'] ?></td>
                 <td><span class="badge badge-<?= $s['is_active'] ? 'paid' : 'cancelled' ?>"><?= $s['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                <td><div class="size-actions">
-                  <button type="button" class="btn btn-sm btn-outline" onclick='openSizeModal(<?= json_encode($s, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Edit</button>
-                  <form method="POST" style="display:inline" onsubmit="return confirm('Delete this size option? Products using this size will no longer offer it.')">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="size_action" value="delete">
-                    <input type="hidden" name="size_id" value="<?= $s['id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-danger" aria-label="Delete <?= e($s['label']) ?>"><i class="fa-solid fa-trash"></i></button>
-                  </form>
-                </div></td>
+                <td>
+                  <div class="size-actions">
+                    <button type="button" class="btn btn-sm btn-outline" onclick='openSizeModal(<?= json_encode($s, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Edit</button>
+                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this size option? Products using this size will no longer offer it.')">
+                      <?= csrfField() ?>
+                      <input type="hidden" name="size_action" value="delete">
+                      <input type="hidden" name="size_id" value="<?= $s['id'] ?>">
+                      <button type="submit" class="btn btn-sm btn-danger" aria-label="Delete <?= e($s['label']) ?>"><i class="fa-solid fa-trash"></i></button>
+                    </form>
+                  </div>
+                </td>
               </tr>
           <?php endforeach;
           endif; ?>
@@ -882,17 +1277,63 @@ layoutHeader('Ordering');
 
     <div class="modal-body">
       <style>
-        .addons-catalog-note{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;background:var(--surface-raised);border-radius:var(--radius-md);color:var(--text-muted);font-size:.82rem;margin-bottom:14px}
-        .addons-catalog-note i{color:var(--primary-color);margin-top:2px}
-        .addons-catalog-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-        .addons-catalog-search{position:relative;flex:1;max-width:360px}
-        .addons-catalog-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted)}
-        .addons-catalog-search input{padding-left:36px}
-        @media(max-width:600px){.addons-catalog-toolbar{align-items:stretch;flex-direction:column}.addons-catalog-search{max-width:none}}
+        .addons-catalog-note {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          padding: 12px 14px;
+          background: var(--surface-raised);
+          border-radius: var(--radius-md);
+          color: var(--text-muted);
+          font-size: .82rem;
+          margin-bottom: 14px
+        }
+
+        .addons-catalog-note i {
+          color: var(--primary-color);
+          margin-top: 2px
+        }
+
+        .addons-catalog-toolbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 12px
+        }
+
+        .addons-catalog-search {
+          position: relative;
+          flex: 1;
+          max-width: 360px
+        }
+
+        .addons-catalog-search i {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-muted)
+        }
+
+        .addons-catalog-search input {
+          padding-left: 36px
+        }
+
+        @media(max-width:600px) {
+          .addons-catalog-toolbar {
+            align-items: stretch;
+            flex-direction: column
+          }
+
+          .addons-catalog-search {
+            max-width: none
+          }
+        }
       </style>
       <div class="addons-catalog-note"><i class="fa-solid fa-circle-info"></i><span>Add-ons use shared stock managed in <a href="<?= APP_URL ?>/admin/inventory.php" style="font-weight:700">Inventory</a>. Open a product’s setup to choose which add-ons it offers.</span></div>
       <div class="addons-catalog-toolbar">
-      <label class="addons-catalog-search"><i class="fa-solid fa-magnifying-glass"></i><input id="addons-list-search" type="search" class="form-control" aria-label="Search add-ons" placeholder="Search add-ons or stock items" autocomplete="off"></label>
+        <label class="addons-catalog-search"><i class="fa-solid fa-magnifying-glass"></i><input id="addons-list-search" type="search" class="form-control" aria-label="Search add-ons" placeholder="Search add-ons or stock items" autocomplete="off"></label>
         <span class="text-muted" id="addons-list-count" style="font-size:.82rem">Loading add-ons…</span>
       </div>
 
@@ -936,7 +1377,9 @@ layoutHeader('Ordering');
 
       <div class="modal-body">
         <p class="text-muted" id="category-form-help" style="font-size:.85rem;line-height:1.5;margin-top:0">Create a menu group or place it under an existing top-level category. Add products after the category is saved.</p>
-        <div class="form-group" id="category-parent-row"><label class="form-label" for="category-parent">Parent category <span class="text-muted">(optional)</span></label><select name="parent_id" id="category-parent" class="form-control"><option value="">No parent — create a top-level category</option><?php foreach ($catGroups as $group): ?><option value="<?= (int) $group['id'] ?>">Under <?= e($group['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="form-group" id="category-parent-row"><label class="form-label" for="category-parent">Parent category <span class="text-muted">(optional)</span></label><select name="parent_id" id="category-parent" class="form-control">
+            <option value="">No parent — create a top-level category</option><?php foreach ($catGroups as $group): ?><option value="<?= (int) $group['id'] ?>">Under <?= e($group['name']) ?></option><?php endforeach; ?>
+          </select></div>
         <div class="form-group"><label class="form-label" for="category-name">Category name <span style="color:var(--status-cancelled)">*</span></label><input type="text" name="category_name" id="category-name" class="form-control" maxlength="100" required placeholder="e.g. Coffee, Iced Drinks"></div>
       </div>
 
@@ -949,7 +1392,11 @@ layoutHeader('Ordering');
 </div>
 
 <script>
-  function e(value) { const node=document.createElement('span'); node.textContent=value??''; return node.innerHTML; }
+  function e(value) {
+    const node = document.createElement('span');
+    node.textContent = value ?? '';
+    return node.innerHTML;
+  }
   const productSearch = document.getElementById('product-search');
   if (productSearch) {
     const productCells = Array.from(document.querySelectorAll('.product-cell[data-product-search]'));
@@ -964,50 +1411,81 @@ layoutHeader('Ordering');
         if (matches) visible++;
       });
       if (emptySearch) emptySearch.hidden = query === '' || visible > 0;
-      if (resultCount) resultCount.textContent = query
-        ? `${visible} of ${productCells.length} products match`
-        : `${productCells.length} product${productCells.length === 1 ? '' : 's'} shown`;
+      if (resultCount) resultCount.textContent = query ?
+        `${visible} of ${productCells.length} products match` :
+        `${productCells.length} product${productCells.length === 1 ? '' : 's'} shown`;
     });
   }
+
   function handleToggle(input) {
-    if (!confirm('Change product availability?')) { input.checked=!input.checked; return; }
-    input.disabled=true; input.form.submit();
+    if (!confirm('Change product availability?')) {
+      input.checked = !input.checked;
+      return;
+    }
+    input.disabled = true;
+    input.form.submit();
   }
-  function openAddonsListModal() { document.getElementById('addons-list-modal').classList.remove('hidden'); loadAddonsList(); }
-  function closeAddonsListModal() { document.getElementById('addons-list-modal').classList.add('hidden'); }
-  document.getElementById('addons-list-modal').addEventListener('click',event=>{if(event.target===event.currentTarget)closeAddonsListModal();});
+
+  function openAddonsListModal() {
+    document.getElementById('addons-list-modal').classList.remove('hidden');
+    loadAddonsList();
+  }
+
+  function closeAddonsListModal() {
+    document.getElementById('addons-list-modal').classList.add('hidden');
+  }
+  document.getElementById('addons-list-modal').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeAddonsListModal();
+  });
+
   function loadAddonsList() {
-    const body=document.getElementById('addons-list-body');
-    const search=document.getElementById('addons-list-search');
-    if(search)search.value='';
-    body.innerHTML='<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</td></tr>';
-    fetch('<?= APP_URL ?>/api/get_addons.php').then(response=>response.json()).then(data=>{
-      const count=document.getElementById('addons-list-count');
-      if(!data.success||!data.addons.length){if(count)count.textContent='0 add-ons';body.innerHTML='<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-layer-group" style="display:block;font-size:1.4rem;margin-bottom:8px;color:var(--primary-color)"></i>No stocked add-ons yet. Add an add-on from Inventory.</td></tr>';return;}
-      if(count)count.textContent=`${data.addons.length} add-on${data.addons.length===1?'':'s'}`;
-      body.innerHTML=data.addons.map(addon=>{
-        const active=addon.status==='active';
-        const searchText=[addon.name,addon.inventory_name||''].join(' ').toLowerCase();
+    const body = document.getElementById('addons-list-body');
+    const search = document.getElementById('addons-list-search');
+    if (search) search.value = '';
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</td></tr>';
+    fetch('<?= APP_URL ?>/api/get_addons.php').then(response => response.json()).then(data => {
+      const count = document.getElementById('addons-list-count');
+      if (!data.success || !data.addons.length) {
+        if (count) count.textContent = '0 add-ons';
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-layer-group" style="display:block;font-size:1.4rem;margin-bottom:8px;color:var(--primary-color)"></i>No stocked add-ons yet. Add an add-on from Inventory.</td></tr>';
+        return;
+      }
+      if (count) count.textContent = `${data.addons.length} add-on${data.addons.length===1?'':'s'}`;
+      body.innerHTML = data.addons.map(addon => {
+        const active = addon.status === 'active';
+        const searchText = [addon.name, addon.inventory_name || ''].join(' ').toLowerCase();
         return `<tr data-addon-search="${e(searchText)}"><td><strong>${e(addon.name)}</strong></td><td>₱${Number(addon.price).toFixed(2)}</td><td>${e(addon.inventory_name||'—')} <span class="text-muted">(${Number(addon.qty_per_unit||0).toFixed(3)} ${e(addon.inventory_unit||'')})</span></td><td><span class="badge ${active?'badge-ready':'badge-cancelled'}">${e(addon.status)}</span></td></tr>`;
       }).join('');
       applyAddonSearch();
-    }).catch(()=>{document.getElementById('addons-list-count').textContent='Could not load';body.innerHTML='<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--status-cancelled)">Could not load add-ons. Try again.</td></tr>';});
+    }).catch(() => {
+      document.getElementById('addons-list-count').textContent = 'Could not load';
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--status-cancelled)">Could not load add-ons. Try again.</td></tr>';
+    });
   }
+
   function applyAddonSearch() {
-    const search=document.getElementById('addons-list-search');
-    const body=document.getElementById('addons-list-body');
-    if(!search||!body)return;
-    const query=search.value.trim().toLowerCase();
-    const rows=Array.from(body.querySelectorAll('tr[data-addon-search]'));
-    let visible=0;
-    rows.forEach(row=>{row.hidden=!row.dataset.addonSearch.includes(query);if(!row.hidden)visible++;});
-    const count=document.getElementById('addons-list-count');
-    if(count)count.textContent=query?`${visible} of ${rows.length} add-ons match`:`${rows.length} add-on${rows.length===1?'':'s'}`;
-    let empty=body.querySelector('[data-addon-empty]');
-    if(!empty){empty=document.createElement('tr');empty.dataset.addonEmpty='1';empty.innerHTML='<td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No add-ons match this search.</td>';body.appendChild(empty);}
-    empty.hidden=query===''||visible>0;
+    const search = document.getElementById('addons-list-search');
+    const body = document.getElementById('addons-list-body');
+    if (!search || !body) return;
+    const query = search.value.trim().toLowerCase();
+    const rows = Array.from(body.querySelectorAll('tr[data-addon-search]'));
+    let visible = 0;
+    rows.forEach(row => {
+      row.hidden = !row.dataset.addonSearch.includes(query);
+      if (!row.hidden) visible++;
+    });
+    const count = document.getElementById('addons-list-count');
+    if (count) count.textContent = query ? `${visible} of ${rows.length} add-ons match` : `${rows.length} add-on${rows.length===1?'':'s'}`;
+    let empty = body.querySelector('[data-addon-empty]');
+    if (!empty) {
+      empty = document.createElement('tr');
+      empty.dataset.addonEmpty = '1';
+      empty.innerHTML = '<td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No add-ons match this search.</td>';
+      body.appendChild(empty);
+    }
+    empty.hidden = query === '' || visible > 0;
   }
-  document.getElementById('addons-list-search').addEventListener('input',applyAddonSearch);
+  document.getElementById('addons-list-search').addEventListener('input', applyAddonSearch);
 </script>
 
 <script>
@@ -1017,15 +1495,15 @@ layoutHeader('Ordering');
     const isEditing = !!category;
     document.getElementById('category-id').value = isEditing ? category.id : '';
     document.getElementById('category-parent-row').style.display = isEditing ? 'none' : '';
-    document.getElementById('category-modal').querySelector('.modal-title').innerHTML = isEditing
-      ? '<i class="fa-solid fa-pen"></i> Rename Menu Category'
-      : '<i class="fa-solid fa-folder-plus"></i> Add Menu Category';
-    document.getElementById('category-form-help').textContent = isEditing
-      ? 'Renaming keeps every product assigned to this category.'
-      : 'Create a menu group or place it under an existing top-level category.';
-    document.getElementById('category-submit').innerHTML = isEditing
-      ? '<i class="fa-solid fa-floppy-disk"></i> Save changes'
-      : '<i class="fa-solid fa-floppy-disk"></i> Create category';
+    document.getElementById('category-modal').querySelector('.modal-title').innerHTML = isEditing ?
+      '<i class="fa-solid fa-pen"></i> Rename Menu Category' :
+      '<i class="fa-solid fa-folder-plus"></i> Add Menu Category';
+    document.getElementById('category-form-help').textContent = isEditing ?
+      'Renaming keeps every product assigned to this category.' :
+      'Create a menu group or place it under an existing top-level category.';
+    document.getElementById('category-submit').innerHTML = isEditing ?
+      '<i class="fa-solid fa-floppy-disk"></i> Save changes' :
+      '<i class="fa-solid fa-floppy-disk"></i> Create category';
     document.getElementById('category-parent').value = parentId || '';
     if (isEditing) document.getElementById('category-name').value = category.name;
     document.getElementById('category-modal').classList.remove('hidden');

@@ -95,55 +95,364 @@ $postTarget = APP_URL . '/admin/ordering.php';
 layoutHeader('Ordering');
 ?>
 <style>
-  .setup-page { max-width:1120px; margin:0 auto; padding-bottom:100px; }
-  .setup-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:20px; }
-  .setup-heading h1 { margin:0 0 5px; font-size:1.55rem; }
-  .setup-heading p { max-width:680px; margin:0; color:var(--text-muted); line-height:1.5; }
-  .setup-steps { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 22px; }
-  .setup-steps a { display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border:1px solid var(--border-color); border-radius:999px; color:var(--text-color); text-decoration:none; background:var(--surface-color); font-size:.82rem; font-weight:650; }
-  .setup-steps a:hover { border-color:var(--primary-color); color:var(--primary-color); }
-  .setup-steps span { display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background:var(--primary-subtle); color:var(--primary-color); font-size:.72rem; }
-  .setup-card { margin-bottom:16px; scroll-margin-top:24px; }
-  .setup-card .card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
-  .setup-card .card-title { display:flex; align-items:center; gap:10px; }
-  .setup-card .card-title i { color:var(--primary-color); }
-  .optional-tag { padding:3px 8px; border-radius:999px; background:var(--surface-raised); color:var(--text-muted); font-size:.68rem; font-weight:650; }
-  .setup-card-intro { margin:5px 0 0; color:var(--text-muted); font-size:.82rem; line-height:1.5; }
-  .setup-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 18px; }
-  .setup-grid .span-two { grid-column:1/-1; }
-  .setup-choice { display:flex; align-items:flex-start; gap:10px; margin:8px 0 14px; cursor:pointer; }
-  .setup-choice input { margin-top:3px; accent-color:var(--primary-color); }
-  .setup-choice span { display:grid; gap:3px; }
-  .setup-choice small, .setup-help { color:var(--text-muted); font-size:.8rem; line-height:1.5; }
-  .setup-help { margin:0 0 14px; }
-  .setup-inline-link { color:var(--primary-color); font-size:.82rem; font-weight:650; }
-  .setup-recipe-table-wrap { overflow-x:auto; margin:0 -4px 12px; }
-  .setup-recipe-table { width:100%; min-width:620px; border-collapse:collapse; font-size:.82rem; }
-  .setup-recipe-table th,.setup-recipe-table td { padding:8px 6px; border-bottom:1px solid var(--border-color); text-align:left; }
-  .setup-recipe-table th { color:var(--text-muted); font-weight:650; white-space:nowrap; }
-  .setup-recipe-table .form-control { min-width:86px; }
-  .setup-recipe-table .recipe-item-select { min-width:190px; }
-  .recipe-empty { padding:18px; border:1px dashed var(--border-color); border-radius:12px; color:var(--text-muted); text-align:center; }
-  .quick-stock-create { margin-top:14px; border:1px dashed var(--border-color); border-radius:12px; }
-  .quick-stock-create summary { padding:12px 14px; color:var(--primary-color); font-weight:700; cursor:pointer; }
-  .quick-stock-body { padding:14px; border-top:1px solid var(--border-color); }
-  .quick-stock-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; }
-  .quick-stock-grid .form-group { margin-bottom:12px; }
-  .quick-addon-fields { display:none; grid-column:1/-1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; }
-  .quick-stock-actions { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:4px; }
-  .addon-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  .addon-choice { display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border-color); border-radius:12px; cursor:pointer; }
-  .addon-choice:has(input:checked) { border-color:var(--primary-color); background:var(--primary-subtle); }
-  .addon-choice input { margin-top:4px; accent-color:var(--primary-color); }
-  .addon-choice span { display:grid; gap:4px; }
-  .addon-choice small { color:var(--text-muted); line-height:1.45; }
-  .image-preview { display:flex; align-items:center; gap:12px; margin-top:10px; color:var(--text-muted); font-size:.8rem; }
-  .image-preview img { width:72px; height:72px; border-radius:12px; object-fit:cover; border:1px solid var(--border-color); }
-  .setup-savebar { position:sticky; bottom:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:14px; margin:18px -12px 0; padding:14px 18px; border:1px solid var(--border-color); border-radius:14px 14px 0 0; background:color-mix(in srgb,var(--surface-color) 94%,transparent); box-shadow:0 -8px 22px rgba(30,20,12,.08); backdrop-filter:blur(10px); }
-  .setup-savebar-note { color:var(--text-muted); font-size:.8rem; }
-  .setup-savebar-actions { display:flex; gap:9px; }
-  @media(max-width:700px) { .setup-grid,.addon-grid { grid-template-columns:1fr; } .quick-stock-grid,.quick-addon-fields { grid-template-columns:1fr; } .setup-heading { display:block; } .setup-heading .btn { margin-top:14px; } }
-  @media(max-width:520px) { .setup-steps { display:grid; grid-template-columns:1fr; } .setup-savebar { margin:14px -8px 0; padding:12px; align-items:stretch; flex-direction:column; } .setup-savebar-actions { display:grid; grid-template-columns:1fr 1fr; } .setup-savebar-actions .btn { justify-content:center; } .quick-stock-actions { align-items:stretch; flex-direction:column; } }
+  .setup-page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding-bottom: 100px;
+  }
+
+  .setup-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 20px;
+  }
+
+  .setup-heading h1 {
+    margin: 0 0 5px;
+    font-size: 1.55rem;
+  }
+
+  .setup-heading p {
+    max-width: 680px;
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .setup-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 18px 0 22px;
+  }
+
+  .setup-steps a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 13px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    color: var(--text-color);
+    text-decoration: none;
+    background: var(--surface-color);
+    font-size: .82rem;
+    font-weight: 650;
+  }
+
+  .setup-steps a:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  .setup-steps span {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-subtle);
+    color: var(--primary-color);
+    font-size: .72rem;
+  }
+
+  .setup-card {
+    margin-bottom: 16px;
+    scroll-margin-top: 24px;
+  }
+
+  .setup-card .card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .setup-card .card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .setup-card .card-title i {
+    color: var(--primary-color);
+  }
+
+  .optional-tag {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    font-size: .68rem;
+    font-weight: 650;
+  }
+
+  .setup-card-intro {
+    margin: 5px 0 0;
+    color: var(--text-muted);
+    font-size: .82rem;
+    line-height: 1.5;
+  }
+
+  .setup-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 18px;
+  }
+
+  .setup-grid .span-two {
+    grid-column: 1/-1;
+  }
+
+  .setup-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 8px 0 14px;
+    cursor: pointer;
+  }
+
+  .setup-choice input {
+    margin-top: 3px;
+    accent-color: var(--primary-color);
+  }
+
+  .setup-choice span {
+    display: grid;
+    gap: 3px;
+  }
+
+  .setup-choice small,
+  .setup-help {
+    color: var(--text-muted);
+    font-size: .8rem;
+    line-height: 1.5;
+  }
+
+  .setup-help {
+    margin: 0 0 14px;
+  }
+
+  .setup-inline-link {
+    color: var(--primary-color);
+    font-size: .82rem;
+    font-weight: 650;
+  }
+
+  .setup-recipe-table-wrap {
+    overflow-x: auto;
+    margin: 0 -4px 12px;
+  }
+
+  .setup-recipe-table {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+    font-size: .82rem;
+  }
+
+  .setup-recipe-table th,
+  .setup-recipe-table td {
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+  }
+
+  .setup-recipe-table th {
+    color: var(--text-muted);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .setup-recipe-table .form-control {
+    min-width: 86px;
+  }
+
+  .setup-recipe-table .recipe-item-select {
+    min-width: 190px;
+  }
+
+  .recipe-empty {
+    padding: 18px;
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .quick-stock-create {
+    margin-top: 14px;
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+  }
+
+  .quick-stock-create summary {
+    padding: 12px 14px;
+    color: var(--primary-color);
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .quick-stock-body {
+    padding: 14px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .quick-stock-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+  }
+
+  .quick-stock-grid .form-group {
+    margin-bottom: 12px;
+  }
+
+  .quick-addon-fields {
+    display: none;
+    grid-column: 1/-1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+  }
+
+  .quick-stock-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 4px;
+  }
+
+  .addon-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .addon-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+  }
+
+  .addon-choice:has(input:checked) {
+    border-color: var(--primary-color);
+    background: var(--primary-subtle);
+  }
+
+  .addon-choice input {
+    margin-top: 4px;
+    accent-color: var(--primary-color);
+  }
+
+  .addon-choice span {
+    display: grid;
+    gap: 4px;
+  }
+
+  .addon-choice small {
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+
+  .image-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    color: var(--text-muted);
+    font-size: .8rem;
+  }
+
+  .image-preview img {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid var(--border-color);
+  }
+
+  .setup-savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 18px -12px 0;
+    padding: 14px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px 14px 0 0;
+    background: color-mix(in srgb, var(--surface-color) 94%, transparent);
+    box-shadow: 0 -8px 22px rgba(30, 20, 12, .08);
+    backdrop-filter: blur(10px);
+  }
+
+  .setup-savebar-note {
+    color: var(--text-muted);
+    font-size: .8rem;
+  }
+
+  .setup-savebar-actions {
+    display: flex;
+    gap: 9px;
+  }
+
+  @media(max-width:700px) {
+
+    .setup-grid,
+    .addon-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .quick-stock-grid,
+    .quick-addon-fields {
+      grid-template-columns: 1fr;
+    }
+
+    .setup-heading {
+      display: block;
+    }
+
+    .setup-heading .btn {
+      margin-top: 14px;
+    }
+  }
+
+  @media(max-width:520px) {
+    .setup-steps {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .setup-savebar {
+      margin: 14px -8px 0;
+      padding: 12px;
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .setup-savebar-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .setup-savebar-actions .btn {
+      justify-content: center;
+    }
+
+    .quick-stock-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  }
 </style>
 
 <div class="setup-page">
@@ -178,14 +487,23 @@ layoutHeader('Ordering');
     <input type="hidden" name="product_id" value="<?= $productId ?>">
 
     <section class="card setup-card" id="product-details">
-      <div class="card-header"><div><div class="card-title"><i class="fa-solid fa-mug-hot"></i> Product details</div><p class="setup-card-intro">Start with the name, menu category, price, and customer choices.</p></div></div>
+      <div class="card-header">
+        <div>
+          <div class="card-title"><i class="fa-solid fa-mug-hot"></i> Product details</div>
+          <p class="setup-card-intro">Start with the name, menu category, price, and customer choices.</p>
+        </div>
+      </div>
       <div class="card-body">
         <?php if (!$assignableCategories): ?>
-          <div class="alert alert-warning"><i class="fa-solid fa-circle-info"></i><div>Create a menu category before adding products. <a class="setup-inline-link" href="<?= e(APP_URL) ?>/admin/ordering.php">Go to Ordering to add a category</a>.</div></div>
+          <div class="alert alert-warning"><i class="fa-solid fa-circle-info"></i>
+            <div>Create a menu category before adding products. <a class="setup-inline-link" href="<?= e(APP_URL) ?>/admin/ordering.php">Go to Ordering to add a category</a>.</div>
+          </div>
         <?php endif; ?>
         <div class="setup-grid">
           <div class="form-group"><label class="form-label" for="f-name">Product name <span class="required">*</span></label><input class="form-control" id="f-name" name="name" required maxlength="120" value="<?= e((string) $field('name', $product['name'] ?? '')) ?>" placeholder="e.g. Café Latte"></div>
-          <div class="form-group"><label class="form-label" for="f-category">Menu category <span class="required">*</span></label><select class="form-control" id="f-category" name="category_id" required <?= !$assignableCategories ? 'disabled' : '' ?>><option value="">Choose a category</option><?php foreach ($assignableCategories as $category): ?><option value="<?= (int) $category['id'] ?>" <?= (string) $field('category_id', $product['category_id'] ?? $defaultCategoryId) === (string) $category['id'] ? 'selected' : '' ?>><?= e($categoryLabels[(int) $category['id']]) ?></option><?php endforeach; ?></select></div>
+          <div class="form-group"><label class="form-label" for="f-category">Menu category <span class="required">*</span></label><select class="form-control" id="f-category" name="category_id" required <?= !$assignableCategories ? 'disabled' : '' ?>>
+              <option value="">Choose a category</option><?php foreach ($assignableCategories as $category): ?><option value="<?= (int) $category['id'] ?>" <?= (string) $field('category_id', $product['category_id'] ?? $defaultCategoryId) === (string) $category['id'] ? 'selected' : '' ?>><?= e($categoryLabels[(int) $category['id']]) ?></option><?php endforeach; ?>
+            </select></div>
           <div class="form-group"><label class="form-label" for="f-price">Base price (₱) <span class="required">*</span></label><input class="form-control" id="f-price" name="price" type="number" min="0.5" step="0.50" required value="<?= e((string) $field('price', $product['price'] ?? '')) ?>" placeholder="0.00"><small class="text-muted">Drink size price adjustments are managed separately under Drink Sizes.</small></div>
           <div class="form-group"><label class="form-label" for="f-image">Product photo (optional)</label><input class="form-control" id="f-image" name="product_image" type="file" accept="image/jpeg,image/png,image/webp"><small class="text-muted">JPG, PNG, or WEBP up to 2 MB. Leave blank to keep the current photo.</small>
             <?php if (!empty($product['image_path'])): ?><div class="image-preview"><img id="current-image" src="<?= e($imageBase . $product['image_path']) ?>" alt="Current product photo"><span>Current photo</span></div><?php endif; ?><div class="image-preview" id="new-image-wrap" hidden><img id="new-image-preview" alt="New photo preview"><span>New photo preview</span></div>
@@ -203,7 +521,12 @@ layoutHeader('Ordering');
     </section>
 
     <section class="card setup-card" id="product-recipe">
-      <div class="card-header"><div><div class="card-title"><i class="fa-solid fa-boxes-stacked"></i> Stock recipe <span class="optional-tag">Optional</span></div><p class="setup-card-intro">Link ingredients to deduct stock when this product is sold. Leave this section empty if stock is not tracked yet.</p></div></div>
+      <div class="card-header">
+        <div>
+          <div class="card-title"><i class="fa-solid fa-boxes-stacked"></i> Stock recipe <span class="optional-tag">Optional</span></div>
+          <p class="setup-card-intro">Link ingredients to deduct stock when this product is sold. Leave this section empty if stock is not tracked yet.</p>
+        </div>
+      </div>
       <div class="card-body">
         <p class="setup-help">Enter the stock amount used for one serving. For sized drinks, enter the base amount and add an override only when a size uses a different amount. A value of 0 means that size does not use the ingredient.</p>
         <div id="recipe-grid"></div>
@@ -231,19 +554,33 @@ layoutHeader('Ordering');
     </section>
 
     <section class="card setup-card" id="product-addons">
-      <div class="card-header"><div><div class="card-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Customer add-ons <span class="optional-tag">Optional</span></div><p class="setup-card-intro">Choose only the add-ons that make sense for this product. Prices and stock portions are managed once in Inventory.</p></div><a class="setup-inline-link" href="<?= e(APP_URL) ?>/admin/inventory.php">Manage inventory</a></div>
-      <div class="card-body"><div id="addon-choices"></div></div>
+      <div class="card-header">
+        <div>
+          <div class="card-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Customer add-ons <span class="optional-tag">Optional</span></div>
+          <p class="setup-card-intro">Choose only the add-ons that make sense for this product. Prices and stock portions are managed once in Inventory.</p>
+        </div><a class="setup-inline-link" href="<?= e(APP_URL) ?>/admin/inventory.php">Manage inventory</a>
+      </div>
+      <div class="card-body">
+        <div id="addon-choices"></div>
+      </div>
     </section>
 
     <section class="card setup-card" id="product-display">
-      <div class="card-header"><div><div class="card-title"><i class="fa-solid fa-star"></i> Homepage spotlight <span class="optional-tag">Optional</span></div><p class="setup-card-intro">Pin this product to the homepage “Today’s Picks” section.</p></div></div>
+      <div class="card-header">
+        <div>
+          <div class="card-title"><i class="fa-solid fa-star"></i> Homepage spotlight <span class="optional-tag">Optional</span></div>
+          <p class="setup-card-intro">Pin this product to the homepage “Today’s Picks” section.</p>
+        </div>
+      </div>
       <div class="card-body">
         <label class="setup-choice"><input type="checkbox" name="spotlight_pinned" id="spotlight-pinned" value="1" <?= $isPinned ? 'checked' : '' ?> onchange="document.getElementById('spotlight-until-wrap').hidden=!this.checked"><span><strong>Pin to Spotlight</strong><small>Leave the date blank to keep it pinned until you remove it.</small></span></label>
         <div class="form-group" id="spotlight-until-wrap" <?= $isPinned ? '' : 'hidden' ?>><label class="form-label" for="spotlight-until">Automatically unpin on (optional)</label><input class="form-control" id="spotlight-until" type="date" name="spotlight_pinned_until" value="<?= e(substr((string) $field('spotlight_pinned_until', $product['spotlight_pinned_until'] ?? ''), 0, 10)) ?>"></div>
       </div>
     </section>
 
-    <div class="setup-savebar"><span class="setup-savebar-note">Your product, recipe, and add-on choices save together.</span><div class="setup-savebar-actions"><a class="btn btn-ghost" href="<?= e(APP_URL) ?>/admin/ordering.php">Cancel</a><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?= $editing ? 'Save product' : 'Create product' ?></button></div></div>
+    <div class="setup-savebar"><span class="setup-savebar-note">Your product, recipe, and add-on choices save together.</span>
+      <div class="setup-savebar-actions"><a class="btn btn-ghost" href="<?= e(APP_URL) ?>/admin/ordering.php">Cancel</a><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?= $editing ? 'Save product' : 'Create product' ?></button></div>
+    </div>
   </form>
 </div>
 
@@ -257,64 +594,166 @@ layoutHeader('Ordering');
   let recipeRows = RECIPE_START;
   let addonSelection = ADDON_START;
 
-  function htmlEscape(value) { const node=document.createElement('span'); node.textContent=value??''; return node.innerHTML; }
+  function htmlEscape(value) {
+    const node = document.createElement('span');
+    node.textContent = value ?? '';
+    return node.innerHTML;
+  }
+
   function collectRecipeRows() {
     return [...document.querySelectorAll('#recipe-grid tbody tr')].map(row => {
-      const quantities={};
-      row.querySelectorAll('[data-size-key]').forEach(input => { if(input.value!=='') quantities[input.dataset.sizeKey]=input.value; });
-      return {itemId:row.querySelector('.recipe-item').value,quantities};
+      const quantities = {};
+      row.querySelectorAll('[data-size-key]').forEach(input => {
+        if (input.value !== '') quantities[input.dataset.sizeKey] = input.value;
+      });
+      return {
+        itemId: row.querySelector('.recipe-item').value,
+        quantities
+      };
     });
   }
+
   function recipeRowHtml(row) {
-    let html='<tr><td><select class="form-control recipe-item" name="recipe_item_ids[]" required><option value="">Choose stock item</option>';
-    INVENTORY.forEach(item => { html+=`<option value="${Number(item.id)}" ${String(row.itemId)===String(item.id)?'selected':''}>${htmlEscape(item.name)} (${htmlEscape(item.unit)})</option>`; });
-    html+='</select></td>';
-    html+=`<td><input class="form-control" type="number" min="0.001" step="0.001" name="recipe_quantities[default][]" data-size-key="default" value="${htmlEscape(row.quantities?.default??'')}" placeholder="e.g. 0.180"></td>`;
-    if(document.getElementById('f-has-sizes').checked) SIZES.forEach(size=>{const key=`size_${Number(size.id)}`;html+=`<td><input class="form-control" type="number" min="0" step="0.001" name="recipe_quantities[${key}][]" data-size-key="${key}" value="${htmlEscape(row.quantities?.[key]??'')}" placeholder="Use default"></td>`;});
-    return html+`<td><button type="button" class="btn btn-ghost btn-sm" aria-label="Remove ingredient" onclick="removeRecipeRow(this)"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+    let html = '<tr><td><select class="form-control recipe-item" name="recipe_item_ids[]" required><option value="">Choose stock item</option>';
+    INVENTORY.forEach(item => {
+      html += `<option value="${Number(item.id)}" ${String(row.itemId)===String(item.id)?'selected':''}>${htmlEscape(item.name)} (${htmlEscape(item.unit)})</option>`;
+    });
+    html += '</select></td>';
+    html += `<td><input class="form-control" type="number" min="0.001" step="0.001" name="recipe_quantities[default][]" data-size-key="default" value="${htmlEscape(row.quantities?.default??'')}" placeholder="e.g. 0.180"></td>`;
+    if (document.getElementById('f-has-sizes').checked) SIZES.forEach(size => {
+      const key = `size_${Number(size.id)}`;
+      html += `<td><input class="form-control" type="number" min="0" step="0.001" name="recipe_quantities[${key}][]" data-size-key="${key}" value="${htmlEscape(row.quantities?.[key]??'')}" placeholder="Use default"></td>`;
+    });
+    return html + `<td><button type="button" class="btn btn-ghost btn-sm" aria-label="Remove ingredient" onclick="removeRecipeRow(this)"><i class="fa-solid fa-trash"></i></button></td></tr>`;
   }
+
   function renderRecipeRows() {
-    const target=document.getElementById('recipe-grid');
-    if(!INVENTORY.length) { target.innerHTML='<div class="recipe-empty">No stock items yet. Add one below or create it from Inventory.</div>'; return; }
-    let html='<div class="setup-recipe-table-wrap"><table class="setup-recipe-table"><thead><tr><th>Stock item</th><th>Amount per serving</th>';
-    if(document.getElementById('f-has-sizes').checked) SIZES.forEach(size=>{html+=`<th>${htmlEscape(size.label)} override</th>`;});
-    html+='<th></th></tr></thead><tbody>'+recipeRows.map(recipeRowHtml).join('')+'</tbody></table></div>';
-    target.innerHTML=html;
+    const target = document.getElementById('recipe-grid');
+    if (!INVENTORY.length) {
+      target.innerHTML = '<div class="recipe-empty">No stock items yet. Add one below or create it from Inventory.</div>';
+      return;
+    }
+    let html = '<div class="setup-recipe-table-wrap"><table class="setup-recipe-table"><thead><tr><th>Stock item</th><th>Amount per serving</th>';
+    if (document.getElementById('f-has-sizes').checked) SIZES.forEach(size => {
+      html += `<th>${htmlEscape(size.label)} override</th>`;
+    });
+    html += '<th></th></tr></thead><tbody>' + recipeRows.map(recipeRowHtml).join('') + '</tbody></table></div>';
+    target.innerHTML = html;
   }
-  function addRecipeRow() { recipeRows=collectRecipeRows();recipeRows.push({itemId:'',quantities:{}});renderRecipeRows(); }
-  function removeRecipeRow(button) { button.closest('tr').remove();recipeRows=collectRecipeRows(); }
+
+  function addRecipeRow() {
+    recipeRows = collectRecipeRows();
+    recipeRows.push({
+      itemId: '',
+      quantities: {}
+    });
+    renderRecipeRows();
+  }
+
+  function removeRecipeRow(button) {
+    button.closest('tr').remove();
+    recipeRows = collectRecipeRows();
+  }
+
   function renderAddons() {
-    const target=document.getElementById('addon-choices');
-    if(!ADDONS.length) { target.innerHTML='<div class="recipe-empty">No stocked add-ons are available yet. Create one from Inventory or in the stock recipe section above.</div>';return; }
-    const selected=new Set(addonSelection.map(Number));
-    target.innerHTML='<div class="addon-grid">'+ADDONS.map(addon=>`<label class="addon-choice"><input type="checkbox" name="setup_addon_ids[]" value="${Number(addon.id)}" ${selected.has(Number(addon.id))?'checked':''}><span><strong>${htmlEscape(addon.name)} · ₱${Number(addon.price).toFixed(2)}</strong><small>Stock use: ${htmlEscape(addon.stock_summary||'linked inventory item')}</small></span></label>`).join('')+'</div>';
+    const target = document.getElementById('addon-choices');
+    if (!ADDONS.length) {
+      target.innerHTML = '<div class="recipe-empty">No stocked add-ons are available yet. Create one from Inventory or in the stock recipe section above.</div>';
+      return;
+    }
+    const selected = new Set(addonSelection.map(Number));
+    target.innerHTML = '<div class="addon-grid">' + ADDONS.map(addon => `<label class="addon-choice"><input type="checkbox" name="setup_addon_ids[]" value="${Number(addon.id)}" ${selected.has(Number(addon.id))?'checked':''}><span><strong>${htmlEscape(addon.name)} · ₱${Number(addon.price).toFixed(2)}</strong><small>Stock use: ${htmlEscape(addon.stock_summary||'linked inventory item')}</small></span></label>`).join('') + '</div>';
   }
-  document.getElementById('f-has-sizes').addEventListener('change',()=>{recipeRows=collectRecipeRows();renderRecipeRows();});
-  function toggleQuickAddonFields() { document.getElementById('quick-addon-fields').style.display=document.getElementById('quick-stock-is-addon').checked?'grid':'none'; }
-  document.getElementById('quick-stock-unit').addEventListener('input',function(){document.getElementById('quick-addon-unit').textContent=this.value.trim()||'unit';});
+  document.getElementById('f-has-sizes').addEventListener('change', () => {
+    recipeRows = collectRecipeRows();
+    renderRecipeRows();
+  });
+
+  function toggleQuickAddonFields() {
+    document.getElementById('quick-addon-fields').style.display = document.getElementById('quick-stock-is-addon').checked ? 'grid' : 'none';
+  }
+  document.getElementById('quick-stock-unit').addEventListener('input', function() {
+    document.getElementById('quick-addon-unit').textContent = this.value.trim() || 'unit';
+  });
+
   function saveQuickStockItem() {
-    const name=document.getElementById('quick-stock-name').value.trim(),unit=document.getElementById('quick-stock-unit').value.trim();
-    const isAddon=document.getElementById('quick-stock-is-addon').checked,addonName=document.getElementById('quick-addon-name').value.trim();
-    if(!name||!unit){showToast('Enter a stock item name and unit.','warning');return;}
-    if(INVENTORY.some(item=>item.name.trim().toLowerCase()===name.toLowerCase()&&item.unit.trim().toLowerCase()===unit.toLowerCase())){showToast('That stock item already exists. Select it in the recipe and restock it from Inventory.','warning');return;}
-    if(isAddon&&(!addonName||Number(document.getElementById('quick-addon-quantity').value)<=0)){showToast('Enter the add-on name and stock portion.','warning');return;}
-    const button=document.getElementById('quick-stock-save');button.disabled=true;button.textContent='Saving…';
-    const data=new FormData();
-    data.append('name',name);data.append('unit',unit);data.append('quantity_on_hand',document.getElementById('quick-stock-quantity').value||'0');
-    data.append('reorder_level',document.getElementById('quick-stock-reorder').value||'0');data.append('cost_per_unit',document.getElementById('quick-stock-cost').value||'0');
-    data.append('is_addon',isAddon?'1':'0');data.append('addon_name',addonName);data.append('addon_price',document.getElementById('quick-addon-price').value||'0');data.append('addon_quantity_per_unit',document.getElementById('quick-addon-quantity').value||'0');data.append('csrf_token','<?= csrfToken() ?>');
-    fetch('<?= e(APP_URL) ?>/api/save_inventory_item.php',{method:'POST',body:data}).then(response=>response.json()).then(result=>{
-      if(!result.success)throw new Error(result.error||'Could not save the stock item.');
-      INVENTORY.push({id:Number(result.item.id),name:result.item.name,unit:result.item.unit});INVENTORY.sort((a,b)=>a.name.localeCompare(b.name));
-      recipeRows=collectRecipeRows();recipeRows.push({itemId:String(result.item.id),quantities:{}});renderRecipeRows();
-      if(result.addon){ADDONS.push(result.addon);ADDONS.sort((a,b)=>a.name.localeCompare(b.name));addonSelection=[...document.querySelectorAll('#addon-choices input:checked')].map(input=>Number(input.value));addonSelection.push(Number(result.addon.id));renderAddons();}
-      ['quick-stock-name','quick-stock-unit'].forEach(id=>document.getElementById(id).value='');
-      ['quick-stock-quantity','quick-stock-reorder','quick-stock-cost','quick-addon-price'].forEach(id=>document.getElementById(id).value='0');
-      document.getElementById('quick-stock-is-addon').checked=false;document.getElementById('quick-addon-name').value='';document.getElementById('quick-addon-quantity').value='0.010';toggleQuickAddonFields();
-      showToast(`${name} added. Enter its amount per serving in the recipe.`,'success');
-    }).catch(error=>showToast(error.message||'Could not save the stock item.','error')).finally(()=>{button.disabled=false;button.textContent='Save stock item';});
+    const name = document.getElementById('quick-stock-name').value.trim(),
+      unit = document.getElementById('quick-stock-unit').value.trim();
+    const isAddon = document.getElementById('quick-stock-is-addon').checked,
+      addonName = document.getElementById('quick-addon-name').value.trim();
+    if (!name || !unit) {
+      showToast('Enter a stock item name and unit.', 'warning');
+      return;
+    }
+    if (INVENTORY.some(item => item.name.trim().toLowerCase() === name.toLowerCase() && item.unit.trim().toLowerCase() === unit.toLowerCase())) {
+      showToast('That stock item already exists. Select it in the recipe and restock it from Inventory.', 'warning');
+      return;
+    }
+    if (isAddon && (!addonName || Number(document.getElementById('quick-addon-quantity').value) <= 0)) {
+      showToast('Enter the add-on name and stock portion.', 'warning');
+      return;
+    }
+    const button = document.getElementById('quick-stock-save');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    const data = new FormData();
+    data.append('name', name);
+    data.append('unit', unit);
+    data.append('quantity_on_hand', document.getElementById('quick-stock-quantity').value || '0');
+    data.append('reorder_level', document.getElementById('quick-stock-reorder').value || '0');
+    data.append('cost_per_unit', document.getElementById('quick-stock-cost').value || '0');
+    data.append('is_addon', isAddon ? '1' : '0');
+    data.append('addon_name', addonName);
+    data.append('addon_price', document.getElementById('quick-addon-price').value || '0');
+    data.append('addon_quantity_per_unit', document.getElementById('quick-addon-quantity').value || '0');
+    data.append('csrf_token', '<?= csrfToken() ?>');
+    fetch('<?= e(APP_URL) ?>/api/save_inventory_item.php', {
+      method: 'POST',
+      body: data
+    }).then(response => response.json()).then(result => {
+      if (!result.success) throw new Error(result.error || 'Could not save the stock item.');
+      INVENTORY.push({
+        id: Number(result.item.id),
+        name: result.item.name,
+        unit: result.item.unit
+      });
+      INVENTORY.sort((a, b) => a.name.localeCompare(b.name));
+      recipeRows = collectRecipeRows();
+      recipeRows.push({
+        itemId: String(result.item.id),
+        quantities: {}
+      });
+      renderRecipeRows();
+      if (result.addon) {
+        ADDONS.push(result.addon);
+        ADDONS.sort((a, b) => a.name.localeCompare(b.name));
+        addonSelection = [...document.querySelectorAll('#addon-choices input:checked')].map(input => Number(input.value));
+        addonSelection.push(Number(result.addon.id));
+        renderAddons();
+      }
+      ['quick-stock-name', 'quick-stock-unit'].forEach(id => document.getElementById(id).value = '');
+      ['quick-stock-quantity', 'quick-stock-reorder', 'quick-stock-cost', 'quick-addon-price'].forEach(id => document.getElementById(id).value = '0');
+      document.getElementById('quick-stock-is-addon').checked = false;
+      document.getElementById('quick-addon-name').value = '';
+      document.getElementById('quick-addon-quantity').value = '0.010';
+      toggleQuickAddonFields();
+      showToast(`${name} added. Enter its amount per serving in the recipe.`, 'success');
+    }).catch(error => showToast(error.message || 'Could not save the stock item.', 'error')).finally(() => {
+      button.disabled = false;
+      button.textContent = 'Save stock item';
+    });
   }
-  document.getElementById('f-image').addEventListener('change',function(){const file=this.files?.[0],wrap=document.getElementById('new-image-wrap');if(!file){wrap.hidden=true;return;}document.getElementById('new-image-preview').src=URL.createObjectURL(file);wrap.hidden=false;});
-  renderRecipeRows();renderAddons();
+  document.getElementById('f-image').addEventListener('change', function() {
+    const file = this.files?.[0],
+      wrap = document.getElementById('new-image-wrap');
+    if (!file) {
+      wrap.hidden = true;
+      return;
+    }
+    document.getElementById('new-image-preview').src = URL.createObjectURL(file);
+    wrap.hidden = false;
+  });
+  renderRecipeRows();
+  renderAddons();
 </script>
 <?php layoutFooter(); ?>

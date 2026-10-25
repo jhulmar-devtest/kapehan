@@ -156,7 +156,10 @@ function paymongoHandlePaidEvent(PDO $db, array $event): string
 
   $paidPayment = null;
   foreach ((array) ($attrs['payments'] ?? []) as $p) {
-    if (is_array($p) && (($p['attributes']['status'] ?? '') === 'paid')) { $paidPayment = $p; break; }
+    if (is_array($p) && (($p['attributes']['status'] ?? '') === 'paid')) {
+      $paidPayment = $p;
+      break;
+    }
   }
   $payId     = (string) ($paidPayment['id'] ?? '');
   $paidCents = isset($paidPayment['attributes']['amount']) ? (int) $paidPayment['attributes']['amount'] : null;

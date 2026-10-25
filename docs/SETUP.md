@@ -21,9 +21,11 @@ anyone who clones the repo to try it out.
    - The folder name matters — see step 4.
 
 2. **Install dependencies:**
+
    ```
    composer install
    ```
+
    This creates the `vendor/` folder (PHPMailer). It's gitignored on purpose —
    everyone runs this command themselves instead of committing it.
 
@@ -37,10 +39,12 @@ anyone who clones the repo to try it out.
      given migration was added (see the date in each migration's filename).
 
 4. **Create your local secrets file:**
+
    ```
    copy config\secrets.example.php config\secrets.php      (Windows)
    cp config/secrets.example.php config/secrets.php         (Mac/Linux)
    ```
+
    Open `config/secrets.php` and fill in:
    - Your MySQL username/password (Laragon/XAMPP default: `root` / empty password — already set).
    - `APP_BASE_PATH` — must match your folder name. If you cloned into a
@@ -74,12 +78,12 @@ values forward into your own `secrets.php`.
 
 ## What's safe to commit, what isn't
 
-| Committed (tracked by git) | Not committed (gitignored) |
-|---|---|
-| All PHP source, `database/kapehan_db.sql`, `database/migrations/*.sql` | `config/secrets.php` |
-| `composer.json`, `composer.lock` | `vendor/` (run `composer install`) |
-| `uploads/products/*` (seed images matching the sample data) | `.claude/settings.local.json` |
-| `config/secrets.example.php` (template, no real values) | |
+| Committed (tracked by git)                                             | Not committed (gitignored)         |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| All PHP source, `database/kapehan_db.sql`, `database/migrations/*.sql` | `config/secrets.php`               |
+| `composer.json`, `composer.lock`                                       | `vendor/` (run `composer install`) |
+| `uploads/products/*` (seed images matching the sample data)            | `.claude/settings.local.json`      |
+| `config/secrets.example.php` (template, no real values)                |                                    |
 
 ## Database migrations
 

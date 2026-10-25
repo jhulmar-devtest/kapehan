@@ -19,7 +19,8 @@
  * Use this on any page that needs a logged-in user,
  * before checking their specific role.
  */
-function requireLogin(): void {
+function requireLogin(): void
+{
   if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
     header('Location: ' . APP_URL . '/login.php');
     exit;
@@ -39,7 +40,8 @@ function requireLogin(): void {
  *
  * If role doesn't match → HTTP 403 Forbidden.
  */
-function requireRole(string ...$roles): void {
+function requireRole(string ...$roles): void
+{
   if (!isLoggedIn()) {
     // Send unauthenticated visitors to the login screen that actually
     // matches what they were trying to reach, not always the customer
@@ -93,7 +95,8 @@ function requireRole(string ...$roles): void {
  * Returns true/false — useful for showing/hiding UI elements.
  * Does NOT redirect.
  */
-function isLoggedIn(): bool {
+function isLoggedIn(): bool
+{
   if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) return false;
 
   $role = (string) $_SESSION['role'];
@@ -127,7 +130,8 @@ function isLoggedIn(): bool {
  *
  * Returns the role string of the logged-in user, or null.
  */
-function currentRole(): ?string {
+function currentRole(): ?string
+{
   return $_SESSION['role'] ?? null;
 }
 
@@ -136,7 +140,8 @@ function currentRole(): ?string {
  *
  * Returns the ID of the logged-in user, or null.
  */
-function currentUserId(): ?int {
+function currentUserId(): ?int
+{
   return isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 }
 
@@ -150,7 +155,8 @@ function currentUserId(): ?int {
  * after login. This prevents "session fixation" attacks where an
  * attacker pre-sets a session ID before you log in.
  */
-function loginUser(array $user, string $role): void {
+function loginUser(array $user, string $role): void
+{
   // Regenerate session ID to prevent session fixation
   session_regenerate_id(true);
 
@@ -196,7 +202,8 @@ function loginUser(array $user, string $role): void {
  *
  * $reason: 'manual' | 'timeout' | 'deactivated'
  */
-function closeCashierSession(string $reason = 'manual'): void {
+function closeCashierSession(string $reason = 'manual'): void
+{
   if (!empty($_SESSION['cashier_session_id'])) {
     closeCashierSessionRow((int)$_SESSION['cashier_session_id'], $reason);
   }
@@ -212,7 +219,8 @@ function closeCashierSession(string $reason = 'manual'): void {
  *
  * Returns true if this call closed the row (false if it was already closed).
  */
-function closeCashierSessionRow(int $rowId, string $reason = 'manual'): bool {
+function closeCashierSessionRow(int $rowId, string $reason = 'manual'): bool
+{
   try {
     $db = Database::getInstance();
     if ($reason === 'timeout') {
@@ -244,7 +252,8 @@ function closeCashierSessionRow(int $rowId, string $reason = 'manual'): bool {
  * one UPDATE per minute per session. This is what lets closeStaleCashierSessions()
  * tell an abandoned session (closed browser, walked away) from a live one.
  */
-function touchCashierSession(): void {
+function touchCashierSession(): void
+{
   if (empty($_SESSION['cashier_session_id'])) return;
   if (time() - ($_SESSION['_cs_touch'] ?? 0) < 60) return;
   try {
@@ -268,7 +277,8 @@ function touchCashierSession(): void {
  * 'logout_timeout' audit_log entry. Safe to call often; it is a no-op when
  * nothing is stale.
  */
-function closeStaleCashierSessions(PDO $db): void {
+function closeStaleCashierSessions(PDO $db): void
+{
   try {
     $stmt = $db->prepare(
       "SELECT id, cashier_id FROM cashier_sessions
@@ -297,7 +307,8 @@ function closeStaleCashierSessions(PDO $db): void {
  * Writes the 'logout_timeout' audit entry and, for cashiers, closes the
  * cashier_sessions row. (A manual logout does the same via logout.php.)
  */
-function recordSessionTimeout(?string $role, ?int $userId, ?int $cashierSessionId): void {
+function recordSessionTimeout(?string $role, ?int $userId, ?int $cashierSessionId): void
+{
   if (!$role || !$userId) return;
   if ($role === ROLE_CASHIER && $cashierSessionId) {
     closeCashierSessionRow($cashierSessionId, 'timeout');
@@ -311,7 +322,8 @@ function recordSessionTimeout(?string $role, ?int $userId, ?int $cashierSessionI
  * Destroys the session and redirects to login.
  * Always call this on logout.php.
  */
-function logoutUser(): void {
+function logoutUser(): void
+{
   $role = $_SESSION['role'] ?? null;
 
   // Close cashier session tracking before wiping the session
@@ -360,7 +372,8 @@ function logoutUser(): void {
  *
  * After login, send each role to their home page.
  */
-function redirectByRole(): void {
+function redirectByRole(): void
+{
   switch ($_SESSION['role']) {
     case ROLE_ADMIN:
       header('Location: ' . APP_URL . '/admin/sales.php');

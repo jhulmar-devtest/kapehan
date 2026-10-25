@@ -44,10 +44,18 @@ $offset    = max(0, min((int) ($_GET['offset'] ?? 0), $maxOffset));
 
 $now = new DateTime();
 switch ($period) {
-  case 'monthly':   $now->modify("-{$offset} months"); break;
-  case 'quarterly': $now->modify('-' . ($offset * 3) . ' months'); break;
-  case 'yearly':    $now->modify("-{$offset} years"); break;
-  default:          $now->modify("-{$offset} days"); break; // daily
+  case 'monthly':
+    $now->modify("-{$offset} months");
+    break;
+  case 'quarterly':
+    $now->modify('-' . ($offset * 3) . ' months');
+    break;
+  case 'yearly':
+    $now->modify("-{$offset} years");
+    break;
+  default:
+    $now->modify("-{$offset} days");
+    break; // daily
 }
 
 $qStartMonth = ((int) ceil(((int) $now->format('n')) / 3) - 1) * 3 + 1;

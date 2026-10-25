@@ -283,14 +283,54 @@ $ordersUrl = APP_URL . '/orders.php';
       background: linear-gradient(120deg, #5f351e, #a46a3b);
     }
 
-    .loyalty-balance strong { display: block; font-size: 1.65rem; line-height: 1.1; }
-    .loyalty-balance span { display: block; font-size: .82rem; opacity: .88; margin-top: 4px; }
-    .loyalty-history { width: 100%; border-collapse: collapse; font-size: .84rem; }
-    .loyalty-history th, .loyalty-history td { padding: 11px 8px; text-align: left; border-bottom: 1px solid var(--border-color); }
-    .loyalty-history th { color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
-    .loyalty-history .points-plus { color: #18794e; font-weight: 800; white-space: nowrap; }
-    .loyalty-history .points-minus { color: #b42318; font-weight: 800; white-space: nowrap; }
-    .loyalty-history-wrap { overflow-x: auto; }
+    .loyalty-balance strong {
+      display: block;
+      font-size: 1.65rem;
+      line-height: 1.1;
+    }
+
+    .loyalty-balance span {
+      display: block;
+      font-size: .82rem;
+      opacity: .88;
+      margin-top: 4px;
+    }
+
+    .loyalty-history {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .84rem;
+    }
+
+    .loyalty-history th,
+    .loyalty-history td {
+      padding: 11px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .loyalty-history th {
+      color: var(--text-muted);
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .loyalty-history .points-plus {
+      color: #18794e;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .loyalty-history .points-minus {
+      color: #b42318;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .loyalty-history-wrap {
+      overflow-x: auto;
+    }
 
     /* ── Password modal ── */
     .modal-overlay {
@@ -542,7 +582,13 @@ $ordersUrl = APP_URL . '/orders.php';
           <?php else: ?>
             <div class="loyalty-history-wrap">
               <table class="loyalty-history">
-                <thead><tr><th>Activity</th><th>Date</th><th>Points</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Activity</th>
+                    <th>Date</th>
+                    <th>Points</th>
+                  </tr>
+                </thead>
                 <tbody>
                   <?php foreach ($loyaltyEntries as $entry):
                     $labels = [

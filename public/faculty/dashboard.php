@@ -53,7 +53,7 @@ $stepMap = [
   STATUS_PREPARING => 2,
   STATUS_READY     => 3,
   STATUS_CLAIMED   => 4
-];  
+];
 
 $steps = [
   ['icon' => 'fa-check',        'label' => 'Confirmed'],

@@ -106,15 +106,46 @@ if ($selectedProduct) {
 layoutHeader('Recipes');
 ?>
 <style>
-  .recipe-help { margin-bottom: 18px; }
-  .recipe-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; }
-  .recipe-table-wrap { overflow-x: auto; }
-  .recipe-qty { width: 150px; min-width: 120px; }
-  .recipe-size-hint { color: var(--text-muted); font-size: .78rem; white-space: nowrap; }
-  .recipe-empty { text-align: center; padding: 28px 16px; color: var(--text-muted); }
+  .recipe-help {
+    margin-bottom: 18px;
+  }
+
+  .recipe-selectors {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-items: end;
+  }
+
+  .recipe-table-wrap {
+    overflow-x: auto;
+  }
+
+  .recipe-qty {
+    width: 150px;
+    min-width: 120px;
+  }
+
+  .recipe-size-hint {
+    color: var(--text-muted);
+    font-size: .78rem;
+    white-space: nowrap;
+  }
+
+  .recipe-empty {
+    text-align: center;
+    padding: 28px 16px;
+    color: var(--text-muted);
+  }
+
   @media (max-width: 640px) {
-    .recipe-selectors { grid-template-columns: 1fr; }
-    .recipe-qty { width: 126px; }
+    .recipe-selectors {
+      grid-template-columns: 1fr;
+    }
+
+    .recipe-qty {
+      width: 126px;
+    }
   }
 </style>
 
@@ -210,7 +241,9 @@ layoutHeader('Recipes');
                   : ($hasVariantAmount ? $selectedRecipe[$itemId] : '');
               ?>
                 <tr>
-                  <td><strong><?= e($item['name']) ?></strong><div class="text-muted"><?= e($item['unit']) ?> per stock unit</div></td>
+                  <td><strong><?= e($item['name']) ?></strong>
+                    <div class="text-muted"><?= e($item['unit']) ?> per stock unit</div>
+                  </td>
                   <td><?= number_format((float) $item['quantity_on_hand'], 3) ?> <?= e($item['unit']) ?></td>
                   <?php if ($selectedSize !== ''): ?>
                     <td class="recipe-size-hint">

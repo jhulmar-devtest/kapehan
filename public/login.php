@@ -41,10 +41,12 @@ if (!checkLoginAttempts($identifier)) {
 
 $db   = Database::getInstance();
 $expiredRegistration = false;
-foreach ([
-  ['table' => 'students', 'identifier' => 'student_id_no'],
-  ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
-] as $accountConfig) {
+foreach (
+  [
+    ['table' => 'students', 'identifier' => 'student_id_no'],
+    ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
+  ] as $accountConfig
+) {
   $expiredCheck = $db->prepare(
     "SELECT id FROM {$accountConfig['table']}
      WHERE ({$accountConfig['identifier']} = ? OR email = ?)

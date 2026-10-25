@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -65,12 +66,160 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="<?= APP_URL ?>/../assets/css/variables.css">
   <style>
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:32px 16px;display:grid;place-items:center;background:var(--background-color);color:var(--text-color);font-family:"DM Sans",system-ui,sans-serif}.report-card{width:min(100%,560px);padding:28px;background:var(--surface-color);border:1px solid var(--border-color);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg)}.report-brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}.report-brand img{width:44px;height:44px;object-fit:contain;border-radius:50%;background:var(--primary-color)}.report-brand strong{display:block}.report-brand small{color:var(--text-muted)}h1{margin:0 0 8px;font-size:1.45rem}.intro{margin:0 0 22px;color:var(--text-secondary);font-size:.92rem;line-height:1.55}.form-grid{display:grid;gap:15px}.field{display:grid;gap:6px}.field label{font-size:.83rem;font-weight:700}.field input,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font:inherit;color:var(--text-color);background:var(--surface-color)}.field textarea{min-height:95px;resize:vertical}.notice,.alert{padding:12px 14px;border-radius:var(--radius-md);font-size:.85rem;line-height:1.5}.notice{margin-top:16px;background:var(--surface-raised);color:var(--text-secondary)}.alert{margin:0 0 16px}.alert-error{background:var(--color-error-bg);color:var(--color-error)}.alert-success{background:var(--color-success-bg);color:var(--color-success)}.actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:20px}.actions a{color:var(--primary-color);font-size:.88rem;font-weight:700}.submit{border:0;border-radius:var(--radius-md);padding:11px 16px;background:var(--primary-color);color:var(--text-on-primary);font:inherit;font-weight:700;cursor:pointer}.submit:hover{background:var(--primary-dark)}
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 32px 16px;
+      display: grid;
+      place-items: center;
+      background: var(--background-color);
+      color: var(--text-color);
+      font-family: "DM Sans", system-ui, sans-serif
+    }
+
+    .report-card {
+      width: min(100%, 560px);
+      padding: 28px;
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg)
+    }
+
+    .report-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px
+    }
+
+    .report-brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      border-radius: 50%;
+      background: var(--primary-color)
+    }
+
+    .report-brand strong {
+      display: block
+    }
+
+    .report-brand small {
+      color: var(--text-muted)
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.45rem
+    }
+
+    .intro {
+      margin: 0 0 22px;
+      color: var(--text-secondary);
+      font-size: .92rem;
+      line-height: 1.55
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 15px
+    }
+
+    .field {
+      display: grid;
+      gap: 6px
+    }
+
+    .field label {
+      font-size: .83rem;
+      font-weight: 700
+    }
+
+    .field input,
+    .field textarea {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font: inherit;
+      color: var(--text-color);
+      background: var(--surface-color)
+    }
+
+    .field textarea {
+      min-height: 95px;
+      resize: vertical
+    }
+
+    .notice,
+    .alert {
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      font-size: .85rem;
+      line-height: 1.5
+    }
+
+    .notice {
+      margin-top: 16px;
+      background: var(--surface-raised);
+      color: var(--text-secondary)
+    }
+
+    .alert {
+      margin: 0 0 16px
+    }
+
+    .alert-error {
+      background: var(--color-error-bg);
+      color: var(--color-error)
+    }
+
+    .alert-success {
+      background: var(--color-success-bg);
+      color: var(--color-success)
+    }
+
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 20px
+    }
+
+    .actions a {
+      color: var(--primary-color);
+      font-size: .88rem;
+      font-weight: 700
+    }
+
+    .submit {
+      border: 0;
+      border-radius: var(--radius-md);
+      padding: 11px 16px;
+      background: var(--primary-color);
+      color: var(--text-on-primary);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer
+    }
+
+    .submit:hover {
+      background: var(--primary-dark)
+    }
   </style>
 </head>
+
 <body>
   <main class="report-card">
-    <div class="report-brand"><img src="<?= APP_URL ?>/../assets/images/logo.png" alt=""><div><strong><?= e(APP_NAME) ?></strong><small>Account access help</small></div></div>
+    <div class="report-brand"><img src="<?= APP_URL ?>/../assets/images/logo.png" alt="">
+      <div><strong><?= e(APP_NAME) ?></strong><small>Account access help</small></div>
+    </div>
     <h1>Report an ID conflict</h1>
     <p class="intro">Use this form if registration says your student or faculty ID is already in use, but you believe you should be able to register.</p>
     <?php if ($submitted): ?>
@@ -90,4 +239,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php endif; ?>
   </main>
 </body>
+
 </html>

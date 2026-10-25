@@ -14,7 +14,8 @@
 //   SQL queries by gluing user input directly into a string.
 // ============================================================
 
-class Database {
+class Database
+{
   // Holds the single PDO connection object.
   // 'static' means it belongs to the class, not an instance.
   // '?PDO' means it can be null (before first connection) or a PDO object.
@@ -22,14 +23,14 @@ class Database {
 
   // Private constructor prevents anyone from doing: new Database()
   // They MUST use Database::getInstance() instead.
-  private function __construct() {
-  }
+  private function __construct() {}
 
   /**
    * Returns the shared PDO connection.
    * Creates it on the first call; returns the existing one after that.
    */
-  public static function getInstance(): PDO {
+  public static function getInstance(): PDO
+  {
     if (self::$instance === null) {
       // DSN = Data Source Name — tells PDO what to connect to
       $dsn = sprintf(
@@ -69,6 +70,5 @@ class Database {
   }
 
   // Prevent cloning the singleton
-  private function __clone() {
-  }
+  private function __clone() {}
 }

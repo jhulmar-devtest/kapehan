@@ -27,7 +27,8 @@
  * Returns the current CSRF token, creating it if it doesn't exist.
  * The token is stored in the session and is unique per session.
  */
-function csrfToken(): string {
+function csrfToken(): string
+{
   if (empty($_SESSION['csrf_token'])) {
     // random_bytes(32) generates 32 truly random bytes
     // bin2hex converts them to a readable 64-character hex string
@@ -43,7 +44,8 @@ function csrfToken(): string {
  * Example output:
  *   <input type="hidden" name="csrf_token" value="a3f9...">
  */
-function csrfField(): string {
+function csrfField(): string
+{
   return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrfToken()) . '">';
 }
 
@@ -55,7 +57,8 @@ function csrfField(): string {
  *
  * hash_equals() is used instead of == to prevent timing attacks.
  */
-function verifyCsrf(): void {
+function verifyCsrf(): void
+{
   $submitted = $_POST['csrf_token'] ?? '';
   $stored    = $_SESSION['csrf_token'] ?? '';
 
@@ -71,7 +74,8 @@ function verifyCsrf(): void {
  * For AJAX requests, the token is sent in a custom header instead
  * of the POST body. Call this in API endpoint files.
  */
-function verifyCsrfAjax(): void {
+function verifyCsrfAjax(): void
+{
   $submitted = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? '');
   $stored    = $_SESSION['csrf_token'] ?? '';
 

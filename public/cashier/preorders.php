@@ -8,7 +8,11 @@ $db = Database::getInstance();
 $currentUser = currentUserId();
 
 // Cancel online orders that were never paid, so they stop holding stock/slots.
-try { paymongoExpireStaleOrders($db); } catch (Throwable $e) { error_log('PayMongo cleanup failed: ' . $e->getMessage()); }
+try {
+  paymongoExpireStaleOrders($db);
+} catch (Throwable $e) {
+  error_log('PayMongo cleanup failed: ' . $e->getMessage());
+}
 
 // Clear expired locks on page load (but not for orders in "preparing" status)
 $db->query(
@@ -857,7 +861,8 @@ layoutHeader('Pre-orders', '');
 
           <!-- Verify notice (only on pending) -->
           <?php if ($o['status'] === STATUS_PENDING): ?>
-            <?php $isGateway = ($o['gateway'] ?? '') === 'paymongo'; $gwPaid = $isGateway && ($o['pay_status'] ?? '') === PAY_STATUS_PAID; ?>
+            <?php $isGateway = ($o['gateway'] ?? '') === 'paymongo';
+            $gwPaid = $isGateway && ($o['pay_status'] ?? '') === PAY_STATUS_PAID; ?>
             <?php if ($gwPaid): ?>
               <div class="verify-notice" style="background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7">
                 <i class="fa-solid fa-circle-check"></i>
@@ -989,7 +994,9 @@ layoutHeader('Pre-orders', '');
   let pendingQueueQrData = null;
   const queueQrVideo = document.getElementById('queueQrVideo');
   const queueQrCanvas = document.getElementById('queueQrCanvas');
-  const queueQrContext = queueQrCanvas.getContext('2d', { willReadFrequently: true });
+  const queueQrContext = queueQrCanvas.getContext('2d', {
+    willReadFrequently: true
+  });
 
   async function handleStartPreparing(orderId, orderNumber, paymentMethod, autoPaid = false) {
     // First try to lock the order
@@ -1121,7 +1128,14 @@ layoutHeader('Pre-orders', '');
     setQueueQrStatus('Requesting camera access…');
     try {
       queueQrStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+        video: {
+          facingMode: {
+            ideal: 'environment'
+          },
+          width: {
+            ideal: 1280
+          }
+        }
       });
       queueQrVideo.srcObject = queueQrStream;
       await new Promise((resolve, reject) => {
@@ -1139,11 +1153,11 @@ layoutHeader('Pre-orders', '');
       queueQrFrame = requestAnimationFrame(scanQueueQrFrame);
     } catch (error) {
       stopQueueQrCamera();
-      const message = error.name === 'NotAllowedError'
-        ? 'Camera permission was denied. Allow camera access, then try again.'
-        : error.name === 'NotFoundError'
-          ? 'No camera was found on this device.'
-          : error.message || 'Could not start the camera.';
+      const message = error.name === 'NotAllowedError' ?
+        'Camera permission was denied. Allow camera access, then try again.' :
+        error.name === 'NotFoundError' ?
+        'No camera was found on this device.' :
+        error.message || 'Could not start the camera.';
       setQueueQrStatus(message, 'danger');
     }
   }
@@ -1173,7 +1187,9 @@ layoutHeader('Pre-orders', '');
       queueQrCanvas.height = queueQrVideo.videoHeight;
       queueQrContext.drawImage(queueQrVideo, 0, 0, queueQrCanvas.width, queueQrCanvas.height);
       const pixels = queueQrContext.getImageData(0, 0, queueQrCanvas.width, queueQrCanvas.height);
-      const code = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+      const code = jsQR(pixels.data, pixels.width, pixels.height, {
+        inversionAttempts: 'attemptBoth'
+      });
       if (code?.data) {
         queueQrBusy = true;
         pendingQueueQrData = code.data;
@@ -1189,7 +1205,10 @@ layoutHeader('Pre-orders', '');
     const body = new FormData();
     body.append('qr_data', qrData);
     body.append('csrf_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
-    const response = await fetch(endpoint, { method: 'POST', body });
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body
+    });
     const text = await response.text();
     try {
       return JSON.parse(text);
@@ -1213,7 +1232,9 @@ layoutHeader('Pre-orders', '');
       document.getElementById('queueQrCustomer').textContent = order.customer_name || '—';
       document.getElementById('queueQrCustomerId').textContent = order.customer_id_no || '—';
       document.getElementById('queueQrItems').textContent = order.items || '—';
-      document.getElementById('queueQrTotal').textContent = '₱' + Number(order.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      document.getElementById('queueQrTotal').textContent = '₱' + Number(order.total_amount || 0).toLocaleString('en-PH', {
+        minimumFractionDigits: 2
+      });
       document.getElementById('queueQrReviewTitle').textContent = 'Review matched order';
       document.getElementById('queueQrReviewActions').hidden = false;
       document.getElementById('queueQrConfirm').disabled = false;

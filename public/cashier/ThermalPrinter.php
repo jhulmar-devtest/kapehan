@@ -1,4 +1,5 @@
 <?php
+
 /**
  * ThermalPrinter.php
  * Pure plain-text layout. NO ESC/POS alignment bytes at all.
@@ -20,8 +21,14 @@ class ThermalPrinter
         $this->buf = self::INIT;
     }
 
-    public function getBuffer(): string { return $this->buf; }
-    public function getWidth(): int     { return $this->w; }
+    public function getBuffer(): string
+    {
+        return $this->buf;
+    }
+    public function getWidth(): int
+    {
+        return $this->w;
+    }
 
     // Blank lines
     public function feed(int $n = 1): static

@@ -48,18 +48,31 @@ function migrationSqlStatements(string $sql): array
     $char = $sql[$i];
     $next = $sql[$i + 1] ?? '';
     if ($lineComment) {
-      if ($char === "\n") { $lineComment = false; $buffer .= $char; }
+      if ($char === "\n") {
+        $lineComment = false;
+        $buffer .= $char;
+      }
       continue;
     }
     if ($blockComment) {
-      if ($char === '*' && $next === '/') { $blockComment = false; $i++; }
+      if ($char === '*' && $next === '/') {
+        $blockComment = false;
+        $i++;
+      }
       continue;
     }
     if ($quote !== null) {
       $buffer .= $char;
-      if ($char === '\\' && $next !== '') { $buffer .= $next; $i++; continue; }
+      if ($char === '\\' && $next !== '') {
+        $buffer .= $next;
+        $i++;
+        continue;
+      }
       if ($char === $quote) {
-        if (($sql[$i + 1] ?? '') === $quote) { $buffer .= $sql[++$i]; continue; }
+        if (($sql[$i + 1] ?? '') === $quote) {
+          $buffer .= $sql[++$i];
+          continue;
+        }
         $quote = null;
       }
       continue;
@@ -69,8 +82,16 @@ function migrationSqlStatements(string $sql): array
       $i += ($char === '-' ? 1 : 0);
       continue;
     }
-    if ($char === '/' && $next === '*') { $blockComment = true; $i++; continue; }
-    if ($char === "'" || $char === '"' || $char === '`') { $quote = $char; $buffer .= $char; continue; }
+    if ($char === '/' && $next === '*') {
+      $blockComment = true;
+      $i++;
+      continue;
+    }
+    if ($char === "'" || $char === '"' || $char === '`') {
+      $quote = $char;
+      $buffer .= $char;
+      continue;
+    }
     if ($char === ';') {
       if (trim($buffer) !== '') $statements[] = trim($buffer);
       $buffer = '';

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Retired endpoint: add-ons must be created through Inventory so they have
  * a stock item and a usage quantity before they can be assigned to products.

@@ -117,10 +117,37 @@ $expectedNow = $drawer && $drawer['status'] === 'open'
 layoutHeader('Cash Drawer');
 ?>
 <style>
-  .drawer-confirm-overlay { position:fixed; inset:0; z-index:1200; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(22,14,10,.62); }
-  .drawer-confirm-overlay.open { display:flex; }
-  .drawer-confirm-dialog { width:min(100%,440px); border-radius:var(--radius-lg); background:var(--surface-color); color:var(--text-color); box-shadow:var(--shadow-lg); padding:24px; }
-  .drawer-confirm-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:18px; }
+  .drawer-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(22, 14, 10, .62);
+  }
+
+  .drawer-confirm-overlay.open {
+    display: flex;
+  }
+
+  .drawer-confirm-dialog {
+    width: min(100%, 440px);
+    border-radius: var(--radius-lg);
+    background: var(--surface-color);
+    color: var(--text-color);
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+  }
+
+  .drawer-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+  }
 </style>
 <div class="page-header">
   <div>
@@ -147,35 +174,68 @@ layoutHeader('Cash Drawer');
 
 <?php showFlash('global'); ?>
 <?php if ($errorMessage !== ''): ?>
-  <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i><div><?= e($errorMessage) ?></div></div>
+  <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i>
+    <div><?= e($errorMessage) ?></div>
+  </div>
 <?php endif; ?>
 
 <?php if (!$drawer): ?>
-  <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i><div>The drawer has not been opened for today yet. Ask an admin to enter the starting fund before processing walk-in orders.</div></div>
+  <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i>
+    <div>The drawer has not been opened for today yet. Ask an admin to enter the starting fund before processing walk-in orders.</div>
+  </div>
 <?php else: ?>
   <div class="stats-grid">
-    <div class="stat-card stat-gold"><div class="stat-icon gold"><i class="fa-solid fa-wallet"></i></div><div class="stat-content"><div class="stat-label">Opening Fund</div><div class="stat-value"><?= peso($report['opening_amount']) ?></div><div class="stat-sub">Opened by <?= e($report['opened_by_name']) ?> · <?= date('g:i A', strtotime($report['opened_at'])) ?></div></div></div>
-    <div class="stat-card stat-red"><div class="stat-icon red"><i class="fa-solid fa-calculator"></i></div><div class="stat-content"><div class="stat-label">Expected Cash</div><div class="stat-value"><?= peso($expectedNow) ?></div><div class="stat-sub">Opening fund + net cash activity</div></div></div>
-    <div class="stat-card <?= $report['status'] === 'open' ? 'stat-green' : '' ?>"><div class="stat-icon <?= $report['status'] === 'open' ? 'green' : 'brown' ?>"><i class="fa-solid fa-circle-<?= $report['status'] === 'open' ? 'check' : 'minus' ?>"></i></div><div class="stat-content"><div class="stat-label">Drawer Status</div><div class="stat-value" style="text-transform:capitalize"><?= e($report['status']) ?></div><div class="stat-sub">Business date: <?= date('F j, Y', strtotime($report['business_date'])) ?></div></div></div>
+    <div class="stat-card stat-gold">
+      <div class="stat-icon gold"><i class="fa-solid fa-wallet"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Opening Fund</div>
+        <div class="stat-value"><?= peso($report['opening_amount']) ?></div>
+        <div class="stat-sub">Opened by <?= e($report['opened_by_name']) ?> · <?= date('g:i A', strtotime($report['opened_at'])) ?></div>
+      </div>
+    </div>
+    <div class="stat-card stat-red">
+      <div class="stat-icon red"><i class="fa-solid fa-calculator"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Expected Cash</div>
+        <div class="stat-value"><?= peso($expectedNow) ?></div>
+        <div class="stat-sub">Opening fund + net cash activity</div>
+      </div>
+    </div>
+    <div class="stat-card <?= $report['status'] === 'open' ? 'stat-green' : '' ?>">
+      <div class="stat-icon <?= $report['status'] === 'open' ? 'green' : 'brown' ?>"><i class="fa-solid fa-circle-<?= $report['status'] === 'open' ? 'check' : 'minus' ?>"></i></div>
+      <div class="stat-content">
+        <div class="stat-label">Drawer Status</div>
+        <div class="stat-value" style="text-transform:capitalize"><?= e($report['status']) ?></div>
+        <div class="stat-sub">Business date: <?= date('F j, Y', strtotime($report['business_date'])) ?></div>
+      </div>
+    </div>
   </div>
 
   <div class="card mb-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-chart-column"></i> Sales during this drawer day</div></div>
+    <div class="card-header">
+      <div class="card-title"><i class="fa-solid fa-chart-column"></i> Sales during this drawer day</div>
+    </div>
     <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--space-3)">
       <?php if (empty($report['payment_totals'])): ?><div class="text-muted">No paid orders recorded during this drawer day yet.</div><?php endif; ?>
       <?php foreach ($report['payment_totals'] as $total): ?>
-        <div><div class="text-muted" style="font-size:.78rem;text-transform:capitalize"><?= e($total['payment_method']) ?> · <?= (int)$total['transaction_count'] ?> orders</div><strong style="font-size:1.15rem"><?= peso($total['sales_total']) ?></strong></div>
+        <div>
+          <div class="text-muted" style="font-size:.78rem;text-transform:capitalize"><?= e($total['payment_method']) ?> · <?= (int)$total['transaction_count'] ?> orders</div><strong style="font-size:1.15rem"><?= peso($total['sales_total']) ?></strong>
+        </div>
       <?php endforeach; ?>
     </div>
   </div>
 
   <?php if ($report['status'] === 'open'): ?>
     <?php if ($report['business_date'] < $today): ?>
-      <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i><div>This drawer day is overdue. Walk-in sales are paused until you count and close it. After closing, you can open today’s drawer.</div></div>
+      <div class="alert alert-warning mb-4"><i class="fa-solid fa-triangle-exclamation"></i>
+        <div>This drawer day is overdue. Walk-in sales are paused until you count and close it. After closing, you can open today’s drawer.</div>
+      </div>
     <?php endif; ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--space-4)">
       <div class="card">
-        <div class="card-header"><div class="card-title"><i class="fa-solid fa-right-left"></i> Cashier handoff count</div></div>
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-right-left"></i> Cashier handoff count</div>
+        </div>
         <div class="card-body">
           <?php if ($hasPendingHandoff): ?>
             <p class="text-muted mb-3">A handoff is waiting for the incoming cashier to recount and confirm it. Walk-in payments stay paused until they respond.</p>
@@ -191,7 +251,9 @@ layoutHeader('Cash Drawer');
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><div class="card-title"><i class="fa-solid fa-money-bill-transfer"></i> Record cash movement</div></div>
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-money-bill-transfer"></i> Record cash movement</div>
+        </div>
         <div class="card-body">
           <p class="text-muted mb-3">Record cash put into or taken out of the drawer, such as a cash refund or payout, so the expected balance stays accurate.</p>
           <form method="POST">
@@ -203,7 +265,9 @@ layoutHeader('Cash Drawer');
         </div>
       </div>
       <div class="card" style="border-color:var(--status-cancelled)">
-        <div class="card-header"><div class="card-title"><i class="fa-solid fa-lock"></i> Close drawer day</div></div>
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-lock"></i> Close drawer day</div>
+        </div>
         <div class="card-body">
           <p class="text-muted mb-3">Count all the cash in the drawer, including the starting fund. Expected cash right now is <strong><?= peso($expectedNow) ?></strong>.</p>
           <?php if ($hasPendingHandoff): ?>
@@ -227,13 +291,19 @@ layoutHeader('Cash Drawer');
 
   <?php if ($report['status'] === 'open' && $hasPendingHandoff): ?>
     <div class="card mt-4">
-      <div class="card-header"><div class="card-title"><i class="fa-solid fa-user-check"></i> Incoming cashier confirmation</div></div>
+      <div class="card-header">
+        <div class="card-title"><i class="fa-solid fa-user-check"></i> Incoming cashier confirmation</div>
+      </div>
       <div class="card-body">
         <?php foreach ($report['handoffs'] as $handoff): if ($handoff['status'] !== 'pending') continue; ?>
           <?php if ((int)$handoff['handed_from_cashier_id'] === currentUserId()): ?>
-            <div class="alert alert-info"><i class="fa-solid fa-hourglass-half"></i><div>Outgoing count of <?= peso($handoff['counted_amount']) ?> submitted by <strong><?= e($handoff['handed_from_name']) ?></strong> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>. Waiting for a different cashier to recount.</div></div>
+            <div class="alert alert-info"><i class="fa-solid fa-hourglass-half"></i>
+              <div>Outgoing count of <?= peso($handoff['counted_amount']) ?> submitted by <strong><?= e($handoff['handed_from_name']) ?></strong> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>. Waiting for a different cashier to recount.</div>
+            </div>
           <?php else: ?>
-            <div class="alert alert-warning"><i class="fa-solid fa-scale-balanced"></i><div><strong><?= e($handoff['handed_from_name']) ?></strong> recorded <?= peso($handoff['counted_amount']) ?> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>; the system expected <?= peso($handoff['expected_amount']) ?>. Recount the physical drawer and enter your own count.</div></div>
+            <div class="alert alert-warning"><i class="fa-solid fa-scale-balanced"></i>
+              <div><strong><?= e($handoff['handed_from_name']) ?></strong> recorded <?= peso($handoff['counted_amount']) ?> at <?= date('g:i A', strtotime($handoff['recorded_at'])) ?>; the system expected <?= peso($handoff['expected_amount']) ?>. Recount the physical drawer and enter your own count.</div>
+            </div>
             <form method="POST" style="max-width:500px">
               <?= csrfField() ?><input type="hidden" name="drawer_action" value="handoff_confirm"><input type="hidden" name="drawer_id" value="<?= (int)$report['id'] ?>"><input type="hidden" name="handoff_id" value="<?= (int)$handoff['id'] ?>">
               <div class="form-group"><label class="form-label" for="confirm-handoff-amount">Your recount (₱)</label><input class="form-control" id="confirm-handoff-amount" name="amount" type="number" min="0" step="0.01" required></div>
@@ -247,26 +317,42 @@ layoutHeader('Cash Drawer');
   <?php endif; ?>
 
   <div class="card mt-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-list-check"></i> Drawer audit trail</div></div>
+    <div class="card-header">
+      <div class="card-title"><i class="fa-solid fa-list-check"></i> Drawer audit trail</div>
+    </div>
     <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-5)">
-      <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cashier logins</h3>
-        <?php if (!$report['cashier_sessions']): ?><div class="text-muted">No cashier logins recorded for this business date.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['cashier_sessions'] as $session): ?><div><strong><?= e($session['cashier_name']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($session['login_at'])) ?> – <?= e(cashierSessionEndLabel($session)) ?><?= !empty($session['after_drawer_close']) ? ' · after drawer close' : '' ?></div></div><?php endforeach; ?></div><?php endif; ?>
+      <section>
+        <h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cashier logins</h3>
+        <?php if (!$report['cashier_sessions']): ?><div class="text-muted">No cashier logins recorded for this business date.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['cashier_sessions'] as $session): ?><div><strong><?= e($session['cashier_name']) ?></strong>
+                <div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($session['login_at'])) ?> – <?= e(cashierSessionEndLabel($session)) ?><?= !empty($session['after_drawer_close']) ? ' · after drawer close' : '' ?></div>
+              </div><?php endforeach; ?></div><?php endif; ?>
       </section>
-      <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Handoff counts</h3>
-        <?php if (!$report['handoffs']): ?><div class="text-muted">No handoff counts recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['handoffs'] as $handoff): ?><div><strong><?= e($handoff['handed_from_name']) ?> → <?= e($handoff['confirmed_by_name'] ?? ($handoff['status'] === 'pending' ? 'Awaiting cashier' : 'Unverified')) ?></strong><div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($handoff['recorded_at'])) ?> · Expected <?= peso($handoff['expected_amount']) ?> · Outgoing count <?= peso($handoff['counted_amount']) ?> · Expected difference <?= peso($handoff['variance']) ?> · Status: <?= ucfirst(e($handoff['status'])) ?><?= $handoff['confirmation_amount'] !== null ? ' · Incoming count ' . peso($handoff['confirmation_amount']) . ' · Count difference ' . peso($handoff['confirmation_variance']) . ' · Confirmed ' . date('g:i A', strtotime($handoff['confirmed_at'])) : '' ?><?= $handoff['note'] ? ' · ' . e($handoff['note']) : '' ?><?= $handoff['confirmation_note'] ? ' · Incoming note: ' . e($handoff['confirmation_note']) : '' ?></div></div><?php endforeach; ?></div><?php endif; ?>
+      <section>
+        <h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Handoff counts</h3>
+        <?php if (!$report['handoffs']): ?><div class="text-muted">No handoff counts recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['handoffs'] as $handoff): ?><div><strong><?= e($handoff['handed_from_name']) ?> → <?= e($handoff['confirmed_by_name'] ?? ($handoff['status'] === 'pending' ? 'Awaiting cashier' : 'Unverified')) ?></strong>
+                <div class="text-muted" style="font-size:.8rem"><?= date('g:i A', strtotime($handoff['recorded_at'])) ?> · Expected <?= peso($handoff['expected_amount']) ?> · Outgoing count <?= peso($handoff['counted_amount']) ?> · Expected difference <?= peso($handoff['variance']) ?> · Status: <?= ucfirst(e($handoff['status'])) ?><?= $handoff['confirmation_amount'] !== null ? ' · Incoming count ' . peso($handoff['confirmation_amount']) . ' · Count difference ' . peso($handoff['confirmation_variance']) . ' · Confirmed ' . date('g:i A', strtotime($handoff['confirmed_at'])) : '' ?><?= $handoff['note'] ? ' · ' . e($handoff['note']) : '' ?><?= $handoff['confirmation_note'] ? ' · Incoming note: ' . e($handoff['confirmation_note']) : '' ?></div>
+              </div><?php endforeach; ?></div><?php endif; ?>
       </section>
-      <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cash movements</h3>
-        <?php if (!$report['movements']): ?><div class="text-muted">No cash movements recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['movements'] as $movement): ?><div><strong><?= ucfirst($movement['direction']) ?> <?= peso($movement['amount']) ?></strong><div class="text-muted" style="font-size:.8rem"><?= e($movement['cashier_name']) ?> · <?= date('g:i A', strtotime($movement['created_at'])) ?> · <?= e($movement['reason']) ?></div></div><?php endforeach; ?></div><?php endif; ?>
+      <section>
+        <h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Cash movements</h3>
+        <?php if (!$report['movements']): ?><div class="text-muted">No cash movements recorded.</div><?php else: ?><div style="display:grid;gap:8px"><?php foreach ($report['movements'] as $movement): ?><div><strong><?= ucfirst($movement['direction']) ?> <?= peso($movement['amount']) ?></strong>
+                <div class="text-muted" style="font-size:.8rem"><?= e($movement['cashier_name']) ?> · <?= date('g:i A', strtotime($movement['created_at'])) ?> · <?= e($movement['reason']) ?></div>
+              </div><?php endforeach; ?></div><?php endif; ?>
       </section>
-      <section><h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Close/reopen history</h3>
-        <?php if (empty($report['closure_events'])): ?><div class="text-muted">No drawer closes or reopens recorded.</div><?php else: ?><div style="display:grid;gap:10px"><?php foreach ($report['closure_events'] as $event): ?><div><strong>Closed <?= date('g:i A', strtotime($event['closed_at'])) ?> · <?= e($event['closed_by_name'] ?? 'Cashier') ?></strong><div class="text-muted" style="font-size:.8rem">Counted <?= peso($event['closing_amount']) ?> · Expected <?= peso($event['expected_closing_amount']) ?> · Difference <?= peso($event['variance']) ?></div><?php if (!empty($event['reopen_id'])): ?><div class="text-muted" style="font-size:.8rem">Reopened <?= date('g:i A', strtotime($event['reopened_at'])) ?> by <?= e($event['reopened_by_name'] ?? 'Cashier') ?> · Recount <?= peso($event['reopen_recounted_amount']) ?> vs expected <?= peso($event['reopen_expected_amount']) ?> · Difference <?= peso($event['reopen_variance']) ?> · <?= e($event['reopen_reason']) ?></div><?php endif; ?></div><?php endforeach; ?></div><?php endif; ?>
+      <section>
+        <h3 style="font-size:.95rem;margin-bottom:var(--space-2)">Close/reopen history</h3>
+        <?php if (empty($report['closure_events'])): ?><div class="text-muted">No drawer closes or reopens recorded.</div><?php else: ?><div style="display:grid;gap:10px"><?php foreach ($report['closure_events'] as $event): ?><div><strong>Closed <?= date('g:i A', strtotime($event['closed_at'])) ?> · <?= e($event['closed_by_name'] ?? 'Cashier') ?></strong>
+                <div class="text-muted" style="font-size:.8rem">Counted <?= peso($event['closing_amount']) ?> · Expected <?= peso($event['expected_closing_amount']) ?> · Difference <?= peso($event['variance']) ?></div><?php if (!empty($event['reopen_id'])): ?><div class="text-muted" style="font-size:.8rem">Reopened <?= date('g:i A', strtotime($event['reopened_at'])) ?> by <?= e($event['reopened_by_name'] ?? 'Cashier') ?> · Recount <?= peso($event['reopen_recounted_amount']) ?> vs expected <?= peso($event['reopen_expected_amount']) ?> · Difference <?= peso($event['reopen_variance']) ?> · <?= e($event['reopen_reason']) ?></div><?php endif; ?>
+              </div><?php endforeach; ?></div><?php endif; ?>
       </section>
     </div>
   </div>
 <?php endif; ?>
 
 <?php if (!$activeDrawer && !$todayDrawer && $report && $report['business_date'] !== $today): ?>
-  <div class="alert alert-info mt-4"><i class="fa-solid fa-circle-info"></i><div>The previous drawer day is closed. Ask an admin to enter today’s starting fund before processing walk-in orders.</div></div>
+  <div class="alert alert-info mt-4"><i class="fa-solid fa-circle-info"></i>
+    <div>The previous drawer day is closed. Ask an admin to enter today’s starting fund before processing walk-in orders.</div>
+  </div>
 <?php endif; ?>
 
 <?php if ($report && $report['status'] === 'open' && !$hasPendingHandoff): ?>
@@ -292,6 +378,7 @@ layoutHeader('Cash Drawer');
       overlay.setAttribute('aria-hidden', 'false');
       document.getElementById('closing-amount').focus();
     }
+
     function closeDrawerCloseModal() {
       const overlay = document.getElementById('drawer-close-overlay');
       overlay.classList.remove('open');
@@ -309,7 +396,9 @@ $recentDrawerDays = $db->query('SELECT id,business_date,status,opening_amount,cl
 if ($recentDrawerDays && (count($recentDrawerDays) > 1 || !$report)):
 ?>
   <div class="card mt-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-calendar-days"></i> Recent drawer reports</div></div>
+    <div class="card-header">
+      <div class="card-title"><i class="fa-solid fa-calendar-days"></i> Recent drawer reports</div>
+    </div>
     <div class="card-body" style="display:grid;gap:8px">
       <?php foreach ($recentDrawerDays as $recentDay): ?>
         <a href="<?= APP_URL ?>/cashier/cash-drawer.php?day=<?= (int)$recentDay['id'] ?>" style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-color);color:inherit">
@@ -322,15 +411,26 @@ if ($recentDrawerDays && (count($recentDrawerDays) > 1 || !$report)):
 <?php endif; ?>
 
 <script>
-function printDrawerReport(dayId) {
-  const btn = document.getElementById('drawer-print-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Printing…';
-  fetch('<?= APP_URL ?>/cashier/thermal_drawer_report.php?drawer_day_id=' + encodeURIComponent(dayId))
-    .then(r => r.json())
-    .then(data => { if (!data.success) throw new Error(data.error || 'Printer error'); btn.innerHTML = '<i class="fa-solid fa-check"></i> Sent to printer'; setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report'; }, 2500); })
-    .catch(err => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report'; alert(err.message); });
-}
+  function printDrawerReport(dayId) {
+    const btn = document.getElementById('drawer-print-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Printing…';
+    fetch('<?= APP_URL ?>/cashier/thermal_drawer_report.php?drawer_day_id=' + encodeURIComponent(dayId))
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) throw new Error(data.error || 'Printer error');
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Sent to printer';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report';
+        }, 2500);
+      })
+      .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report';
+        alert(err.message);
+      });
+  }
 </script>
 <?php if ($report):
   $readingStmt = $db->prepare('SELECT id, reading_type, issued_at FROM cash_register_readings WHERE drawer_day_id=? ORDER BY issued_at DESC, id DESC');
@@ -338,16 +438,19 @@ function printDrawerReport(dayId) {
   $savedReadings = $readingStmt->fetchAll(PDO::FETCH_ASSOC);
   if ($savedReadings):
 ?>
-  <div class="card mt-4">
-    <div class="card-header"><div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div></div>
-    <div class="card-body" style="display:grid;gap:8px">
-      <?php foreach ($savedReadings as $savedReading): ?>
-        <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
-          <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
-        </a>
-      <?php endforeach; ?>
+    <div class="card mt-4">
+      <div class="card-header">
+        <div class="card-title"><i class="fa-solid fa-receipt"></i> X/Z readings for this drawer day</div>
+      </div>
+      <div class="card-body" style="display:grid;gap:8px">
+        <?php foreach ($savedReadings as $savedReading): ?>
+          <a href="<?= APP_URL ?>/cashier/register-reading.php?id=<?= (int)$savedReading['id'] ?>" class="reading-modal-link" data-reading-id="<?= (int)$savedReading['id'] ?>" data-reading-type="<?= e($savedReading['reading_type']) ?>" style="display:flex;justify-content:space-between;gap:12px;color:inherit">
+            <strong><?= e($savedReading['reading_type']) ?> Reading #<?= (int)$savedReading['id'] ?></strong><span class="text-muted"><?= date('M j, g:i A', strtotime($savedReading['issued_at'])) ?></span>
+          </a>
+        <?php endforeach; ?>
+      </div>
     </div>
-  </div>
-<?php endif; endif; ?>
+<?php endif;
+endif; ?>
 <?php require __DIR__ . '/../../includes/register-reading-modal.php'; ?>
 <?php layoutFooter(); ?>

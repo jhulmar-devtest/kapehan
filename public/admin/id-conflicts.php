@@ -94,33 +94,49 @@ layoutHeader('ID Conflict Reports');
 <?php showFlash('global'); ?>
 
 <div class="card">
-  <div class="card-header"><div><div class="card-title">Manual review</div><div class="text-muted" style="font-size:.82rem;margin-top:4px">Contact the claimant and verify their identity through the school before releasing an ID. Resolving deactivates the account currently using that ID and keeps its order history intact.</div></div></div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Manual review</div>
+      <div class="text-muted" style="font-size:.82rem;margin-top:4px">Contact the claimant and verify their identity through the school before releasing an ID. Resolving deactivates the account currently using that ID and keeps its order history intact.</div>
+    </div>
+  </div>
   <div style="overflow-x:auto">
     <table class="data-table">
-      <thead><tr><th>Report</th><th>Claimant</th><th>Existing account</th><th>Details</th><th>Status / action</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Report</th>
+          <th>Claimant</th>
+          <th>Existing account</th>
+          <th>Details</th>
+          <th>Status / action</th>
+        </tr>
+      </thead>
       <tbody>
         <?php if (!$reports): ?>
-          <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted)">No ID conflict reports have been submitted.</td></tr>
-        <?php else: foreach ($reports as $report): ?>
           <tr>
-            <td><strong>#<?= (int) $report['id'] ?></strong><br><span class="text-muted"><?= e(date('M j, Y g:i A', strtotime($report['created_at']))) ?></span></td>
-            <td><strong><?= e($report['full_name']) ?></strong><br><?= e($report['user_type'] === ROLE_STUDENT ? 'Student' : 'Faculty') ?> · <?= e($report['school_id_no']) ?><br><a href="mailto:<?= e($report['contact_email']) ?>"><?= e($report['contact_email']) ?></a></td>
-            <td><?php if ($report['matched_account_id']): ?><strong><?= e($report['matched_account_name']) ?></strong><br><?= e($report['matched_account_email']) ?><br><span class="text-muted"><?= !empty($report['matched_account_verified']) ? 'Email verified' : 'Email not verified' ?><?= empty($report['matched_account_active']) ? ' · inactive' : '' ?></span><?php else: ?><span class="text-muted">No matching account now</span><?php endif; ?></td>
-            <td style="white-space:normal;min-width:200px;max-width:340px"><?= $report['details'] !== null && $report['details'] !== '' ? nl2br(e($report['details'])) : '<span class="text-muted">—</span>' ?><?php if ($report['resolution_note']): ?><div style="margin-top:8px;font-size:.8rem"><strong>Review:</strong> <?= e($report['resolution_note']) ?></div><?php endif; ?></td>
-            <td>
-              <?php if ($report['status'] === 'pending'): ?>
-                <form method="POST" style="min-width:230px;display:grid;gap:8px">
-                  <?= csrfField() ?><input type="hidden" name="report_id" value="<?= (int) $report['id'] ?>">
-                  <label style="font-size:.78rem;display:flex;gap:7px;align-items:flex-start"><input type="checkbox" name="identity_checked" value="1" required style="margin-top:3px"> I verified the claimant through the school.</label>
-                  <textarea class="form-control" name="resolution_note" maxlength="500" rows="2" placeholder="How was identity verified? Required to release the ID." required></textarea>
-                  <div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" name="action" value="resolve" type="submit"><i class="fa-solid fa-unlock-keyhole"></i> Verify &amp; release ID</button><button class="btn btn-sm btn-ghost" name="action" value="dismiss" type="submit" onclick="this.form.identity_checked.required=false;this.form.resolution_note.required=true">Dismiss</button></div>
-                </form>
-              <?php else: ?>
-                <span class="badge badge-<?= $report['status'] === 'resolved' ? 'paid' : 'cancelled' ?>"><?= e(ucfirst($report['status'])) ?></span><?php if ($report['reviewed_at']): ?><br><span class="text-muted"><?= e(date('M j, Y', strtotime($report['reviewed_at']))) ?></span><?php endif; ?>
-              <?php endif; ?>
-            </td>
+            <td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted)">No ID conflict reports have been submitted.</td>
           </tr>
-        <?php endforeach; endif; ?>
+          <?php else: foreach ($reports as $report): ?>
+            <tr>
+              <td><strong>#<?= (int) $report['id'] ?></strong><br><span class="text-muted"><?= e(date('M j, Y g:i A', strtotime($report['created_at']))) ?></span></td>
+              <td><strong><?= e($report['full_name']) ?></strong><br><?= e($report['user_type'] === ROLE_STUDENT ? 'Student' : 'Faculty') ?> · <?= e($report['school_id_no']) ?><br><a href="mailto:<?= e($report['contact_email']) ?>"><?= e($report['contact_email']) ?></a></td>
+              <td><?php if ($report['matched_account_id']): ?><strong><?= e($report['matched_account_name']) ?></strong><br><?= e($report['matched_account_email']) ?><br><span class="text-muted"><?= !empty($report['matched_account_verified']) ? 'Email verified' : 'Email not verified' ?><?= empty($report['matched_account_active']) ? ' · inactive' : '' ?></span><?php else: ?><span class="text-muted">No matching account now</span><?php endif; ?></td>
+              <td style="white-space:normal;min-width:200px;max-width:340px"><?= $report['details'] !== null && $report['details'] !== '' ? nl2br(e($report['details'])) : '<span class="text-muted">—</span>' ?><?php if ($report['resolution_note']): ?><div style="margin-top:8px;font-size:.8rem"><strong>Review:</strong> <?= e($report['resolution_note']) ?></div><?php endif; ?></td>
+              <td>
+                <?php if ($report['status'] === 'pending'): ?>
+                  <form method="POST" style="min-width:230px;display:grid;gap:8px">
+                    <?= csrfField() ?><input type="hidden" name="report_id" value="<?= (int) $report['id'] ?>">
+                    <label style="font-size:.78rem;display:flex;gap:7px;align-items:flex-start"><input type="checkbox" name="identity_checked" value="1" required style="margin-top:3px"> I verified the claimant through the school.</label>
+                    <textarea class="form-control" name="resolution_note" maxlength="500" rows="2" placeholder="How was identity verified? Required to release the ID." required></textarea>
+                    <div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" name="action" value="resolve" type="submit"><i class="fa-solid fa-unlock-keyhole"></i> Verify &amp; release ID</button><button class="btn btn-sm btn-ghost" name="action" value="dismiss" type="submit" onclick="this.form.identity_checked.required=false;this.form.resolution_note.required=true">Dismiss</button></div>
+                  </form>
+                <?php else: ?>
+                  <span class="badge badge-<?= $report['status'] === 'resolved' ? 'paid' : 'cancelled' ?>"><?= e(ucfirst($report['status'])) ?></span><?php if ($report['reviewed_at']): ?><br><span class="text-muted"><?= e(date('M j, Y', strtotime($report['reviewed_at']))) ?></span><?php endif; ?>
+                <?php endif; ?>
+              </td>
+            </tr>
+        <?php endforeach;
+        endif; ?>
       </tbody>
     </table>
   </div>

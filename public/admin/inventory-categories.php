@@ -92,7 +92,9 @@ layoutHeader('Inventory Categories');
 <?php showFlash('global'); ?>
 
 <div class="card" style="margin-bottom:20px">
-  <div class="card-header"><div class="card-title">Add a Category</div></div>
+  <div class="card-header">
+    <div class="card-title">Add a Category</div>
+  </div>
   <div class="card-body">
     <form method="POST" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
       <?= csrfField() ?>
@@ -107,41 +109,52 @@ layoutHeader('Inventory Categories');
 </div>
 
 <div class="card">
-  <div class="card-header"><div class="card-title">Categories</div></div>
+  <div class="card-header">
+    <div class="card-title">Categories</div>
+  </div>
   <div style="overflow-x:auto">
     <table class="data-table">
-      <thead><tr><th>Category</th><th>Stock items</th><th>Actions</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Stock items</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
       <tbody>
         <?php if (!$categories): ?>
-          <tr><td colspan="3" style="text-align:center;padding:24px;color:var(--text-muted)">No categories yet.</td></tr>
-        <?php else: foreach ($categories as $category): ?>
           <tr>
-            <td>
-              <?php if ($category['name'] === $otherCategory): ?>
-                <strong><?= e($category['name']) ?></strong> <span class="text-muted">(reserved)</span>
-              <?php else: ?>
-                <form method="POST" style="display:flex;gap:8px;align-items:center;max-width:520px">
-                  <?= csrfField() ?>
-                  <input type="hidden" name="rename_category" value="1">
-                  <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">
-                  <input name="name" class="form-control" maxlength="80" value="<?= e($category['name']) ?>" required aria-label="Category name">
-                  <button class="btn btn-sm btn-outline" type="submit" title="Save category name"><i class="fa-solid fa-check"></i> Save</button>
-                </form>
-              <?php endif; ?>
-            </td>
-            <td><?= (int) $category['item_count'] ?></td>
-            <td>
-              <?php if ($category['name'] !== $otherCategory): ?>
-                <form method="POST" onsubmit="return confirm('Delete this category?')">
-                  <?= csrfField() ?>
-                  <input type="hidden" name="delete_category" value="1">
-                  <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">
-                  <button class="btn btn-sm btn-danger" type="submit" <?= (int) $category['item_count'] > 0 ? 'disabled title="Move its items to another category first"' : '' ?>><i class="fa-solid fa-trash"></i> Delete</button>
-                </form>
-              <?php else: ?><span class="text-muted">Required fallback</span><?php endif; ?>
-            </td>
+            <td colspan="3" style="text-align:center;padding:24px;color:var(--text-muted)">No categories yet.</td>
           </tr>
-        <?php endforeach; endif; ?>
+          <?php else: foreach ($categories as $category): ?>
+            <tr>
+              <td>
+                <?php if ($category['name'] === $otherCategory): ?>
+                  <strong><?= e($category['name']) ?></strong> <span class="text-muted">(reserved)</span>
+                <?php else: ?>
+                  <form method="POST" style="display:flex;gap:8px;align-items:center;max-width:520px">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="rename_category" value="1">
+                    <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">
+                    <input name="name" class="form-control" maxlength="80" value="<?= e($category['name']) ?>" required aria-label="Category name">
+                    <button class="btn btn-sm btn-outline" type="submit" title="Save category name"><i class="fa-solid fa-check"></i> Save</button>
+                  </form>
+                <?php endif; ?>
+              </td>
+              <td><?= (int) $category['item_count'] ?></td>
+              <td>
+                <?php if ($category['name'] !== $otherCategory): ?>
+                  <form method="POST" onsubmit="return confirm('Delete this category?')">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="delete_category" value="1">
+                    <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">
+                    <button class="btn btn-sm btn-danger" type="submit" <?= (int) $category['item_count'] > 0 ? 'disabled title="Move its items to another category first"' : '' ?>><i class="fa-solid fa-trash"></i> Delete</button>
+                  </form>
+                <?php else: ?><span class="text-muted">Required fallback</span><?php endif; ?>
+              </td>
+            </tr>
+        <?php endforeach;
+        endif; ?>
       </tbody>
     </table>
   </div>

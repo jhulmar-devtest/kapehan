@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Save Product Add-ons API Endpoint
  * POST: Update product_addons pivot table for a product

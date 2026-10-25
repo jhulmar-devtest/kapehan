@@ -65,7 +65,9 @@
     <?php if (gcashPaymentNumber() === '' || gcashPaymentName() === ''): ?>
       <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
     <?php endif; ?>
-    <script>window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;</script>
+    <script>
+      window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;
+    </script>
     <label class="field-label" for="refNo">GCash reference number</label>
     <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="20">
     <div class="confirm-actions" style="margin-top:18px">

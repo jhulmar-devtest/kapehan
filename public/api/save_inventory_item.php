@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Save Inventory Item API Endpoint
  * POST: Insert new inventory item (+ optional starting-stock restock log entry)
@@ -12,7 +13,7 @@
 require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_ADMIN);
- 
+
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

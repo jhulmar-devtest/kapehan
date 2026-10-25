@@ -1,4 +1,5 @@
 <?php
+
 /** Inventory recipes, availability checks, reservations, and deductions. */
 
 function inventoryCategories(PDO $db): array
@@ -239,7 +240,10 @@ function inventoryRequirementsForDetails(PDO $db, array $details): array
     if (!$hasAddonSnapshot && $note !== '') {
       $addonSegment = '';
       foreach (preg_split('/\s(?:·|-|–)\s/u', $note) as $part) {
-        if (preg_match('/^\s*\+/u', $part)) { $addonSegment = trim($part); break; }
+        if (preg_match('/^\s*\+/u', $part)) {
+          $addonSegment = trim($part);
+          break;
+        }
       }
       if ($addonSegment !== '') {
         if (!inventoryAddonSchemaAvailable($db)) {
@@ -300,8 +304,11 @@ function inventoryStockSnapshot(PDO $db, ?array $itemIds = null, bool $forUpdate
   foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $id = (int) $row['id'];
     $items[$id] = [
-      'id' => $id, 'name' => $row['name'], 'unit' => $row['unit'],
-      'on_hand' => (float) $row['quantity_on_hand'], 'reserved' => 0.0,
+      'id' => $id,
+      'name' => $row['name'],
+      'unit' => $row['unit'],
+      'on_hand' => (float) $row['quantity_on_hand'],
+      'reserved' => 0.0,
       'reorder_level' => (float) $row['reorder_level'],
     ];
   }
@@ -373,7 +380,10 @@ function inventoryProductAvailabilityMap(PDO $db, array $productIds): array
           break;
         }
       }
-      if ($fits) { $canMake = true; break; }
+      if ($fits) {
+        $canMake = true;
+        break;
+      }
     }
     $availability[$pid] = $canMake;
   }
@@ -408,8 +418,11 @@ function reserveInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int
     if ($available + 0.000001 < $required) {
       throw new RuntimeException(sprintf(
         'Not enough %s for this order. Available: %s %s; required: %s %s.',
-        $stock[$itemId]['name'], number_format(max(0, $available), 3), $stock[$itemId]['unit'],
-        number_format($required, 3), $stock[$itemId]['unit']
+        $stock[$itemId]['name'],
+        number_format(max(0, $available), 3),
+        $stock[$itemId]['unit'],
+        number_format($required, 3),
+        $stock[$itemId]['unit']
       ));
     }
   }
@@ -447,8 +460,11 @@ function deductInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int 
     } elseif ($available + 0.000001 < $required) {
       throw new RuntimeException(sprintf(
         'Not enough %s to prepare this order. Available: %s %s; required: %s %s.',
-        $stock[$itemId]['name'], number_format(max(0, $available), 3), $stock[$itemId]['unit'],
-        number_format($required, 3), $stock[$itemId]['unit']
+        $stock[$itemId]['name'],
+        number_format(max(0, $available), 3),
+        $stock[$itemId]['unit'],
+        number_format($required, 3),
+        $stock[$itemId]['unit']
       ));
     }
   }

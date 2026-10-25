@@ -243,7 +243,8 @@ $stmt = $db->prepare(
 $stmt->execute($params);
 $orders = $stmt->fetchAll();
 
-function statusGroupOf(string $status): string {
+function statusGroupOf(string $status): string
+{
   if (in_array($status, ['pending', 'preparing', 'ready'], true)) return 'ongoing';
   if ($status === 'claimed') return 'completed';
   return 'cancelled';
@@ -252,7 +253,8 @@ function statusGroupOf(string $status): string {
 // Renders the Pending → Preparing → Ready → Claimed progress strip for
 // an ongoing order. Returns '' for cancelled/no_show orders — a linear
 // timeline doesn't make sense once an order has fallen off that path.
-function renderOrderTimeline(string $status): string {
+function renderOrderTimeline(string $status): string
+{
   $steps = ['pending' => 'Pending', 'preparing' => 'Preparing', 'ready' => 'Ready', 'claimed' => 'Claimed'];
   $order = array_keys($steps);
   $currentIdx = array_search($status, $order, true);
@@ -504,7 +506,7 @@ function renderOrderTimeline(string $status): string {
         font-size: 1rem;
       }
 
-      .order-side > .badge {
+      .order-side>.badge {
         justify-self: end;
       }
 
@@ -736,7 +738,11 @@ function renderOrderTimeline(string $status): string {
             return;
           }
           box.innerHTML = '';
-          new QRCode(box, { text: data.qr_data, width: 200, height: 200 });
+          new QRCode(box, {
+            text: data.qr_data,
+            width: 200,
+            height: 200
+          });
           startQrCountdown(600); // seconds — matches the server-side expiry window
         })
         .catch(() => {

@@ -72,15 +72,15 @@ body {
   display: block;
 }
 .logo-name {
-  font-size: .86rem;
+  font-size: 0.86rem;
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -.01em;
+  letter-spacing: -0.01em;
 }
 .logo-sub {
   color: var(--text-muted);
-  font-size: .64rem;
-  letter-spacing: .04em;
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
   margin-top: 2px;
 }
 .header-search {
@@ -193,7 +193,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: .86rem;
+  font-size: 0.86rem;
   font-weight: 700;
   color: var(--text-color);
 }
@@ -417,10 +417,10 @@ main.container {
     height: 36px;
   }
   .logo-name {
-    font-size: .8rem;
+    font-size: 0.8rem;
   }
   .logo-sub {
-    font-size: .58rem;
+    font-size: 0.58rem;
   }
   .header-actions {
     gap: 8px;

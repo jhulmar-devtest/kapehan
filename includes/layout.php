@@ -18,7 +18,8 @@
 // -----------------------------------------------------------------
 // layoutHeader() — outputs <html>, <head>, sidebar, topbar, <main>
 // -----------------------------------------------------------------
-function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
+function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
+{
   $role     = currentRole();
   $userName = e($_SESSION['full_name'] ?? 'User');
   $appUrl   = APP_URL;
@@ -193,7 +194,8 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
 // -----------------------------------------------------------------
 // layoutFooter() — closes <main>, loads JS, closes </body></html>
 // -----------------------------------------------------------------
-function layoutFooter(string $extraScripts = ''): void {
+function layoutFooter(string $extraScripts = ''): void
+{
   $appUrl = APP_URL;
 
   echo "\n" . '  </main>' . "\n";
@@ -349,7 +351,8 @@ function navItem(
 // Badge count helpers used by the sidebar
 // -----------------------------------------------------------------
 
-function pendingRefundCount(): int {
+function pendingRefundCount(): int
+{
   try {
     $db   = Database::getInstance();
     $stmt = $db->query("SELECT COUNT(*) FROM refund_requests WHERE status = 'pending'");
@@ -359,7 +362,8 @@ function pendingRefundCount(): int {
   }
 }
 
-function pendingPreorderCount(): int {
+function pendingPreorderCount(): int
+{
   try {
     $db   = Database::getInstance();
     $stmt = $db->prepare(
@@ -381,7 +385,8 @@ function pendingPreorderCount(): int {
  *   2 = at least one order pickup time is within 30 mins (yellow)
  *   3 = at least one order is overdue / ASAP and still pending (red)
  */
-function preorderUrgency(): int {
+function preorderUrgency(): int
+{
   try {
     date_default_timezone_set('Asia/Manila');
     $db   = Database::getInstance();
@@ -426,7 +431,8 @@ function preorderUrgency(): int {
   }
 }
 
-function studentCartCount(): int {
+function studentCartCount(): int
+{
   // Student cart lives in sessionStorage (JS), not PHP session.
   // This returns 0 — the JS side updates the badge count dynamically.
   return 0;

@@ -50,7 +50,8 @@ error_log("API order-lock.php called - Action: " . ($_GET['action'] ?? 'none') .
 /**
  * Helper: Return JSON response and exit
  */
-function jsonOut(array $data, int $code = 200): void {
+function jsonOut(array $data, int $code = 200): void
+{
   // Clear any buffered output without turning off buffering
   while (ob_get_level() > 0) {
     ob_end_clean();
@@ -73,7 +74,8 @@ $currentUser = (int) $_SESSION['user_id'];
  * Helper: Check if order is locked by another cashier
  * Returns: ['locked' => bool, 'by' => cashier_id|null, 'name' => cashier_name|null, 'expired' => bool]
  */
-function checkOrderLock(PDO $db, int $orderId): array {
+function checkOrderLock(PDO $db, int $orderId): array
+{
   $order = $db->prepare(
     "SELECT o.locked_by, o.locked_at, o.lock_expire_at, o.status, c.full_name AS locked_by_name
      FROM orders o

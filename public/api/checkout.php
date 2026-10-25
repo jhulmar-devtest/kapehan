@@ -34,7 +34,11 @@ $role = currentRole();
 
 require_once __DIR__ . '/../../includes/paymongo.php';
 // Free up pickup slots / ingredients held by online orders that were never paid.
-try { paymongoExpireStaleOrders($db); } catch (Throwable $e) { error_log('PayMongo cleanup failed: ' . $e->getMessage()); }
+try {
+  paymongoExpireStaleOrders($db);
+} catch (Throwable $e) {
+  error_log('PayMongo cleanup failed: ' . $e->getMessage());
+}
 
 $data = json_decode(file_get_contents('php://input'), true) ?? [];
 $items       = $data['items'] ?? [];
@@ -245,7 +249,11 @@ try {
       ]);
     } catch (Throwable $e) {
       // Could not reach PayMongo: release the order again so nothing is left hanging.
-      try { paymongoCancelUnpaidOrder($db, (int) $orderId, $role, $customerId); } catch (Throwable $e2) { error_log('PayMongo rollback failed: ' . $e2->getMessage()); }
+      try {
+        paymongoCancelUnpaidOrder($db, (int) $orderId, $role, $customerId);
+      } catch (Throwable $e2) {
+        error_log('PayMongo rollback failed: ' . $e2->getMessage());
+      }
       http_response_code(502);
       echo json_encode(['ok' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Could not start the online payment. Please try again.']);
     }

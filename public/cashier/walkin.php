@@ -461,7 +461,7 @@ layoutHeader('Walk-in POS', '');
       display: none;
     }
 
-    .pos-cart:not(.cart-open) > * {
+    .pos-cart:not(.cart-open)>* {
       visibility: hidden;
     }
 
@@ -565,7 +565,7 @@ layoutHeader('Walk-in POS', '');
       background: transparent;
     }
 
-    .pos-cart:not(.cart-open) > .pos-cart-handle {
+    .pos-cart:not(.cart-open)>.pos-cart-handle {
       visibility: visible;
     }
 
@@ -590,6 +590,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   @media (min-width: 1101px) {
+
     .pos-cart-handle,
     .pos-cart-close-btn,
     .pos-cart-backdrop,
@@ -1599,7 +1600,7 @@ layoutHeader('Walk-in POS', '');
   <?php else: ?>
     <div class="alert alert-info mb-4" style="padding:8px 14px">
       <i class="fa-solid fa-cash-register"></i>
-    <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
+      <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
     </div>
   <?php endif; ?>
 
@@ -1748,7 +1749,8 @@ layoutHeader('Walk-in POS', '');
         <strong style="display:block;margin-bottom:8px">Customer loyalty points</strong>
         <div style="display:flex;gap:7px">
           <select id="loyalty-customer-type" class="form-control" style="max-width:115px">
-            <option value="student">Student</option><option value="faculty">Faculty</option>
+            <option value="student">Student</option>
+            <option value="faculty">Faculty</option>
           </select>
           <input id="loyalty-customer-identifier" class="form-control" placeholder="School ID" maxlength="30" style="min-width:0;flex:1">
           <button type="button" class="btn btn-secondary" id="loyalty-lookup-button" onclick="lookupLoyaltyCustomer()">Find</button>
@@ -1950,7 +1952,10 @@ layoutHeader('Walk-in POS', '');
           'Content-Type': 'application/json',
           'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
         },
-        body: JSON.stringify({ customer_type: type, identifier })
+        body: JSON.stringify({
+          customer_type: type,
+          identifier
+        })
       });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
@@ -1989,7 +1994,8 @@ layoutHeader('Walk-in POS', '');
       document.getElementById('loyalty-customer-result').textContent = 'The order must be at least ₱<?= number_format($loyaltyRules['discount_cents'] / 100, 2) ?> to redeem points.';
     }
     renderCart();
-    if (_payMethod === 'cash') calcChange(); else onGcashRefInput();
+    if (_payMethod === 'cash') calcChange();
+    else onGcashRefInput();
   });
 
   function setDiscount(type) {
@@ -2870,7 +2876,8 @@ layoutHeader('Walk-in POS', '');
       <div id="pm-section-size">
         <div class="pm-section-label">Size</div>
         <div class="pm-size-group">
-          <?php foreach ($posSizeOptions as $sizeOption): $sz = $sizeOption['label']; $adj = (float) $sizeOption['price_adjustment']; ?>
+          <?php foreach ($posSizeOptions as $sizeOption): $sz = $sizeOption['label'];
+            $adj = (float) $sizeOption['price_adjustment']; ?>
             <button class="pm-size-btn" onclick="document.querySelectorAll('.pm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');posRecalc();posUpdateStockEstimate();">
               <span class="pm-size-name"><?= $sz ?></span>
               <span class="pm-size-adj"><?= $adj > 0 ? '+₱' . $adj : ($adj < 0 ? '−₱' . abs($adj) : 'Base') ?></span>
@@ -3051,7 +3058,9 @@ layoutHeader('Walk-in POS', '');
     box.style.color = 'var(--text-muted)';
     box.textContent = 'Checking available quantity…';
     addButton.disabled = true;
-    const params = new URLSearchParams({ product_id: _pos.id });
+    const params = new URLSearchParams({
+      product_id: _pos.id
+    });
     if (_pos.hasSizes) {
       const sizeIdx = [...document.querySelectorAll('.pm-size-btn')].findIndex(button => button.classList.contains('active'));
       if (POS_SIZES[sizeIdx]?.label) params.set('size_label', POS_SIZES[sizeIdx].label);
@@ -3070,7 +3079,9 @@ layoutHeader('Walk-in POS', '');
       } else {
         const currentQty = posCurrentProductQty();
         _pos.maxToAdd = Math.max(0, Number(result.max_quantity || 0) - currentQty);
-        Object.values(cart).filter(item => Number(item.productId) === Number(_pos.id)).forEach(item => { item.stockMax = Number(result.max_quantity || 0); });
+        Object.values(cart).filter(item => Number(item.productId) === Number(_pos.id)).forEach(item => {
+          item.stockMax = Number(result.max_quantity || 0);
+        });
         if (Object.keys(cart).length) renderCart();
         box.style.display = '';
         if (result.max_quantity < 1) {

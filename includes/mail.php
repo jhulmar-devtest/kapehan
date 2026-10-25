@@ -30,7 +30,8 @@ use PHPMailer\PHPMailer\Exception as PHPMailerException;
  *
  * @return array ['success' => bool, 'message' => string]
  */
-function sendEmail(string $to, string $subject, string $body, string $altBody = ''): array {
+function sendEmail(string $to, string $subject, string $body, string $altBody = ''): array
+{
   // Validate required configuration
   if (empty(MAIL_USERNAME) || empty(MAIL_PASSWORD) || empty(MAIL_FROM)) {
     return [
@@ -68,7 +69,6 @@ function sendEmail(string $to, string $subject, string $body, string $altBody = 
       'success' => true,
       'message' => 'Email sent successfully'
     ];
-
   } catch (PHPMailerException $e) {
     error_log("Email send failed: {$mail->ErrorInfo}");
     return [
@@ -89,7 +89,8 @@ function sendEmail(string $to, string $subject, string $body, string $altBody = 
  *
  * @return string HTML email body
  */
-function otpEmailTemplate(string $otp, string $purpose, int $expiryMinutes = 15): string {
+function otpEmailTemplate(string $otp, string $purpose, int $expiryMinutes = 15): string
+{
   $appName = APP_NAME;
   $actionText = $purpose === 'password_reset' ? 'reset your password' : 'verify your email address';
   $introText = $purpose === 'password_reset'
@@ -171,7 +172,8 @@ HTML;
  *
  * @return array ['success' => bool, 'message' => string]
  */
-function sendOtpEmail(string $to, string $otp, string $purpose): array {
+function sendOtpEmail(string $to, string $otp, string $purpose): array
+{
   $subjectMap = [
     'verification'   => 'Verify Your Email Address',
     'password_reset' => 'Reset Your Password'
