@@ -630,9 +630,11 @@ $storeClose = getSetting('store_close_time', '20:00');
         border-radius: var(--radius-lg);
         padding: 18px 16px 20px;
       }
+
       .spotlight-card {
         width: 182px;
       }
+
       .spotlight-card-img {
         height: 142px;
       }
@@ -800,7 +802,7 @@ $storeClose = getSetting('store_close_time', '20:00');
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform 420ms cubic-bezier(.2,.7,.2,1);
+      transition: transform 420ms cubic-bezier(.2, .7, .2, 1);
     }
 
     .menu-card:not(.unavailable):hover .menu-card-img img {
@@ -865,6 +867,7 @@ $storeClose = getSetting('store_close_time', '20:00');
       overflow: hidden;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
+      line-clamp: 2;
       font-weight: 650;
       font-size: .96rem;
       line-height: 1.3;
@@ -1928,7 +1931,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       box.style.color = 'var(--text-muted)';
       box.textContent = 'Checking available quantity…';
       addButton.disabled = true;
-      const params = new URLSearchParams({ product_id: _cm.id });
+      const params = new URLSearchParams({
+        product_id: _cm.id
+      });
       if (_cm.hasSizes) params.set('size_label', SIZES[_cm.sizeIdx].label);
       _cm.selectedAddons.forEach(id => params.append('addon_ids[]', id));
       try {
@@ -1945,7 +1950,9 @@ $storeClose = getSetting('store_close_time', '20:00');
           const cart = getCart();
           const currentQty = cart.filter(item => Number(item.productId) === Number(_cm.id)).reduce((sum, item) => sum + Number(item.qty || 0), 0);
           _cm.maxToAdd = Math.max(0, Number(result.max_quantity || 0) - currentQty);
-          cart.filter(item => Number(item.productId) === Number(_cm.id)).forEach(item => { item.stockMax = Number(result.max_quantity || 0); });
+          cart.filter(item => Number(item.productId) === Number(_cm.id)).forEach(item => {
+            item.stockMax = Number(result.max_quantity || 0);
+          });
           if (cart.length) saveCart(cart);
           box.hidden = false;
           if (result.max_quantity < 1) {
@@ -2047,9 +2054,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       document.getElementById('loginPanel').hidden = tab !== 'login';
       document.getElementById('registerPanel').hidden = tab !== 'register';
       document.getElementById('authModalTitle').textContent = tab === 'register' ? 'Create your account' : 'Welcome back';
-      document.getElementById('authModalIntro').textContent = tab === 'register'
-        ? 'Join the campus coffee community and order ahead.'
-        : 'Sign in to order your campus favorites.';
+      document.getElementById('authModalIntro').textContent = tab === 'register' ?
+        'Join the campus coffee community and order ahead.' :
+        'Sign in to order your campus favorites.';
     }
 
     if (AUTO_AUTH_TAB || HAS_REGISTER_ERROR || HAS_GLOBAL_FLASH) {
