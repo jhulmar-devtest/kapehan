@@ -639,6 +639,7 @@ CREATE TABLE `faculty` (
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'bcrypt hash',
   `email_verified` tinyint(1) NOT NULL DEFAULT '0',
   `email_verified_at` datetime DEFAULT NULL,
+  `registration_expires_at` datetime DEFAULT NULL,
   `id_declaration` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Faculty agreed to ID declaration',
   `privacy_notice_accepted_at` datetime DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
@@ -1639,7 +1640,26 @@ INSERT INTO `schema_migrations` (`version`, `checksum`, `applied_at`) VALUES
 ('2026_10_19_add_addon_inventory_recipes.sql', '2fcc0720a68cb86d5b5aca3abcab3bb522cfd23d7f392cb3a8e983422efb6c7c', '2026-10-19 00:00:00'),
 ('2026_10_20_harden_order_integrity.sql', '27afd682bc45d884f77e6c83a1ea26b4c055ccdf867b4617229d9d7065c320d8', '2026-10-19 00:00:00'),
 ('2026_10_23_high_priority_improvements.sql', '9bec7b5030fd5a6884f4d76afbf7aff4e0cffb87291d21cd623e10245eae8aaa', '2026-10-23 00:00:00'),
-('2026_10_23_manage_inventory_categories.sql', 'e34297a738c6edbfe47e77c0c1a1adabef1f898c8cb264ad726129219c5d987d', '2026-10-23 00:00:00');
+('2026_10_23_manage_inventory_categories.sql', 'e34297a738c6edbfe47e77c0c1a1adabef1f898c8cb264ad726129219c5d987d', '2026-10-23 00:00:00'),
+('2026_10_25_add_registration_conflict_recovery.sql', 'aeed1239f0f35606a0e065c5f62b2e885a1f96b6fd729882b42b5bd9f665d1d2', '2026-10-25 00:00:00');
+
+CREATE TABLE `registration_conflict_reports` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_type` enum('student','faculty') NOT NULL,
+  `school_id_no` varchar(30) NOT NULL,
+  `full_name` varchar(100) NOT NULL,
+  `contact_email` varchar(150) NOT NULL,
+  `details` varchar(1000) DEFAULT NULL,
+  `status` enum('pending','resolved','dismissed') NOT NULL DEFAULT 'pending',
+  `account_id` int unsigned DEFAULT NULL,
+  `reviewed_by` int unsigned DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `resolution_note` varchar(500) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_conflict_status_created` (`status`,`created_at`),
+  KEY `idx_conflict_claimed_id` (`user_type`,`school_id_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1734,6 +1754,7 @@ CREATE TABLE `students` (
   `email` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `email_verified` tinyint(1) NOT NULL DEFAULT '0',
   `email_verified_at` datetime DEFAULT NULL,
+  `registration_expires_at` datetime DEFAULT NULL,
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'bcrypt hash',
   `id_declaration` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Student agreed to ID declaration',
   `privacy_notice_accepted_at` datetime DEFAULT NULL,

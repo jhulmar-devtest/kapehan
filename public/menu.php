@@ -1650,6 +1650,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         <input id="loginPassword" type="password" name="password" autocomplete="current-password" placeholder="Enter your password" required>
         <button type="submit" class="btn btn-primary">Sign in</button>
         <a href="<?= APP_URL ?>/forgot-password.php" class="link-muted">Forgot password?</a>
+        <a href="<?= APP_URL ?>/report-id-conflict.php" class="link-muted">Having trouble because your ID is already in use?</a>
       </form>
 
       <form id="registerPanel" class="auth-panel" hidden method="POST" action="<?= APP_URL ?>/register.php">
@@ -1658,6 +1659,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         <input id="regFullName" type="text" name="full_name" value="<?= e($registerOld['full_name'] ?? '') ?>" autocomplete="name" placeholder="Enter your full name" required>
         <label id="idLabel" for="regIdNumber">Student / Faculty ID number</label>
         <input id="regIdNumber" type="text" name="id_no" value="<?= e($registerOld['id_no'] ?? '') ?>" placeholder="e.g. 2316-00001C or 2023-0001" required>
+        <a href="<?= APP_URL ?>/report-id-conflict.php" class="link-muted">Can’t register because this ID is already used? Report an ID conflict.</a>
         <label for="regEmail">Email</label>
         <input id="regEmail" type="email" name="email" value="<?= e($registerOld['email'] ?? '') ?>" autocomplete="email" placeholder="you@example.com" required>
         <label for="regPassword">Password</label>
@@ -1670,7 +1672,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         </div>
         <div class="checkbox-row" style="align-items:flex-start">
           <input type="checkbox" name="privacy_notice_accepted" id="privacyNoticeAccepted" required>
-          <label for="privacyNoticeAccepted">I understand that Kapehan ni Amang uses my name, school ID, and email to verify my account, process and update me about orders, and manage loyalty points. Authorized staff can access this information for these purposes.</label>
+          <label for="privacyNoticeAccepted">I understand that Kapehan ni Amang uses my name, school ID, and email to verify my account, process and update me about orders, manage loyalty points, and resolve account access problems. Authorized staff can access this information for these purposes.</label>
         </div>
         <button type="submit" class="btn btn-primary">Create Account</button>
       </form>

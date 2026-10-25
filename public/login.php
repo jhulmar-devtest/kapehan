@@ -40,6 +40,26 @@ if (!checkLoginAttempts($identifier)) {
 }
 
 $db   = Database::getInstance();
+$expiredRegistration = false;
+foreach ([
+  ['table' => 'students', 'identifier' => 'student_id_no'],
+  ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
+] as $accountConfig) {
+  $expiredCheck = $db->prepare(
+    "SELECT id FROM {$accountConfig['table']}
+     WHERE ({$accountConfig['identifier']} = ? OR email = ?)
+       AND email_verified = 0 AND is_active = 1
+       AND registration_expires_at IS NOT NULL AND registration_expires_at <= NOW()
+     LIMIT 1"
+  );
+  $expiredCheck->execute([$identifier, $identifier]);
+  if ($expiredCheck->fetchColumn()) $expiredRegistration = true;
+}
+expireUnverifiedRegistrations($db);
+if ($expiredRegistration) {
+  flash('global', 'Your unverified registration expired after 24 hours. Please register again and verify your email.', 'warning');
+  redirect(APP_URL . '/menu.php?auth=register');
+}
 $user = null;
 $role = null;
 

@@ -107,6 +107,7 @@ try {
       if (str_starts_with($version, '2026_10_20_') || in_array($version, [
         '2026_10_23_high_priority_improvements.sql',
         '2026_10_23_manage_inventory_categories.sql',
+        '2026_10_25_add_registration_conflict_recovery.sql',
       ], true)) continue;
       if (isset($applied[$version])) continue;
       $stmt->execute([$version, hash_file('sha256', $file)]);

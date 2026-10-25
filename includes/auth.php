@@ -40,7 +40,7 @@ function requireLogin(): void {
  * If role doesn't match → HTTP 403 Forbidden.
  */
 function requireRole(string ...$roles): void {
-  if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
+  if (!isLoggedIn()) {
     // Send unauthenticated visitors to the login screen that actually
     // matches what they were trying to reach, not always the customer
     // modal (item 10/11 — admin/cashier have separate entry points).
@@ -94,7 +94,32 @@ function requireRole(string ...$roles): void {
  * Does NOT redirect.
  */
 function isLoggedIn(): bool {
-  return !empty($_SESSION['user_id']) && !empty($_SESSION['role']);
+  if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) return false;
+
+  $role = (string) $_SESSION['role'];
+  if (in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true)) {
+    static $activeCache = [];
+    $userId = (int) $_SESSION['user_id'];
+    $cacheKey = $role . ':' . $userId;
+    if (!array_key_exists($cacheKey, $activeCache)) {
+      $table = $role === ROLE_STUDENT ? 'students' : 'faculty';
+      try {
+        $stmt = Database::getInstance()->prepare("SELECT is_active FROM {$table} WHERE id = ?");
+        $stmt->execute([$userId]);
+        $activeCache[$cacheKey] = (bool) $stmt->fetchColumn();
+      } catch (Throwable $e) {
+        error_log('Customer session check failed: ' . $e->getMessage());
+        $activeCache[$cacheKey] = false;
+      }
+    }
+    if (!$activeCache[$cacheKey]) {
+      unset($_SESSION['user_id'], $_SESSION['role'], $_SESSION['full_name'], $_SESSION['student_id_no'], $_SESSION['faculty_id_no'], $_SESSION['last_activity'], $_SESSION['login_time']);
+      if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**

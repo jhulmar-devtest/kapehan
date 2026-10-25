@@ -20,6 +20,23 @@ $userType = $pending['user_type'];
 $userId   = $pending['user_id'];
 $email    = $pending['email'];
 $purpose  = $pending['purpose'];
+$db = Database::getInstance();
+expireUnverifiedRegistrations($db);
+$signupExpiresAt = null;
+if ($purpose === 'verification' && in_array($userType, [ROLE_STUDENT, ROLE_FACULTY], true)) {
+  $table = $userType === ROLE_STUDENT ? 'students' : 'faculty';
+  $check = $db->prepare(
+    "SELECT registration_expires_at FROM {$table} WHERE id = ? AND email = ? AND is_active = 1
+       AND (registration_expires_at IS NULL OR registration_expires_at > NOW()) LIMIT 1"
+  );
+  $check->execute([$userId, $email]);
+  $signupExpiresAt = $check->fetchColumn();
+  if ($signupExpiresAt === false) {
+    unset($_SESSION['pending_verification']);
+    flash('global', 'This registration expired or is no longer available. Please register again.', 'error');
+    redirect(APP_URL . '/menu.php?auth=register');
+  }
+}
 
 $error    = '';
 $success  = '';
@@ -43,7 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if ($result['valid']) {
         // Mark email as verified in database
-        $db = Database::getInstance();
         $table = match ($userType) {
           ROLE_STUDENT => 'students',
           ROLE_FACULTY => 'faculty',
@@ -51,7 +67,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           default => null
         };
 
-        if ($table) {
+        if ($table && in_array($userType, [ROLE_STUDENT, ROLE_FACULTY], true) && $purpose === 'verification') {
+          $stmt = $db->prepare(
+            "UPDATE {$table} SET email_verified = 1, email_verified_at = NOW(), registration_expires_at = NULL
+             WHERE id = ? AND email = ? AND is_active = 1
+               AND (registration_expires_at IS NULL OR registration_expires_at > NOW())"
+          );
+          $stmt->execute([$userId, $email]);
+          if ($stmt->rowCount() === 0) {
+            unset($_SESSION['pending_verification']);
+            flash('global', 'This registration expired or is no longer available. Please register again.', 'error');
+            redirect(APP_URL . '/menu.php?auth=register');
+          }
+        } elseif ($table && $purpose === 'verification') {
           $stmt = $db->prepare("UPDATE {$table} SET email_verified = 1, email_verified_at = NOW() WHERE id = ?");
           $stmt->execute([$userId]);
         }
@@ -507,6 +535,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="email-hint">
           We sent a verification code to<br>
           <strong><?= e($maskedEmail) ?></strong>
+          <?php if ($signupExpiresAt): ?><br><span style="display:block;margin-top:8px">New registrations expire after 24 hours if the email is not verified.</span><?php endif; ?>
         </div>
 
         <form method="POST" action="" id="otp-form">

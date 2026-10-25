@@ -98,6 +98,44 @@ function validatePassword(string $password): ?string {
   return null; // null means "no error" = password is valid
 }
 
+/**
+ * Release ID and email values held by expired, never-verified signups.
+ * Keep the account row inactive so any related audit/history records remain intact.
+ */
+function expireUnverifiedRegistrations(PDO $db): int {
+  $released = 0;
+  foreach ([
+    ROLE_STUDENT => ['table' => 'students', 'identifier' => 'student_id_no'],
+    ROLE_FACULTY => ['table' => 'faculty', 'identifier' => 'faculty_id_no'],
+  ] as $role => $config) {
+    $stmt = $db->query(
+      "SELECT id FROM {$config['table']}
+       WHERE email_verified = 0 AND is_active = 1
+         AND registration_expires_at IS NOT NULL
+         AND registration_expires_at <= NOW()"
+    );
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $accountId) {
+      $accountId = (int) $accountId;
+      $token = strtoupper(bin2hex(random_bytes(4)));
+      $releasedId = 'EXPIRED-' . $accountId . '-' . $token;
+      $releasedEmail = 'expired-' . $accountId . '-' . strtolower($token) . '@invalid.local';
+      $stmt = $db->prepare(
+        "UPDATE {$config['table']}
+         SET {$config['identifier']} = ?, email = ?, full_name = 'Expired registration',
+             password = ?, email_verified = 0, is_active = 0, registration_expires_at = NULL
+         WHERE id = ? AND email_verified = 0 AND is_active = 1
+           AND registration_expires_at IS NOT NULL AND registration_expires_at <= NOW()"
+      );
+      $stmt->execute([$releasedId, $releasedEmail, '!expired!' . $token, $accountId]);
+      if ($stmt->rowCount() > 0) {
+        $db->prepare('DELETE FROM email_otps WHERE user_type = ? AND user_id = ?')->execute([$role, $accountId]);
+        $released++;
+      }
+    }
+  }
+  return $released;
+}
+
 // ---- AJAX / API HELPERS ----
 
 /**

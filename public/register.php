@@ -57,14 +57,15 @@ if ($pwError) $errors[] = $pwError;
 if ($password !== $confirm) $errors[] = 'Passwords do not match.';
 
 if (empty($errors)) {
+  $db = Database::getInstance();
+  expireUnverifiedRegistrations($db);
   $table    = $accountType === ROLE_STUDENT ? 'students' : 'faculty';
   $idColumn = $accountType === ROLE_STUDENT ? 'student_id_no' : 'faculty_id_no';
 
-  $db   = Database::getInstance();
   $stmt = $db->prepare("SELECT id FROM {$table} WHERE {$idColumn} = ? LIMIT 1");
   $stmt->execute([$old['id_no']]);
   if ($stmt->fetch()) {
-    $errors[] = 'That ID number is already registered. Please sign in instead.';
+    $errors[] = 'That ID number is already registered. Please sign in or report an ID conflict if you believe it is being used by someone else.';
   }
 }
 
@@ -92,14 +93,14 @@ try {
     $stmt = $db->prepare(
       // course is NOT NULL in the schema and is no longer asked at signup;
       // store '' (shown as "Not set" in the profile) so no migration is needed.
-      "INSERT INTO students (full_name, student_id_no, course, email, password, id_declaration, privacy_notice_accepted_at, email_verified)
-       VALUES (?, ?, '', ?, ?, 1, NOW(), 0)"
+      "INSERT INTO students (full_name, student_id_no, course, email, password, id_declaration, privacy_notice_accepted_at, email_verified, registration_expires_at)
+       VALUES (?, ?, '', ?, ?, 1, NOW(), 0, DATE_ADD(NOW(), INTERVAL 24 HOUR))"
     );
     $stmt->execute([$old['full_name'], $old['id_no'], $old['email'], $hash]);
   } else {
     $stmt = $db->prepare(
-      "INSERT INTO faculty (full_name, faculty_id_no, email, password, id_declaration, privacy_notice_accepted_at, email_verified)
-       VALUES (?, ?, ?, ?, 1, NOW(), 0)"
+      "INSERT INTO faculty (full_name, faculty_id_no, email, password, id_declaration, privacy_notice_accepted_at, email_verified, registration_expires_at)
+       VALUES (?, ?, ?, ?, 1, NOW(), 0, DATE_ADD(NOW(), INTERVAL 24 HOUR))"
     );
     $stmt->execute([$old['full_name'], $old['id_no'], $old['email'], $hash]);
   }

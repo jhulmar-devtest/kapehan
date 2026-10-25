@@ -67,6 +67,12 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void {
     $nav .= navItem('fa-cash-register', 'Cash Drawer', $appUrl . '/admin/cash-drawer.php', $pageTitle);
     $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
     $nav .= '<div class="nav-section-label">System</div>';
+    try {
+      $conflictReportCount = (int) Database::getInstance()->query("SELECT COUNT(*) FROM registration_conflict_reports WHERE status = 'pending'")->fetchColumn();
+    } catch (Throwable $e) {
+      $conflictReportCount = 0;
+    }
+    $nav .= navItem('fa-id-card', 'ID Conflict Reports', $appUrl . '/admin/id-conflicts.php', $pageTitle, $conflictReportCount, $conflictReportCount > 0 ? 2 : 1);
   } elseif ($role === ROLE_CASHIER) {
     $preorderCount   = pendingPreorderCount();
     $preorderUrgency = preorderUrgency();
