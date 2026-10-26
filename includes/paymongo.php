@@ -25,7 +25,7 @@ require_once __DIR__ . '/loyalty.php';
  * Call the PayMongo API. Returns ['status' => int, 'body' => array|null].
  * Throws RuntimeException if the request could not be made at all.
  */
-function paymongoApi(string $method, string $path, ?array $body = null): array
+function paymongoApi(string $method, string $path, ?array $body = null, int $timeout = 25): array
 {
   if (!function_exists('curl_init')) {
     throw new RuntimeException('The PHP cURL extension is not enabled.');
@@ -34,7 +34,7 @@ function paymongoApi(string $method, string $path, ?array $body = null): array
   $options = [
     CURLOPT_CUSTOMREQUEST  => $method,
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT        => 25,
+    CURLOPT_TIMEOUT        => max(3, $timeout),
     CURLOPT_USERPWD        => PAYMONGO_SECRET_KEY . ':',
     CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
   ];
@@ -48,9 +48,11 @@ function paymongoApi(string $method, string $path, ?array $body = null): array
   $raw = curl_exec($ch);
   if ($raw === false) {
     $err = curl_error($ch);
+    curl_close($ch);
     throw new RuntimeException('PayMongo request failed: ' . $err);
   }
   $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  curl_close($ch);
   $decoded = json_decode((string) $raw, true);
   return ['status' => $status, 'body' => is_array($decoded) ? $decoded : null];
 }
@@ -91,6 +93,141 @@ function paymongoCreateCheckout(string $orderNo, float $total, int $orderId, str
     throw new RuntimeException('Could not start the GCash payment. Please try again.');
   }
   return ['id' => $id, 'url' => $url];
+}
+
+/**
+ * Fetch a checkout session from PayMongo (GET /v1/checkout_sessions/{id}).
+ * Returns the session resource (the "data" object) or null if PayMongo could
+ * not be reached or did not return a session. Short timeout: this is called
+ * from page loads, never from a place where a slow API should block for long.
+ */
+function paymongoFetchSession(string $sessionId): ?array
+{
+  if ($sessionId === '') return null;
+  try {
+    $res = paymongoApi('GET', '/v1/checkout_sessions/' . rawurlencode($sessionId), null, 10);
+  } catch (RuntimeException $e) {
+    error_log('PayMongo session lookup failed: ' . $e->getMessage());
+    return null;
+  }
+  $data = $res['body']['data'] ?? null;
+  if ($res['status'] >= 200 && $res['status'] < 300 && is_array($data)) return $data;
+  error_log('PayMongo session lookup rejected (HTTP ' . $res['status'] . ') for ' . $sessionId);
+  return null;
+}
+
+/** The paid payment inside a checkout session resource, or null if none is paid. */
+function paymongoPaidPayment(array $session): ?array
+{
+  $attrs = is_array($session['attributes'] ?? null) ? $session['attributes'] : [];
+  foreach ((array) ($attrs['payments'] ?? []) as $p) {
+    if (is_array($p) && (($p['attributes']['status'] ?? '') === 'paid')) return $p;
+  }
+  return null;
+}
+
+/** Hosted payment page URL for a session (prefers the URL PayMongo reports). */
+function paymongoSessionUrl(array $session, string $sessionId): string
+{
+  $url = (string) ($session['attributes']['checkout_url'] ?? '');
+  if (!str_starts_with($url, 'https://checkout.paymongo.com/')) {
+    $url = 'https://checkout.paymongo.com/' . rawurlencode($sessionId);
+  }
+  return $url;
+}
+
+/**
+ * Close the hosted payment page so it can no longer take money
+ * (POST /v1/checkout_sessions/{id}/expire).
+ * Returns 'closed' (expired now, already expired, or unknown to PayMongo),
+ * 'paid' (the customer had already paid), or 'error' (could not confirm:
+ * the caller must NOT cancel the order, because money may still arrive).
+ */
+function paymongoCloseSession(string $sessionId): string
+{
+  try {
+    $res = paymongoApi('POST', '/v1/checkout_sessions/' . rawurlencode($sessionId) . '/expire', null, 10);
+  } catch (RuntimeException $e) {
+    error_log('PayMongo expire failed: ' . $e->getMessage());
+    return 'error';
+  }
+  if ($res['status'] >= 200 && $res['status'] < 300) return 'closed';
+  if ($res['status'] === 404) return 'closed';
+
+  // 400 means already expired, already paid, or a payment is in progress.
+  $session = paymongoFetchSession($sessionId);
+  if ($session === null) return 'error';
+  if (paymongoPaidPayment($session) !== null) return 'paid';
+  if ((string) ($session['attributes']['status'] ?? '') === 'expired') return 'closed';
+  return 'error'; // a payment is in flight: let it settle first
+}
+
+/**
+ * Ask PayMongo whether this order's payment really went through and, if so,
+ * settle it exactly as the webhook would (same idempotency key logic, same
+ * amount check). This is the safety net for a webhook that never arrived.
+ * Returns 'paid', 'unpaid', or 'unknown' (PayMongo unreachable / not a gateway order).
+ */
+function paymongoReconcileOrder(PDO $db, int $orderId): string
+{
+  $stmt = $db->prepare('SELECT gateway, gateway_session_id, payment_status FROM payments WHERE order_id = ? LIMIT 1');
+  $stmt->execute([$orderId]);
+  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  if (!$row || $row['gateway'] !== 'paymongo') return 'unknown';
+  if ($row['payment_status'] === PAY_STATUS_PAID) return 'paid';
+  $sessionId = (string) ($row['gateway_session_id'] ?? '');
+  if ($sessionId === '') return 'unknown';
+
+  $session = paymongoFetchSession($sessionId);
+  if ($session === null) return 'unknown';
+  if (paymongoPaidPayment($session) === null) return 'unpaid';
+
+  try {
+    paymongoHandlePaidEvent($db, [
+      'type'     => 'checkout_session.payment.paid',
+      'resource' => $session,
+      'event_id' => '',
+      'livemode' => null,
+    ]);
+  } catch (Throwable $e) {
+    error_log('PayMongo reconcile failed for order ' . $orderId . ': ' . $e->getMessage());
+    return 'unknown';
+  }
+  $stmt->execute([$orderId]);
+  $after = $stmt->fetch(PDO::FETCH_ASSOC);
+  return ($after && $after['payment_status'] === PAY_STATUS_PAID) ? 'paid' : 'unknown';
+}
+
+/**
+ * reconcile, but at most once per $minSeconds per order per browser session.
+ * Used by pages that are polled, so one waiting customer cannot hammer the API.
+ */
+function paymongoReconcileThrottled(PDO $db, int $orderId, int $minSeconds = 15): string
+{
+  $key = 'pm_recon_' . $orderId;
+  $now = time();
+  if (isset($_SESSION[$key]) && ($now - (int) $_SESSION[$key]) < $minSeconds) return 'unknown';
+  $_SESSION[$key] = $now;
+  return paymongoReconcileOrder($db, $orderId);
+}
+
+/**
+ * If this order is waiting on an online payment, close PayMongo's payment
+ * page for it. Returns 'n/a' (nothing to close), 'closed', 'paid' (the
+ * customer had already paid: the order was settled instead) or 'error'.
+ */
+function paymongoCloseOrderPaymentPage(PDO $db, int $orderId): string
+{
+  $stmt = $db->prepare('SELECT gateway, gateway_session_id, payment_status FROM payments WHERE order_id = ? LIMIT 1');
+  $stmt->execute([$orderId]);
+  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  if (!$row || $row['gateway'] !== 'paymongo' || $row['payment_status'] !== PAY_STATUS_PENDING) return 'n/a';
+  $sessionId = (string) ($row['gateway_session_id'] ?? '');
+  if ($sessionId === '') return 'n/a'; // the session was never created
+
+  $result = paymongoCloseSession($sessionId);
+  if ($result === 'paid') paymongoReconcileOrder($db, $orderId);
+  return $result;
 }
 
 /**
@@ -226,12 +363,27 @@ function paymongoHandlePaidEvent(PDO $db, array $event): string
 }
 
 /**
- * Cancel an order whose online payment was never completed: releases the
+ * Cancel an order whose online payment was never completed: closes the
+ * PayMongo payment page, then releases the
  * reserved ingredients and any redeemed loyalty points. Returns true if the
  * order was cancelled, false if it was not eligible (already paid, etc.).
  */
-function paymongoCancelUnpaidOrder(PDO $db, int $orderId, string $actorRole, ?int $actorId): bool
+function paymongoCancelUnpaidOrder(PDO $db, int $orderId, string $actorRole, ?int $actorId, bool $closeSession = true): bool
 {
+  // Close PayMongo's payment page BEFORE touching the order. Sessions never
+  // expire on their own, so without this a customer could still pay for an
+  // order that no longer exists. If the page cannot be closed, or the customer
+  // turns out to have paid, the order is left alone (the payment is settled
+  // instead) and nothing is cancelled. Skipped when the caller already holds
+  // a transaction, so no network call happens under a row lock.
+  if ($closeSession && !$db->inTransaction()) {
+    $closed = paymongoCloseOrderPaymentPage($db, $orderId);
+    if ($closed === 'paid') return false;
+    if ($closed === 'error') {
+      throw new RuntimeException('Could not close the online payment page right now. Please try again in a moment.');
+    }
+  }
+
   $own = !$db->inTransaction();
   if ($own) $db->beginTransaction();
   try {
@@ -270,7 +422,7 @@ function paymongoExpireStaleOrders(PDO $db): int
        FROM orders o JOIN payments p ON p.order_id = o.id
       WHERE p.gateway = 'paymongo' AND p.payment_status = 'pending' AND o.status = 'pending'
         AND o.created_at < DATE_SUB(NOW(), INTERVAL {$minutes} MINUTE)
-      LIMIT 20"
+      LIMIT 5"
   );
   $count = 0;
   foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $o) {
@@ -280,6 +432,8 @@ function paymongoExpireStaleOrders(PDO $db): int
       if (paymongoCancelUnpaidOrder($db, (int) $o['id'], $role, $uid)) $count++;
     } catch (Throwable $e) {
       error_log('PayMongo stale-order cleanup failed for order ' . $o['id'] . ': ' . $e->getMessage());
+      // PayMongo unreachable: stop here instead of waiting on every remaining order.
+      if ($e instanceof RuntimeException) break;
     }
   }
   return $count;

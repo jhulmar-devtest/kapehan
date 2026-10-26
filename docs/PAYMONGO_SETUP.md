@@ -59,11 +59,25 @@ GCash-reference flow. To switch back at any time: empty the key.
 ## How it behaves
 
 - **Unpaid order:** the cashier sees "Awaiting payment" and cannot start it.
-- **Customer backs out:** they get "Payment not completed" with a button to
-  cancel the order. Their cart is kept.
+- **Customer backs out:** they get "Payment not completed" with **Complete
+  payment** and **Cancel this order** buttons. The same two buttons show on the
+  order in My Orders, so closing the PayMongo tab is never a dead end.
+- **One unpaid online order at a time:** a customer with an unpaid online
+  order must finish or cancel it before placing another.
 - **Never paid:** after 45 minutes (`PAYMONGO_UNPAID_ORDER_MINUTES` in
   `config/constants.php`) the order is cancelled automatically and the
-  ingredients/loyalty points are released.
+  ingredients/loyalty points are released. This runs when someone opens
+  checkout or the cashier pre-orders page.
+- **Cancelling closes the payment page:** PayMongo checkout pages never expire
+  on their own, so every cancel (customer, cashier, or the 45-minute timer)
+  first expires the PayMongo session. If that cannot be confirmed, or the
+  customer turns out to have paid, the order is **not** cancelled.
+- **Missed webhook:** pages that show a waiting order (return page, My Orders)
+  and the cancel step ask PayMongo directly whether the payment went through,
+  so a paid order is still marked paid if the webhook never arrived.
+- **Cashier steps are enforced by the server:** an order can only move
+  pending → preparing → ready → claimed (cancel from any of those), and an
+  unpaid online order cannot move forward.
 - **Safety:** the webhook checks PayMongo's signature, ignores repeated
   deliveries, and checks that the amount paid matches the order.
 
@@ -79,11 +93,10 @@ GCash-reference flow. To switch back at any time: empty the key.
 
 ## Known limits (fine for a demo, worth knowing)
 
-- A customer who pays after their order was auto-cancelled (45 min) gets no
-  order. It is written to the PHP error log as "PAID BUT ORDER CANCELLED" so
-  staff can refund it by hand.
-- Refunds are not automated.
-- The customer cannot reopen a payment page they closed. They place the order
-  again (the old one is released).
+- If a payment still lands on an order that was cancelled (for example PayMongo
+  was unreachable at the exact moment), it is written to the PHP error log as
+  "PAID BUT ORDER CANCELLED" so staff can refund it by hand.
+- Refunds are not automated, and a paid online order that a cashier cancels
+  still has to be refunded by hand in the PayMongo dashboard.
 - Going live with real money needs a registered business account with PayMongo
   and the **live** keys; this setup is for test mode.

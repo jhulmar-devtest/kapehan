@@ -11,6 +11,7 @@
 // ============================================================
 
 require_once __DIR__ . '/../config/init.php';
+require_once __DIR__ . '/../includes/paymongo.php';
 requireRole(ROLE_STUDENT, ROLE_FACULTY);
 
 $db       = Database::getInstance();
@@ -252,7 +253,7 @@ if (isset($statusGroups[$filter])) {
 }
 
 $stmt = $db->prepare(
-  "SELECT o.*, p.payment_method, p.payment_status,
+  "SELECT o.*, p.payment_method, p.payment_status, p.gateway,
           f.id AS feedback_id,
           (SELECT COALESCE(SUM(od.quantity),0) FROM order_details od WHERE od.order_id = o.id) AS item_count
    FROM orders o
@@ -276,6 +277,23 @@ $stmt = $db->prepare(
 );
 $stmt->execute($params);
 $orders = $stmt->fetchAll();
+
+// An online order still showing "unpaid" may simply be waiting on a webhook
+// that never arrived. Ask PayMongo (throttled, newest few only) so a customer
+// who really paid sees it here.
+$reconcileBudget = 3;
+foreach ($orders as &$orderRow) {
+  if (
+    $reconcileBudget > 0 && ($orderRow['gateway'] ?? '') === 'paymongo'
+    && $orderRow['payment_status'] === PAY_STATUS_PENDING && $orderRow['status'] === STATUS_PENDING
+  ) {
+    $reconcileBudget--;
+    if (paymongoReconcileThrottled($db, (int) $orderRow['id'], 15) === 'paid') {
+      $orderRow['payment_status'] = PAY_STATUS_PAID;
+    }
+  }
+}
+unset($orderRow);
 
 function statusGroupOf(string $status): string
 {
@@ -689,6 +707,10 @@ function renderOrderTimeline(string $status): string
           </div>
           <?php else: foreach ($orders as $o):
             $group = statusGroupOf($o['status']);
+            $awaitingPayment = ($o['gateway'] ?? '') === 'paymongo'
+              && $o['payment_status'] === PAY_STATUS_PENDING
+              && $o['status'] === STATUS_PENDING;
+            $payUrl = APP_URL . '/payment-return.php?order=' . urlencode($o['order_number']);
           ?>
             <div class="order-row" data-order-id="<?= $o['id'] ?>" data-order-number="<?= e($o['order_number']) ?>" data-status="<?= e($o['status']) ?>">
               <div class="order-row-top">
@@ -696,6 +718,11 @@ function renderOrderTimeline(string $status): string
                 <div class="order-main">
                   <div class="order-title"><?= e($o['order_number']) ?></div>
                   <div class="order-meta">Pickup &middot; <?= (int) $o['item_count'] ?> item<?= (int) $o['item_count'] !== 1 ? 's' : '' ?></div>
+                  <?php if ($awaitingPayment): ?>
+                    <div class="order-date" data-pay-note style="color:var(--warn, #a45a24);font-weight:600">
+                      Awaiting payment &middot; released after <?= (int) PAYMONGO_UNPAID_ORDER_MINUTES ?> min if unpaid
+                    </div>
+                  <?php endif; ?>
                   <div class="order-date">
                     <?php if (!empty($o['pickup_date'])): ?>
                       <?= date('j M Y', strtotime($o['pickup_date'])) ?><?= !empty($o['pickup_time']) ? ', ' . ($o['pickup_time'] === 'ASAP' ? 'ASAP' : date('g:i A', strtotime($o['pickup_time']))) : '' ?>
@@ -712,6 +739,12 @@ function renderOrderTimeline(string $status): string
                       <button class="btn btn-sm btn-primary" data-qr-btn onclick="openQrModal(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>')">
                         <i class="fa-solid fa-qrcode"></i> Show QR to Claim
                       </button>
+                    <?php endif; ?>
+                    <?php if ($awaitingPayment): ?>
+                      <a class="btn btn-sm btn-primary" data-pay-actions href="<?= e($payUrl) ?>&amp;resume=1">
+                        <i class="fa-solid fa-mobile-screen-button"></i> Complete Payment
+                      </a>
+                      <a class="btn btn-sm btn-outline" data-pay-actions href="<?= e($payUrl) ?>&amp;cancelled=1">Cancel</a>
                     <?php endif; ?>
                     <?php if ($group === 'completed' && empty($o['feedback_id'])): ?>
                       <button class="btn btn-sm btn-outline" onclick="openRateModal(<?= $o['id'] ?>)">Rate Order</button>
@@ -928,7 +961,8 @@ function renderOrderTimeline(string $status): string
           document.getElementById('rateItems').hidden = false;
         })
         .catch(() => {
-          /* item ratings are optional */ });
+          /* item ratings are optional */
+        });
     }
 
     document.getElementById('rateForm').addEventListener('submit', e => {
@@ -961,6 +995,10 @@ function renderOrderTimeline(string $status): string
       }).join('') + '</div>';
     }
 
+    document.querySelectorAll('.order-row').forEach(r => {
+      if (r.querySelector('[data-pay-actions]')) r.dataset.hadPayButtons = '1';
+    });
+
     function pollOrderStatuses() {
       const rows = Array.from(document.querySelectorAll('.order-row[data-status]')).filter(r => ['pending', 'preparing', 'ready'].includes(r.dataset.status));
       if (rows.length === 0) return;
@@ -975,7 +1013,19 @@ function renderOrderTimeline(string $status): string
         .then(data => {
           (data.orders || []).forEach(o => {
             const row = document.querySelector(`.order-row[data-order-id="${o.id}"]`);
-            if (!row || row.dataset.status === o.status) return;
+            if (!row) return;
+
+            // Payment settled (or the order moved on): the pay/cancel buttons no longer apply.
+            if (o.awaiting_payment === false) {
+              row.querySelectorAll('[data-pay-actions], [data-pay-note]').forEach(el => el.remove());
+              if (!row.dataset.paidNotified && row.dataset.hadPayButtons === '1') {
+                row.dataset.paidNotified = '1';
+                if (o.status !== 'cancelled' && o.status !== 'no_show') {
+                  showToast('success', `Payment received for ${row.dataset.orderNumber}.`, 6000);
+                }
+              }
+            }
+            if (row.dataset.status === o.status) return;
 
             const wasStatus = row.dataset.status;
             row.dataset.status = o.status;

@@ -122,6 +122,33 @@ if (!$viaGateway) {
   }
 }
 
+// One unpaid online order at a time. Each unpaid order holds a pickup slot and
+// reserved ingredients, so without a cap one customer could tie up a whole
+// slot, and a customer who closed PayMongo's page (or hit Back) would just
+// stack duplicates. First ask PayMongo whether the earlier order was actually
+// paid (a missed webhook), so a paid order never blocks a new one.
+if ($viaGateway) {
+  $ownerColumn = $role === ROLE_STUDENT ? 'student_id' : 'faculty_id';
+  $openStmt = $db->prepare(
+    "SELECT o.id, o.order_number
+       FROM orders o JOIN payments p ON p.order_id = o.id
+      WHERE o.{$ownerColumn} = ? AND o.status = 'pending'
+        AND p.gateway = 'paymongo' AND p.payment_status = 'pending'
+      ORDER BY o.id DESC LIMIT 3"
+  );
+  $openStmt->execute([(int) currentUserId()]);
+  foreach ($openStmt->fetchAll(PDO::FETCH_ASSOC) as $openOrder) {
+    if (paymongoReconcileOrder($db, (int) $openOrder['id']) === 'paid') continue;
+    http_response_code(422);
+    echo json_encode([
+      'ok'      => false,
+      'reason'  => 'unpaid_order_open',
+      'message' => "You still have an unpaid online order ({$openOrder['order_number']}). Open My Orders to complete the payment or cancel it, then place this order again.",
+    ]);
+    exit;
+  }
+}
+
 // Catalog prices, size adjustments and add-ons are re-read from the database.
 $total = 0;
 $details = [];
@@ -272,7 +299,9 @@ try {
     'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",
   ]);
 } catch (\Throwable $e) {
-  $db->rollBack();
+  // Something can throw after the commit (audit log, response building); a
+  // rollBack() with no open transaction would itself throw and hide this error.
+  if ($db->inTransaction()) $db->rollBack();
   error_log('checkout failed: ' . $e->getMessage());
   http_response_code($e instanceof RuntimeException ? 422 : 500);
   echo json_encode(['ok' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.']);

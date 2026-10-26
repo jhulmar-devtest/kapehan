@@ -5,9 +5,11 @@
 // manual page refresh. Mirrors the XHR-gated pattern used by
 // api/preorder-badge.php for the cashier sidebar.
 //
-// Returns JSON: { orders: [ { id, status }, ... ] }
+// Returns JSON: { orders: [ { id, status, awaiting_payment }, ... ] }
+// awaiting_payment is true while an online (PayMongo) order is still unpaid.
 
 require_once __DIR__ . '/../../config/init.php';
+require_once __DIR__ . '/../../includes/paymongo.php';
 
 header('Content-Type: application/json');
 
@@ -31,9 +33,26 @@ if (empty($ids)) {
 
 $db = Database::getInstance();
 $placeholders = implode(',', array_fill(0, count($ids), '?'));
-$stmt = $db->prepare(
-  "SELECT id, status FROM orders WHERE {$fkColumn} = ? AND id IN ({$placeholders})"
-);
+$sql = "SELECT o.id, o.status,
+               (p.gateway = 'paymongo' AND p.payment_status = 'pending' AND o.status = 'pending') AS awaiting_payment
+          FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+         WHERE o.{$fkColumn} = ? AND o.id IN ({$placeholders})";
+$stmt = $db->prepare($sql);
 $stmt->execute(array_merge([$userId], $ids));
+$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-echo json_encode(['orders' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+// A paid online order whose webhook never arrived would sit on "unpaid"
+// forever; ask PayMongo (throttled per order, newest few only).
+$budget = 3;
+foreach ($rows as &$row) {
+  if ($budget > 0 && (int) $row['awaiting_payment'] === 1) {
+    $budget--;
+    if (paymongoReconcileThrottled($db, (int) $row['id'], 15) === 'paid') {
+      $row['awaiting_payment'] = 0;
+    }
+  }
+  $row['awaiting_payment'] = (int) $row['awaiting_payment'] === 1;
+}
+unset($row);
+
+echo json_encode(['orders' => $rows]);

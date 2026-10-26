@@ -23,28 +23,82 @@ $fkColumn = $role === ROLE_STUDENT ? 'student_id' : 'faculty_id';
 $orderNo = sanitizeString($_GET['order'] ?? $_POST['order'] ?? '', 20);
 $backedOut = isset($_GET['cancelled']);
 
-$stmt = $db->prepare(
-  "SELECT o.id, o.order_number, o.status, o.total_amount, p.payment_status, p.gateway
-     FROM orders o LEFT JOIN payments p ON p.order_id = o.id
-    WHERE o.order_number = ? AND o.{$fkColumn} = ? LIMIT 1"
-);
-$stmt->execute([$orderNo, $userId]);
-$order = $stmt->fetch(PDO::FETCH_ASSOC);
+$loadOrder = function () use ($db, $fkColumn, $orderNo, $userId) {
+  $stmt = $db->prepare(
+    "SELECT o.id, o.order_number, o.status, o.total_amount, p.payment_status, p.gateway, p.gateway_session_id
+       FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+      WHERE o.order_number = ? AND o.{$fkColumn} = ? LIMIT 1"
+  );
+  $stmt->execute([$orderNo, $userId]);
+  return $stmt->fetch(PDO::FETCH_ASSOC);
+};
+
+$order = $loadOrder();
 if (!$order || $order['gateway'] !== 'paymongo') {
   redirect(APP_URL . '/menu.php');
 }
+$self = APP_URL . '/payment-return.php?order=' . urlencode($order['order_number']);
 
 // Customer chose to give up on an unpaid order.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_unpaid'])) {
   verifyCsrf();
   try {
-    paymongoCancelUnpaidOrder($db, (int) $order['id'], $role, $userId);
-    flash('global', 'Your unpaid order was cancelled.', 'warning');
+    if (paymongoCancelUnpaidOrder($db, (int) $order['id'], $role, $userId)) {
+      flash('global', 'Your unpaid order was cancelled.', 'warning');
+    } else {
+      // Not cancelled: either the payment had in fact gone through, or the
+      // order was already cancelled / no longer pending.
+      $now = $loadOrder();
+      if ($now && $now['payment_status'] === PAY_STATUS_PAID) {
+        flash('global', 'Your payment was received, so this order can no longer be cancelled here. Ask the cashier if you need to cancel it.', 'warning');
+        redirect(APP_URL . '/orders.php');
+      }
+      flash('global', 'This order could not be cancelled.', 'warning');
+    }
   } catch (Throwable $e) {
     error_log('Cancel unpaid order failed: ' . $e->getMessage());
-    flash('global', 'Could not cancel the order. Please try again.', 'error');
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Could not cancel the order. Please try again.', 'error');
+    redirect(APP_URL . '/orders.php');
   }
   redirect(APP_URL . '/menu.php');
+}
+
+// Customer wants to finish paying an order that is still unpaid. Always ask
+// PayMongo first: the customer may have paid already, or the page may have
+// expired, and either way sending them to a dead page would be wrong.
+if (isset($_GET['resume']) && $order['payment_status'] !== PAY_STATUS_PAID && $order['status'] === STATUS_PENDING) {
+  $sessionId = (string) ($order['gateway_session_id'] ?? '');
+  $session = $sessionId !== '' ? paymongoFetchSession($sessionId) : null;
+  if ($session === null) {
+    flash('global', 'Could not reach the payment service. Please try again in a moment.', 'error');
+    redirect(APP_URL . '/orders.php');
+  }
+  if (paymongoPaidPayment($session) !== null) {
+    paymongoReconcileOrder($db, (int) $order['id']);
+    redirect($self);
+  }
+  if ((string) ($session['attributes']['status'] ?? '') === 'expired') {
+    try {
+      paymongoCancelUnpaidOrder($db, (int) $order['id'], $role, $userId, false);
+    } catch (Throwable $e) {
+      error_log('Cancel expired order failed: ' . $e->getMessage());
+    }
+    flash('global', 'That payment page has expired, so the order was cancelled. You can place it again from the menu.', 'warning');
+    redirect(APP_URL . '/orders.php');
+  }
+  redirect(paymongoSessionUrl($session, $sessionId));
+}
+
+// The webhook normally marks the payment paid within seconds. If it has not
+// (never arrived, or this page was opened first), ask PayMongo directly so a
+// customer who really paid is never left looking at "unpaid". Throttled,
+// because the waiting screen reloads this page every few seconds.
+if (
+  $order['payment_status'] !== PAY_STATUS_PAID && $order['status'] !== STATUS_CANCELLED
+  && $_SERVER['REQUEST_METHOD'] === 'GET'
+  && paymongoReconcileThrottled($db, (int) $order['id'], 12) === 'paid'
+) {
+  $order = $loadOrder() ?: $order;
 }
 
 if ($order['payment_status'] === PAY_STATUS_PAID) {
@@ -56,7 +110,6 @@ if ($order['payment_status'] === PAY_STATUS_PAID) {
 } else {
   $state = 'waiting';
 }
-$self = APP_URL . '/payment-return.php?order=' . urlencode($order['order_number']);
 
 // Progress tracker: Order placed → Payment → Confirmed
 $stepStates = match ($state) {
@@ -693,7 +746,7 @@ $stepIcons = [
             <path d="M12 7v6M12 17v.01" />
           </svg></div>
         <h1>Payment not completed</h1>
-        <p class="lead">This order is still unpaid. Your cart is saved if you want to order again.</p>
+        <p class="lead">This order is still unpaid. You can finish paying for it, or cancel it.</p>
         <dl class="summary">
           <div>
             <dt>Order number</dt>
@@ -718,7 +771,8 @@ $stepIcons = [
         <form method="POST" class="actions" onsubmit="return confirm('Cancel this unpaid order?');">
           <?= csrfField() ?>
           <input type="hidden" name="order" value="<?= e($order['order_number']) ?>">
-          <a class="btn primary" href="<?= e(APP_URL) ?>/menu.php">Back to menu</a>
+          <a class="btn primary" href="<?= e($self) ?>&amp;resume=1">Complete payment</a>
+          <a class="btn ghost" href="<?= e(APP_URL) ?>/menu.php">Back to menu</a>
           <button class="btn link-danger" type="submit" name="cancel_unpaid" value="1">Cancel this order</button>
         </form>
 

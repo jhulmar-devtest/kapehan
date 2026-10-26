@@ -52,14 +52,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
   }
 
   if (in_array($status, $allowed, true)) {
+    // Cancelling an order that is still waiting on an online payment: close
+    // the customer's PayMongo page first, otherwise they could still pay for
+    // an order that no longer exists. (A network call, so it happens before
+    // the transaction below, never while a row is locked.)
+    if ($status === STATUS_CANCELLED) {
+      $closed = paymongoCloseOrderPaymentPage($db, $oid);
+      if ($closed === 'error') {
+        flash('global', "Could not close the customer's online payment page right now. Please try again in a moment.", 'error');
+        redirect(APP_URL . '/cashier/preorders.php');
+      }
+      if ($closed === 'paid') {
+        flash('global', 'The customer just completed their online payment, so this order is now paid. Review it before cancelling: a cancelled paid order has to be refunded by hand.', 'warning');
+        redirect(APP_URL . '/cashier/preorders.php');
+      }
+    }
+
     try {
       $db->beginTransaction();
-      $orderStmt = $db->prepare("SELECT id FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
+      $orderStmt = $db->prepare("SELECT id, status FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
       $orderStmt->execute([$oid]);
-      if (!$orderStmt->fetchColumn()) throw new RuntimeException('This pre-order could not be found.');
+      $orderRow = $orderStmt->fetch(PDO::FETCH_ASSOC);
+      if (!$orderRow) throw new RuntimeException('This pre-order could not be found.');
 
-      // Online (PayMongo) orders must be paid before they can be prepared.
-      if ($status === STATUS_PREPARING) {
+      // The buttons only offer the next step, but the server decides what is
+      // allowed: a hand-made request must not skip a step (and with it the
+      // payment check and the ingredient deduction).
+      $currentStatus = (string) $orderRow['status'];
+      $allowedFrom = [
+        STATUS_PREPARING => [STATUS_PENDING],
+        STATUS_READY     => [STATUS_PREPARING],
+        STATUS_CLAIMED   => [STATUS_READY],
+        STATUS_CANCELLED => [STATUS_PENDING, STATUS_PREPARING, STATUS_READY],
+      ];
+      if ($currentStatus === $status) {
+        throw new RuntimeException("This order is already {$status}.");
+      }
+      if (!in_array($currentStatus, $allowedFrom[$status], true)) {
+        throw new RuntimeException("This order is {$currentStatus}, so it can't be moved to {$status}.");
+      }
+
+      // Online (PayMongo) orders must be paid before they can move forward.
+      if ($status !== STATUS_CANCELLED) {
         $gw = $db->prepare('SELECT gateway, payment_status FROM payments WHERE order_id = ? LIMIT 1');
         $gw->execute([$oid]);
         $gwRow = $gw->fetch(PDO::FETCH_ASSOC);
@@ -89,6 +123,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
       if ($status === STATUS_CLAIMED) {
         loyaltyAwardOrder($db, $oid, ROLE_CASHIER, $currentUser);
       } elseif ($status === STATUS_CANCELLED) {
+        // The payment page was closed above, so an unpaid online payment is
+        // failed rather than left "pending" on a cancelled order.
+        $db->prepare(
+          "UPDATE payments SET payment_status = ? WHERE order_id = ? AND gateway = 'paymongo' AND payment_status = ?"
+        )->execute([PAY_STATUS_FAILED, $oid, PAY_STATUS_PENDING]);
         loyaltyReverseOrder($db, $oid, ROLE_CASHIER, $currentUser);
         restoreInventoryForCancelledOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
