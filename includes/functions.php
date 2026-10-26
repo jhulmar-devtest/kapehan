@@ -657,7 +657,7 @@ function getSpotlightProducts(int $limit = 5): array
        FROM products p
        JOIN categories c ON p.category_id = c.id
        LEFT JOIN product_ratings pr ON pr.product_id = p.id
-       WHERE p.is_available = 1
+       WHERE p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL
          AND p.spotlight_pinned = 1
          AND (p.spotlight_pinned_until IS NULL OR p.spotlight_pinned_until >= NOW())
        GROUP BY p.id
@@ -696,7 +696,7 @@ function getSpotlightProducts(int $limit = 5): array
        FROM product_ratings
        GROUP BY product_id
      ) ratings ON ratings.product_id = p.id
-     WHERE p.is_available = 1
+     WHERE p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL
        AND c.name != 'Add-ons'
        AND p.id NOT IN ($exclude)
      ORDER BY (COALESCE(recent_sales.sold_7d, 0) * (0.7 + 0.3 * (COALESCE(ratings.avg_rating, 0) / 5))) DESC,

@@ -51,17 +51,19 @@ while ($cursor < $end) {
   $cursor += $interval * 60;
 }
 
-// "ASAP" is just the earliest still-available slot today, relabeled — it
-// reuses the exact same value, capacity check, and past-time filtering
-// above rather than being a separate concept, so nothing downstream that
-// reads pickup_time (order display, urgency badges, receipts, reports)
-// needs to know it exists.
-foreach ($slots as $i => $s) {
-  if (!$s['full']) {
-    $slots[$i]['label'] = 'ASAP (~' . $s['label'] . ')';
-    $slots[$i]['asap']  = true;
-    break;
-  }
+// "ASAP" is its own choice, listed first and separate from the clock times
+// (the nearest time slot stays in the list as a normal time). It means "as
+// soon as the cashier can make it", is stored as pickup_time = 'ASAP', and the
+// cashier screens already sort it first and flag it as urgent. It is offered
+// only while the shop is open and there is still time to prepare an order, and
+// shares the per-slot capacity as a cap on ASAP orders in progress at once.
+if ($now >= strtotime($date . ' ' . $open) && $now < $end - (PICKUP_MIN_LEAD_MINUTES * 60)) {
+  array_unshift($slots, [
+    'value' => 'ASAP',
+    'label' => 'ASAP',
+    'full'  => ($taken['ASAP'] ?? 0) >= $capacity,
+    'asap'  => true,
+  ]);
 }
 
 echo json_encode($slots);

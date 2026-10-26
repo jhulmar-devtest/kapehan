@@ -4,20 +4,37 @@
 
 function inventoryCategories(PDO $db): array
 {
-  return $db->query('SELECT id, name, sort_order FROM inventory_categories ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+  return $db->query('SELECT id, name, sort_order FROM inventory_categories WHERE archived_at IS NULL ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function inventoryCategoryExists(PDO $db, string $category): bool
 {
-  $stmt = $db->prepare('SELECT 1 FROM inventory_categories WHERE name=? LIMIT 1');
+  $stmt = $db->prepare('SELECT 1 FROM inventory_categories WHERE name=? AND archived_at IS NULL LIMIT 1');
   $stmt->execute([$category]);
   return (bool)$stmt->fetchColumn();
+}
+
+/** Archive a stock item without removing recipes, reservations, or audit history. */
+function archiveInventoryItem(PDO $db, int $itemId): void
+{
+  $db->prepare('UPDATE inventory_items SET archived_at = NOW() WHERE id = ? AND archived_at IS NULL')->execute([$itemId]);
+  $db->prepare(
+    'UPDATE products AS p SET archived_at = NOW()
+      WHERE p.archived_at IS NULL AND EXISTS (
+        SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.inventory_item_id = ?
+      )'
+  )->execute([$itemId]);
+  $db->prepare(
+    "UPDATE addons a JOIN addon_ingredients ai ON ai.addon_id = a.id
+        SET a.archived_at = NOW(), a.status = 'inactive'
+      WHERE ai.inventory_item_id = ? AND a.status = 'active' AND a.archived_at IS NULL"
+  )->execute([$itemId]);
 }
 
 function inventorySizeLabels(PDO $db): array
 {
   try {
-    $labels = $db->query("SELECT label FROM size_options WHERE is_active = 1 ORDER BY sort_order, label")
+    $labels = $db->query("SELECT label FROM size_options WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order, label")
       ->fetchAll(PDO::FETCH_COLUMN);
     if ($labels) return array_values(array_unique(array_map('strval', $labels)));
   } catch (Throwable $e) {
@@ -115,7 +132,7 @@ function inventoryRecipeForProduct(PDO $db, int $productId, string $sizeLabel = 
 /** Estimate how many units of a selected product configuration remain makeable. */
 function inventoryProductStockEstimate(PDO $db, int $productId, string $sizeLabel = '', array $addonIds = []): array
 {
-  $productStmt = $db->prepare('SELECT has_sizes FROM products WHERE id = ? AND is_available = 1 LIMIT 1');
+  $productStmt = $db->prepare('SELECT p.has_sizes FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id = ? AND p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL LIMIT 1');
   $productStmt->execute([$productId]);
   $product = $productStmt->fetch(PDO::FETCH_ASSOC);
   if (!$product) throw new RuntimeException('This product is no longer available.');
@@ -141,7 +158,7 @@ function inventoryProductStockEstimate(PDO $db, int $productId, string $sizeLabe
     }
     $allowedStmt = $db->prepare(
       "SELECT a.id FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
-        WHERE pa.product_id = ? AND a.status = 'active'
+        WHERE pa.product_id = ? AND a.status = 'active' AND a.archived_at IS NULL
           AND a.id IN (" . implode(',', array_fill(0, count($addonIds), '?')) . ')'
     );
     $allowedStmt->execute(array_merge([$productId], $addonIds));
@@ -252,7 +269,7 @@ function inventoryRequirementsForDetails(PDO $db, array $details): array
         if (!array_key_exists($productId, $addonCache)) {
           $choices = $db->prepare(
             "SELECT a.id, a.name FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
-              WHERE pa.product_id = ? AND a.status = 'active'"
+              WHERE pa.product_id = ? AND a.status = 'active' AND a.archived_at IS NULL"
           );
           $choices->execute([$productId]);
           $addonCache[$productId] = [];

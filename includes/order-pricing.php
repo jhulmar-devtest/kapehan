@@ -4,7 +4,7 @@
 function priceOrderLine(PDO $db, array $item): array
 {
   $productId = (int) ($item['product_id'] ?? $item['productId'] ?? 0);
-  $stmt = $db->prepare('SELECT id, name, price, has_sizes, is_available FROM products WHERE id = ?');
+  $stmt = $db->prepare('SELECT p.id, p.name, p.price, p.has_sizes, p.is_available FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id = ? AND p.archived_at IS NULL AND c.archived_at IS NULL');
   $stmt->execute([$productId]);
   $product = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$product || !(int) $product['is_available']) {
@@ -18,7 +18,7 @@ function priceOrderLine(PDO $db, array $item): array
   $sizeAdjustment = 0.0;
   if ((int) $product['has_sizes']) {
     if ($size === '') throw new RuntimeException('Choose a size for ' . $product['name'] . '.');
-    $sizeStmt = $db->prepare('SELECT price_adjustment FROM size_options WHERE label = ? AND is_active = 1');
+    $sizeStmt = $db->prepare('SELECT price_adjustment FROM size_options WHERE label = ? AND is_active = 1 AND archived_at IS NULL');
     $sizeStmt->execute([$size]);
     $adjustment = $sizeStmt->fetchColumn();
     if ($adjustment === false) throw new RuntimeException('That size is no longer available for ' . $product['name'] . '.');
@@ -40,7 +40,7 @@ function priceOrderLine(PDO $db, array $item): array
     $choices = $db->prepare(
       "SELECT a.id, a.name, a.price
          FROM addons a JOIN product_addons pa ON pa.addon_id = a.id
-        WHERE pa.product_id = ? AND a.status = 'active'"
+        WHERE pa.product_id = ? AND a.status = 'active' AND a.archived_at IS NULL"
     );
     $choices->execute([$productId]);
     $allowed = [];

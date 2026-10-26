@@ -17,12 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_cashier'])) {
   $pwErr = validatePassword($pass);
   if ($pwErr) $errors[] = $pwErr;
   // Check username unique
-  $chk = $db->prepare("SELECT id FROM cashiers WHERE username=? AND deleted_at IS NULL");
+  $chk = $db->prepare("SELECT id, deleted_at FROM cashiers WHERE username=? LIMIT 1");
   $chk->execute([$user]);
-  if ($chk->fetch()) $errors[] = 'Username already taken.';
+  if ($existingUsername = $chk->fetch(PDO::FETCH_ASSOC)) $errors[] = $existingUsername['deleted_at'] ? 'That username belongs to an archived cashier. Restore the account from Archive instead.' : 'Username already taken.';
   // Check email unique if provided
   if (!empty($email)) {
-    $chk = $db->prepare("SELECT id FROM cashiers WHERE email=? AND deleted_at IS NULL");
+    $chk = $db->prepare("SELECT id FROM cashiers WHERE email=? LIMIT 1");
     $chk->execute([$email]);
     if ($chk->fetch()) $errors[] = 'Email already in use.';
   }
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_cashier'])) {
 }
 
 // A scalar lookup prevents duplicate admin IDs from multiplying cashier rows.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_cashier'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_cashier'])) {
   verifyCsrf();
   $id = filter_var($_POST['cashier_id'] ?? null, FILTER_VALIDATE_INT);
   if (!$id || $id < 1) {
@@ -67,22 +67,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_cashier'])) {
     $stmt->execute([$id]);
     $cashier = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$cashier || $cashier['deleted_at'] !== null) throw new RuntimeException('Cashier account was not found.');
-    if ((int) $cashier['is_active'] === 1) throw new RuntimeException('Deactivate this cashier before deleting the account.');
+    if ((int) $cashier['is_active'] === 1) throw new RuntimeException('Deactivate this cashier before archiving the account.');
 
-    // Keep the row as an archived identity so existing orders and drawer records
-    // retain their cashier name. Login credentials and contact details are removed.
-    $deletedUsername = '__deleted_cashier_' . (int) $id . '_' . bin2hex(random_bytes(4));
-    $unusablePassword = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
-    $db->prepare('UPDATE cashiers SET deleted_at = NOW(), username = ?, email = NULL, email_verified = 0, email_verified_at = NULL, password = ?, pos_pin = NULL WHERE id = ? AND is_active = 0 AND deleted_at IS NULL')
-      ->execute([$deletedUsername, $unusablePassword, $id]);
-    if ($db->query('SELECT ROW_COUNT()')->fetchColumn() != 1) throw new RuntimeException('Cashier account changed before it could be deleted.');
+    // Retain credentials for possible restoration; archived accounts cannot
+    // authenticate because deleted_at is checked by the login/session flows.
+    $db->prepare('UPDATE cashiers SET deleted_at = NOW(), is_active = 0 WHERE id = ? AND is_active = 0 AND deleted_at IS NULL')
+      ->execute([$id]);
+    if ($db->query('SELECT ROW_COUNT()')->fetchColumn() != 1) throw new RuntimeException('Cashier account changed before it could be archived.');
     $db->commit();
-    auditLog(ROLE_ADMIN, currentUserId(), 'delete_cashier', 'cashiers', (int) $id);
-    flash('global', 'Cashier account deleted. Its sales and drawer history are retained for audit.', 'success');
+    auditLog(ROLE_ADMIN, currentUserId(), 'archive_cashier', 'cashiers', (int) $id);
+    flash('global', 'Cashier account archived. Its sales history and login details are retained for restoration.', 'success');
   } catch (Throwable $e) {
     if ($db->inTransaction()) $db->rollBack();
-    error_log('Admin cashier deletion failed: ' . $e->getMessage());
-    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Unable to delete this cashier account.', 'error');
+    error_log('Admin cashier archive failed: ' . $e->getMessage());
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Unable to archive this cashier account.', 'error');
   }
   redirect(APP_URL . '/admin/cashiers.php');
 }
@@ -98,6 +96,7 @@ layoutHeader('Cashiers');
     <div class="page-header-sub"><?= count($cashiers) ?> account<?= count($cashiers) !== 1 ? 's' : '' ?></div>
   </div>
   <div class="page-header-actions">
+    <a class="btn btn-ghost" href="<?= APP_URL ?>/admin/archive.php?type=cashiers"><i class="fa-solid fa-box-archive"></i> Archive</a>
     <button class="btn btn-primary" onclick="document.getElementById('cashier-modal').classList.remove('hidden')">
       <i class="fa-solid fa-user-plus"></i> Create Cashier
     </button>
@@ -154,12 +153,12 @@ layoutHeader('Cashiers');
                   </button>
                 </form>
                 <?php if (!(int) $c['is_active']): ?>
-                  <form method="POST" style="margin-top:6px" onsubmit="return confirm('Delete this cashier login? Past orders and drawer records will keep the cashier name for reporting.');">
+                  <form method="POST" style="margin-top:6px" onsubmit="return confirm('Archive this cashier login? Past orders and drawer records will stay linked, and you can restore the account later.');">
                     <?= csrfField() ?>
-                    <input type="hidden" name="delete_cashier" value="1">
+                    <input type="hidden" name="archive_cashier" value="1">
                     <input type="hidden" name="cashier_id" value="<?= (int) $c['id'] ?>">
-                    <button type="submit" class="btn btn-danger btn-sm" aria-label="Delete <?= e($c['full_name']) ?>">
-                      <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete
+                    <button type="submit" class="btn btn-danger btn-sm" aria-label="Archive <?= e($c['full_name']) ?>">
+                      <i class="fa-solid fa-box-archive" aria-hidden="true"></i> Archive
                     </button>
                   </form>
                 <?php endif; ?>

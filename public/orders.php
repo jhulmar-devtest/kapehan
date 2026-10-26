@@ -212,9 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_feedback'])) {
         if (isset($ratedProducts[$pid])) continue;
         $ratedProducts[$pid] = true;
         $pstmt->execute([
-          $feedbackId,
-          $orderId,
-          $pid,
+          $feedbackId, $orderId, $pid,
           $isStudent ? $userId : null,
           $isStudent ? null : $userId,
           $prating,
@@ -283,10 +281,8 @@ $orders = $stmt->fetchAll();
 // who really paid sees it here.
 $reconcileBudget = 3;
 foreach ($orders as &$orderRow) {
-  if (
-    $reconcileBudget > 0 && ($orderRow['gateway'] ?? '') === 'paymongo'
-    && $orderRow['payment_status'] === PAY_STATUS_PENDING && $orderRow['status'] === STATUS_PENDING
-  ) {
+  if ($reconcileBudget > 0 && ($orderRow['gateway'] ?? '') === 'paymongo'
+      && $orderRow['payment_status'] === PAY_STATUS_PENDING && $orderRow['status'] === STATUS_PENDING) {
     $reconcileBudget--;
     if (paymongoReconcileThrottled($db, (int) $orderRow['id'], 15) === 'paid') {
       $orderRow['payment_status'] = PAY_STATUS_PAID;
@@ -916,9 +912,7 @@ function renderOrderTimeline(string $status): string
     /* Per-item stars are optional — if this request fails the customer
        can still submit the overall rating. */
     function loadRateItems(orderId) {
-      fetch(`${APP_URL}/orders.php?get_rate_items=${orderId}`, {
-          credentials: 'same-origin'
-        })
+      fetch(`${APP_URL}/orders.php?get_rate_items=${orderId}`, { credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
           // Ignore a late response if the modal has moved on to another order
@@ -960,9 +954,7 @@ function renderOrderTimeline(string $status): string
           });
           document.getElementById('rateItems').hidden = false;
         })
-        .catch(() => {
-          /* item ratings are optional */
-        });
+        .catch(() => { /* item ratings are optional */ });
     }
 
     document.getElementById('rateForm').addEventListener('submit', e => {

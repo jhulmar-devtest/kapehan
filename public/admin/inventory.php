@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust_item'])) {
   $change = $reason === 'waste' ? -abs($amount) : ($reason === 'restock' ? abs($amount) : $amount);
 
   if ($id && $amount != 0) {
-    $db->prepare("UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ? WHERE id = ?")->execute([$change, $id]);
+    $db->prepare("UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ? WHERE id = ? AND archived_at IS NULL")->execute([$change, $id]);
     try {
       $db->prepare(
         "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, supplier, actor_role, actor_id) VALUES (?, ?, ?, ?, ?, ?)"
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
 
     try {
       $db->beginTransaction();
-      $db->prepare("UPDATE inventory_items SET name=?, category=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=?")
+      $db->prepare("UPDATE inventory_items SET name=?, category=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=? AND archived_at IS NULL")
         ->execute([$name, $category, $unit, $reorder, $cost, $id]);
 
       $existing = $db->prepare("SELECT a.id FROM addons a JOIN addon_ingredients ai ON ai.addon_id = a.id WHERE ai.inventory_item_id = ? ORDER BY a.id LIMIT 1");
@@ -115,43 +115,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
   redirect(APP_URL . '/admin/inventory.php');
 }
 
-// ---- Delete item ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
+// ---- Archive item ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_item'])) {
   verifyCsrf();
   $id = (int) ($_POST['item_id'] ?? 0);
 
-  // inventory_log.inventory_item_id is ON DELETE CASCADE — deleting an
-  // item here would silently wipe its entire restock/waste history with
-  // it. Same principle as products: don't let a routine cleanup action
-  // quietly destroy an audit trail. Block it if any log entries exist.
-  $stmt = $db->prepare("SELECT COUNT(*) FROM inventory_log WHERE inventory_item_id = ?");
-  $stmt->execute([$id]);
-  if ((int) $stmt->fetchColumn() > 0) {
-    flash('global', 'This item has stock history and cannot be deleted, to keep the audit trail intact. Set its quantity to 0 instead if it is no longer used.', 'error');
-    redirect(APP_URL . '/admin/inventory.php');
+  try {
+    $db->beginTransaction();
+    archiveInventoryItem($db, $id);
+    $db->commit();
+    auditLog(ROLE_ADMIN, currentUserId(), 'archive_inventory_item', 'inventory_items', $id);
+    flash('global', 'Inventory item archived. Dependent products and add-ons were hidden to protect stock accuracy. You can restore records from Archive.', 'success');
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    error_log('Archive inventory item failed: ' . $e->getMessage());
+    flash('global', 'Could not archive this inventory item.', 'error');
   }
-
-  $stmt = $db->prepare("SELECT COUNT(*) FROM addon_ingredients ai JOIN addons a ON a.id=ai.addon_id WHERE ai.inventory_item_id = ? AND a.status='active'");
-  $stmt->execute([$id]);
-  if ((int) $stmt->fetchColumn() > 0) {
-    flash('global', 'This item supplies an add-on. Turn off the add-on in Edit Item before deleting its inventory item.', 'error');
-    redirect(APP_URL . '/admin/inventory.php');
-  }
-
-  $stmt = $db->prepare('SELECT COUNT(*) FROM product_ingredients WHERE inventory_item_id = ?');
-  $stmt->execute([$id]);
-  if ((int) $stmt->fetchColumn() > 0) {
-    flash('global', 'This item is used in one or more product recipes. Remove it from those recipes before deleting it.', 'error');
-    redirect(APP_URL . '/admin/inventory.php');
-  }
-
-  $db->prepare("DELETE FROM inventory_items WHERE id = ?")->execute([$id]);
-  auditLog(ROLE_ADMIN, currentUserId(), 'delete_inventory_item', 'inventory_items', $id);
-  flash('global', 'Item deleted.', 'success');
   redirect(APP_URL . '/admin/inventory.php');
 }
 
-$items = $db->query("SELECT * FROM inventory_items ORDER BY name")->fetchAll();
+$items = $db->query("SELECT * FROM inventory_items WHERE archived_at IS NULL ORDER BY name")->fetchAll();
 $addonMappings = $db->query("SELECT ai.inventory_item_id, ai.qty_per_unit, a.id AS addon_id, a.name AS addon_name, a.price AS addon_price, a.status AS addon_status FROM addon_ingredients ai JOIN addons a ON a.id=ai.addon_id ORDER BY a.id")->fetchAll();
 $addonByItem = [];
 foreach ($addonMappings as $mapping) {
@@ -550,6 +533,7 @@ layoutHeader('Inventory');
     <div class="page-header-sub"><?= count($items) ?> item<?= count($items) !== 1 ? 's' : '' ?> tracked</div>
   </div>
   <div class="page-header-actions">
+    <a href="<?= APP_URL ?>/admin/archive.php?type=inventory_items" class="btn btn-ghost"><i class="fa-solid fa-box-archive"></i> Archive</a>
     <a href="<?= APP_URL ?>/admin/inventory-categories.php" class="btn btn-ghost"><i class="fa-solid fa-tags"></i> Manage Categories</a>
     <a href="<?= APP_URL ?>/admin/recipes.php" class="btn btn-ghost"><i class="fa-solid fa-flask"></i> Product Recipes</a>
     <button class="btn btn-primary" onclick="openAddItemModal()"><i class="fa-solid fa-plus"></i> Add Item</button>
@@ -627,11 +611,11 @@ layoutHeader('Inventory');
                   <button class="btn btn-sm btn-outline" title="View Details" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'><i class="fa-solid fa-eye"></i></button>
                   <button class="btn btn-sm btn-outline" title="Adjust Stock" onclick='openAdjustModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-arrows-rotate"></i> Adjust</button>
                   <button class="btn btn-sm btn-outline" title="Edit Item" onclick='openEditItemModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-pen"></i></button>
-                  <form method="POST" style="display:inline" onsubmit="return confirm('Delete this inventory item? This does not affect past orders.')">
+                  <form method="POST" style="display:inline" onsubmit="return confirm('Archive this inventory item? Products using it and its add-ons will be hidden to protect stock accuracy. You can restore them later.')">
                     <?= csrfField() ?>
-                    <input type="hidden" name="delete_item" value="1">
+                    <input type="hidden" name="archive_item" value="1">
                     <input type="hidden" name="item_id" value="<?= $it['id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-danger" title="Delete Item"><i class="fa-solid fa-trash"></i></button>
+                    <button type="submit" class="btn btn-sm btn-danger" title="Archive Item"><i class="fa-solid fa-box-archive"></i></button>
                   </form>
                 </td>
               </tr>
@@ -968,7 +952,7 @@ layoutHeader('Inventory');
   function closeAddItemModal() {
     document.getElementById('add-item-modal').classList.add('hidden');
     // At least one item was saved while this was open — reload so the
-    // table (and the Adjust/Edit/Delete buttons' embedded item data)
+    // table (and the Adjust/Edit/Archive buttons' embedded item data)
     // reflects what was just added.
     if (inventoryItemsAddedThisSession) location.reload();
   }

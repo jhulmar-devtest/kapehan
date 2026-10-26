@@ -74,21 +74,38 @@ if ($pickupDate !== date('Y-m-d') || empty($pickupTime)) {
   exit;
 }
 
-$slotTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $pickupTime);
+// "ASAP" is its own choice, not a clock time: the order is made as soon as the
+// cashier can get to it. The cashier screens already sort and flag it as urgent.
+$isAsap = strtoupper($pickupTime) === 'ASAP';
+if ($isAsap) $pickupTime = 'ASAP';
+
 $openTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $openTime);
 $closeTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $closeTime);
-$slotIntervalSeconds = max(5, (int) getSetting('pickup_slot_interval_minutes', '15')) * 60;
-if (
-  !$slotTimestamp || !$openTimestamp || !$closeTimestamp ||
-  $slotTimestamp->format('H:i') !== $pickupTime ||
-  $slotTimestamp < $openTimestamp || $slotTimestamp >= $closeTimestamp ||
-  (($slotTimestamp->getTimestamp() - $openTimestamp->getTimestamp()) % $slotIntervalSeconds !== 0) ||
-  $slotTimestamp->getTimestamp() < (time() + PICKUP_MIN_LEAD_MINUTES * 60)
-) {
+if ($isAsap) {
+  // Only while the shop is open, and not so close to closing that there is no
+  // time to prepare it (same lead time a regular slot needs).
+  $slotOk = $openTimestamp && $closeTimestamp
+    && time() >= $openTimestamp->getTimestamp()
+    && time() < $closeTimestamp->getTimestamp() - PICKUP_MIN_LEAD_MINUTES * 60;
+} else {
+  $slotTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $pickupTime);
+  $slotIntervalSeconds = max(5, (int) getSetting('pickup_slot_interval_minutes', '15')) * 60;
+  $slotOk = $slotTimestamp && $openTimestamp && $closeTimestamp
+    && $slotTimestamp->format('H:i') === $pickupTime
+    && $slotTimestamp >= $openTimestamp && $slotTimestamp < $closeTimestamp
+    && (($slotTimestamp->getTimestamp() - $openTimestamp->getTimestamp()) % $slotIntervalSeconds === 0)
+    && $slotTimestamp->getTimestamp() >= (time() + PICKUP_MIN_LEAD_MINUTES * 60);
+}
+if (!$slotOk) {
   http_response_code(422);
-  echo json_encode(['ok' => false, 'reason' => 'slot_unavailable', 'message' => 'That pickup time has passed or is outside store hours. Please choose a current available time.']);
+  echo json_encode(['ok' => false, 'reason' => 'slot_unavailable', 'message' => $isAsap
+    ? 'ASAP orders are only available while the shop is open. Please choose another time.'
+    : 'That pickup time has passed or is outside store hours. Please choose a current available time.']);
   exit;
 }
+// pickup_slot_locks.pickup_time is a TIME column, so ASAP gets a fixed
+// sentinel row (00:00:01 is never on the slot grid) to serialize ASAP checkouts.
+$slotLockTime = $isAsap ? '00:00:01' : $pickupTime;
 
 // Pre-orders are GCash-only — no cash, no other e-wallets/banks. A
 // reference number is always required since there's no cash fallback.
@@ -96,30 +113,32 @@ $method = 'GCash';
 // Online GCash through PayMongo: no reference number, no manual verification.
 $viaGateway = paymongoEnabled() && (($data['pay_via'] ?? '') === 'paymongo');
 
-if (!$viaGateway) {
+// Manual GCash needs the shop's account and a valid, unused reference number.
+// Returns [http status, message] or null when everything is fine. Kept as a
+// function because an order fully covered by loyalty points needs none of this,
+// and whether that is the case is only known once the reward is applied.
+$manualPaymentError = function () use (&$ref, $db): ?array {
   if (gcashPaymentNumber() === '' || gcashPaymentName() === '') {
-    http_response_code(503);
-    echo json_encode(['ok' => false, 'message' => 'Online ordering is temporarily unavailable while the shop configures its GCash account.']);
-    exit;
+    return [503, 'Online ordering is temporarily unavailable while the shop configures its GCash account.'];
   }
-  if (empty($ref)) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => 'GCash reference number is required.']);
-    exit;
-  }
+  if (empty($ref)) return [422, 'GCash reference number is required.'];
   // Keep digits only, check the length, and refuse a reference that was
   // already used for another order (the same receipt can't pay twice).
   $ref = normalizeGcashRef($ref);
-  if ($refError = gcashRefError($ref)) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => $refError]);
-    exit;
-  }
+  if ($refError = gcashRefError($ref)) return [422, $refError];
   if (gcashRefInUse($db, $ref)) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => 'This GCash reference number was already used for another order. Please check your receipt.']);
-    exit;
+    return [422, 'This GCash reference number was already used for another order. Please check your receipt.'];
   }
+  return null;
+};
+
+// A customer redeeming a reward may end up with a free order, which has no
+// payment at all. Defer the payment checks for them until the total is known.
+$mayBeFree = $redeemPoints && $redeemProductId > 0;
+if (!$viaGateway && !$mayBeFree && ($paymentError = $manualPaymentError())) {
+  http_response_code($paymentError[0]);
+  echo json_encode(['ok' => false, 'message' => $paymentError[1]]);
+  exit;
 }
 
 // One unpaid online order at a time. Each unpaid order holds a pickup slot and
@@ -171,15 +190,17 @@ try {
   $db->prepare(
     'INSERT INTO pickup_slot_locks (pickup_date, pickup_time) VALUES (?, ?)
      ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP'
-  )->execute([$pickupDate, $pickupTime]);
+  )->execute([$pickupDate, $slotLockTime]);
   $slotLock = $db->prepare('SELECT pickup_date FROM pickup_slot_locks WHERE pickup_date = ? AND pickup_time = ? FOR UPDATE');
-  $slotLock->execute([$pickupDate, $pickupTime]);
+  $slotLock->execute([$pickupDate, $slotLockTime]);
   $slotStmt = $db->prepare(
     "SELECT COUNT(*) FROM orders WHERE pickup_date = ? AND pickup_time = ? AND status IN ('pending','preparing','ready')"
   );
   $slotStmt->execute([$pickupDate, $pickupTime]);
   if ((int) $slotStmt->fetchColumn() >= (int) getSetting('pickup_slot_capacity', '6')) {
-    throw new RuntimeException('That pickup time just filled up. Please choose another time.');
+    throw new RuntimeException($isAsap
+      ? 'ASAP orders are full right now. Please choose a pickup time instead.'
+      : 'That pickup time just filled up. Please choose another time.');
   }
 
   $studentId = $role === ROLE_STUDENT ? currentUserId() : null;
@@ -195,6 +216,16 @@ try {
     if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
   }
   $total = round($total - $redemption['discount'], 2);
+
+  // Fully covered by points: nothing to pay, so no GCash, no reference number
+  // and no PayMongo session. Otherwise the checks deferred above run now.
+  $isFree = $total <= 0;
+  if ($isFree) {
+    $viaGateway = false;
+    $ref = null;
+  } elseif (!$viaGateway && $mayBeFree && ($paymentError = $manualPaymentError())) {
+    throw new RuntimeException($paymentError[1]);
+  }
 
   // generateOrderNumber() counts today's orders and adds 1 — under
   // concurrent checkouts (a lunch rush, or a customer and a cashier
@@ -237,7 +268,14 @@ try {
   // cashier staff before it is recorded as paid.
   $payStatus = PAY_STATUS_PENDING;
   $paidAt    = null;
-  if ($viaGateway) {
+  if ($isFree) {
+    // Paid in full with points: recorded as paid so the cashier can prepare it
+    // straight away and points are awarded as usual once it is claimed.
+    $db->prepare(
+      "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, paid_at)
+       VALUES (?, ?, 0, ?, NOW())"
+    )->execute([$orderId, $method, PAY_STATUS_PAID]);
+  } elseif ($viaGateway) {
     // Stays pending until PayMongo's webhook confirms the payment.
     $db->prepare(
       "INSERT INTO payments (order_id, payment_method, amount_paid, payment_status, gateway)
@@ -296,6 +334,7 @@ try {
     'loyalty_reward_product' => $redemptionResult['product_name'],
     'loyalty_balance' => $redemptionResult['balance'],
     'points_expected_after_pickup' => loyaltyPointsFromSpend($db, $total),
+    'free_order'   => $isFree,
     'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",
   ]);
 } catch (\Throwable $e) {

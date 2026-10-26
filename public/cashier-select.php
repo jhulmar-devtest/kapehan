@@ -21,7 +21,7 @@ if (isLoggedIn()) {
 
 $db       = Database::getInstance();
 $cashiers = $db->query(
-  "SELECT id, full_name FROM cashiers WHERE is_active = 1 ORDER BY full_name"
+  "SELECT id, full_name FROM cashiers WHERE is_active = 1 AND deleted_at IS NULL ORDER BY full_name"
 )->fetchAll();
 
 $loginError = $_SESSION['pos_login_error'] ?? '';

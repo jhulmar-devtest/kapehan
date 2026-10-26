@@ -32,7 +32,7 @@ if (!checkLoginAttempts($rateKey)) {
 }
 
 $db   = Database::getInstance();
-$stmt = $db->prepare("SELECT * FROM cashiers WHERE id = ? AND is_active = 1 LIMIT 1");
+$stmt = $db->prepare("SELECT * FROM cashiers WHERE id = ? AND is_active = 1 AND deleted_at IS NULL LIMIT 1");
 $stmt->execute([$cashierId]);
 $cashier = $stmt->fetch();
 

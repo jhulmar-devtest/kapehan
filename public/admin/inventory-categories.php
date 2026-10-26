@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } elseif (isset($_POST['rename_category'])) {
     $id = (int) ($_POST['category_id'] ?? 0);
     $name = trim(sanitizeString($_POST['name'] ?? '', 80));
-    $stmt = $db->prepare('SELECT name FROM inventory_categories WHERE id = ?');
+    $stmt = $db->prepare('SELECT name FROM inventory_categories WHERE id = ? AND archived_at IS NULL');
     $stmt->execute([$id]);
     $oldName = $stmt->fetchColumn();
     if (!$oldName) {
@@ -47,24 +47,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('global', 'That category name already exists or could not be saved.', 'error');
       }
     }
-  } elseif (isset($_POST['delete_category'])) {
+  } elseif (isset($_POST['archive_category'])) {
     $id = (int) ($_POST['category_id'] ?? 0);
-    $stmt = $db->prepare('SELECT name FROM inventory_categories WHERE id = ?');
+    $stmt = $db->prepare('SELECT name FROM inventory_categories WHERE id = ? AND archived_at IS NULL');
     $stmt->execute([$id]);
     $name = $stmt->fetchColumn();
     if (!$name) {
       flash('global', 'Category not found.', 'error');
     } elseif ($name === $otherCategory) {
-      flash('global', 'The Other category is reserved and cannot be deleted.', 'error');
+      flash('global', 'The Other category is reserved and cannot be archived.', 'error');
     } else {
-      $usage = $db->prepare('SELECT COUNT(*) FROM inventory_items WHERE category = ?');
-      $usage->execute([$name]);
-      if ((int) $usage->fetchColumn() > 0) {
-        flash('global', 'Move all items out of this category before deleting it.', 'error');
-      } else {
-        $db->prepare('DELETE FROM inventory_categories WHERE id = ?')->execute([$id]);
-        auditLog(ROLE_ADMIN, currentUserId(), 'delete_inventory_category', 'inventory_categories', $id);
-        flash('global', 'Category deleted.', 'success');
+      try {
+        $db->beginTransaction();
+        $items = $db->prepare('SELECT id FROM inventory_items WHERE category = ? AND archived_at IS NULL');
+        $items->execute([$name]);
+        foreach ($items->fetchAll(PDO::FETCH_COLUMN) as $itemId) archiveInventoryItem($db, (int) $itemId);
+        $db->prepare('UPDATE inventory_categories SET archived_at = NOW() WHERE id = ? AND archived_at IS NULL')->execute([$id]);
+        $db->commit();
+        auditLog(ROLE_ADMIN, currentUserId(), 'archive_inventory_category', 'inventory_categories', $id);
+        flash('global', 'Category and its stock items archived. Restore them from the Archive page when needed.', 'success');
+      } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        error_log('Archive inventory category failed: ' . $e->getMessage());
+        flash('global', 'Could not archive this inventory category.', 'error');
       }
     }
   }
@@ -74,7 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = $db->query(
   'SELECT c.id, c.name, c.sort_order, COUNT(i.id) AS item_count
    FROM inventory_categories c LEFT JOIN inventory_items i
-     ON i.category COLLATE utf8mb4_unicode_ci = c.name
+     ON i.category COLLATE utf8mb4_unicode_ci = c.name AND i.archived_at IS NULL
+   WHERE c.archived_at IS NULL
    GROUP BY c.id, c.name, c.sort_order ORDER BY c.sort_order, c.name'
 )->fetchAll(PDO::FETCH_ASSOC);
 
@@ -86,6 +92,7 @@ layoutHeader('Inventory Categories');
     <div class="page-header-sub">Create and maintain the groups used to organize stock items.</div>
   </div>
   <div class="page-header-actions">
+    <a href="<?= APP_URL ?>/admin/archive.php?type=inventory_categories" class="btn btn-ghost"><i class="fa-solid fa-box-archive"></i> Archive</a>
     <a href="<?= APP_URL ?>/admin/inventory.php" class="btn btn-ghost"><i class="fa-solid fa-boxes-stacked"></i> Back to Inventory</a>
   </div>
 </div>
@@ -144,11 +151,11 @@ layoutHeader('Inventory Categories');
               <td><?= (int) $category['item_count'] ?></td>
               <td>
                 <?php if ($category['name'] !== $otherCategory): ?>
-                  <form method="POST" onsubmit="return confirm('Delete this category?')">
+                  <form method="POST" onsubmit="return confirm('Archive this category and its stock items? You can restore them later.')">
                     <?= csrfField() ?>
-                    <input type="hidden" name="delete_category" value="1">
+                    <input type="hidden" name="archive_category" value="1">
                     <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">
-                    <button class="btn btn-sm btn-danger" type="submit" <?= (int) $category['item_count'] > 0 ? 'disabled title="Move its items to another category first"' : '' ?>><i class="fa-solid fa-trash"></i> Delete</button>
+                    <button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-box-archive"></i> Archive</button>
                   </form>
                 <?php else: ?><span class="text-muted">Required fallback</span><?php endif; ?>
               </td>

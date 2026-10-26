@@ -20,7 +20,7 @@ $products = $db->query(
      LEFT JOIN categories cp ON c.parent_id = cp.id
      LEFT JOIN product_ratings pr ON pr.product_id = p.id
      LEFT JOIN order_details od   ON od.product_id  = p.id
-     WHERE c.name != 'Add-ons'
+     WHERE c.name != 'Add-ons' AND p.archived_at IS NULL AND c.archived_at IS NULL
      GROUP BY p.id, c.name, c.id, c.parent_id, cp.name, cp.id, c.sort_order
      ORDER BY c.sort_order, p.name"
 )->fetchAll();
@@ -34,7 +34,7 @@ $soldArr2 = array_column($products, 'total_sold');
 rsort($soldArr2);
 $bestSellerThreshold = ($soldArr2[0] ?? 0) > 0 ? ($soldArr2[min(4, count($soldArr2) - 1)] ?? 1) : PHP_INT_MAX;
 
-$allCats      = $db->query("SELECT * FROM categories ORDER BY sort_order")->fetchAll();
+$allCats      = $db->query("SELECT * FROM categories WHERE archived_at IS NULL ORDER BY sort_order")->fetchAll();
 $catsByParent = [];
 foreach ($allCats as $cat) {
   if ($cat['parent_id']) $catsByParent[$cat['parent_id']][] = $cat;

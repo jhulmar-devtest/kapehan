@@ -183,6 +183,11 @@ function cartLineHtml(item, cart) {
     .filter((i) => Number(i.productId) === Number(item.productId))
     .reduce((sum, i) => sum + Number(i.qty || 0), 0);
   const atMax = cap !== null && productQty >= cap;
+  const otherProductQty = productQty - Number(item.qty || 0);
+  const lineMax = cap === null ? "" : `max="${Math.max(1, cap - otherProductQty)}"`;
+  const editButton = typeof window.editCartItem === "function"
+    ? `<button type="button" class="cart-line-edit" aria-label="Edit ${name}" onclick="window.editCartItem('${id}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>`
+    : "";
 
   const imgSrc = cartItemImageSrc(item);
   const thumb = imgSrc
@@ -205,15 +210,15 @@ function cartLineHtml(item, cart) {
       <div class="cart-line-main">
         <div class="cart-line-top">
           <div class="cart-line-name">${name}</div>
-          <button type="button" class="cart-line-remove" aria-label="Remove ${name} from cart" onclick="requestCartRemoval('${id}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+          <div class="cart-line-actions">${editButton}<button type="button" class="cart-line-remove" aria-label="Remove ${name} from cart" onclick="requestCartRemoval('${id}')"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button></div>
         </div>
         ${chips ? `<div class="cart-line-tags">${chips}</div>` : ""}
         ${item.note ? `<div class="cart-line-note">&ldquo;${escapeHtml(item.note)}&rdquo;</div>` : ""}
         <div class="cart-line-bottom">
           <div class="cart-line-qty" role="group" aria-label="Quantity for ${name}">
-            <button type="button" class="qty-btn" aria-label="Decrease quantity" ${item.qty <= 1 ? "disabled" : ""} onclick="cartChangeQty('${id}',-1)">\u2212</button>
-            <span aria-live="polite">${item.qty}</span>
-            <button type="button" class="qty-btn" aria-label="Increase quantity" ${atMax ? "disabled" : ""} onclick="cartChangeQty('${id}',1)">+</button>
+            <button type="button" class="qty-btn minus" aria-label="Decrease quantity" ${item.qty <= 1 ? "disabled" : ""} onclick="cartChangeQty('${id}',-1)">\u2212</button>
+            <input type="number" min="1" ${lineMax} step="1" inputmode="numeric" value="${Number(item.qty) || 1}" aria-label="Quantity for ${name}" onchange="cartSetQty('${id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+            <button type="button" class="qty-btn plus" aria-label="Increase quantity" ${atMax ? "disabled" : ""} onclick="cartChangeQty('${id}',1)">+</button>
           </div>
           <div class="cart-line-pricing">
             <span class="cart-line-price">${formatPeso(item.unit_price * item.qty)}</span>
@@ -273,6 +278,10 @@ function renderCartSidebar(refreshSlots = true) {
     discountEl.textContent = "\u2212" + formatPeso(redemption.discount);
   const totalEl = document.getElementById("cartTotal");
   if (totalEl) totalEl.textContent = formatPeso(total);
+  const proceedBtn = document.getElementById("proceedPaymentButton");
+  if (proceedBtn)
+    proceedBtn.textContent =
+      cart.length && total <= 0 ? "Place order" : "Proceed to payment";
 
   if (refreshSlots) loadPickupSlots();
   else updateProceedButton();
@@ -284,36 +293,118 @@ function updateLoyaltyRewardChoices(cart) {
   if (!select || !checkbox) return;
   const balance = Number(window.LOYALTY_BALANCE || 0);
   const previous = select.value;
-  const choices = (window.LOYALTY_PRODUCT_REWARDS || []).filter(
-    (reward) => cart.some((item) =>
-      Number(item.productId ?? item.product_id) === Number(reward.product_id) &&
-      Number(item.unit_price ?? item.price ?? 0) >= Number(reward.discount_amount)
-    ) && balance >= Number(reward.points_required),
+  const allRewards = window.LOYALTY_PRODUCT_REWARDS || [];
+  // Rewards whose drink is in the cart (at a price the discount fits within).
+  const inCartRewards = allRewards.filter((reward) =>
+    cart.some(
+      (item) =>
+        Number(item.productId ?? item.product_id) === Number(reward.product_id) &&
+        Number(item.unit_price ?? item.price ?? 0) >= Number(reward.discount_amount),
+    ),
   );
+  const choices = inCartRewards.filter(
+    (reward) => balance >= Number(reward.points_required),
+  );
+
+  // Hidden <select>/checkbox stay the single source of truth for checkout.
   select.replaceChildren();
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = choices.length ? "Choose a reward drink" : "Add a reward drink with enough points";
   select.appendChild(placeholder);
   choices.forEach((reward) => {
     const option = document.createElement("option");
     option.value = String(reward.product_id);
-    option.textContent = `${reward.name} · ${reward.points_required} pts for ${formatPeso(reward.discount_amount)} off`;
+    option.textContent = reward.name;
     select.appendChild(option);
   });
   if (choices.some((reward) => String(reward.product_id) === previous)) select.value = previous;
-  select.disabled = choices.length === 0;
-  checkbox.disabled = choices.length === 0;
   if (!choices.some((reward) => String(reward.product_id) === select.value)) {
     select.value = "";
     checkbox.checked = false;
   }
+
+  renderLoyaltyRewardList(inCartRewards, balance, checkbox.checked ? select.value : "");
+
   const hint = document.getElementById("loyaltyCartHint");
   if (hint) {
-    hint.textContent = choices.length
-      ? `${balance} points available · choose one drink reward`
-      : `${balance} points available · add a configured reward drink to redeem`;
+    if (!window.LOYALTY_READY) {
+      hint.textContent = "Points are not available yet.";
+    } else if (inCartRewards.length) {
+      hint.textContent = "Tap a reward to use your points. One reward per order.";
+    } else {
+      const affordable = allRewards.filter((r) => balance >= Number(r.points_required));
+      if (affordable.length) {
+        const names = affordable.slice(0, 2).map((r) => r.name).join(" or ");
+        hint.textContent = `Add ${names} to your cart to use your points.`;
+      } else if (allRewards.length) {
+        const next = allRewards.reduce((a, b) =>
+          Number(a.points_required) <= Number(b.points_required) ? a : b,
+        );
+        hint.textContent = `${Number(next.points_required) - balance} more points to unlock ${next.name}.`;
+      } else {
+        hint.textContent = "There are no drink rewards right now.";
+      }
+    }
   }
+}
+
+function renderLoyaltyRewardList(rewards, balance, selectedId) {
+  const balanceEl = document.getElementById("loyaltyCartBalance");
+  if (balanceEl) balanceEl.textContent = `${balance.toLocaleString()} pts`;
+  const list = document.getElementById("loyaltyRewardList");
+  if (!list) return;
+  list.replaceChildren();
+  rewards.forEach((reward) => {
+    const points = Number(reward.points_required);
+    const affordable = balance >= points;
+    const selected = affordable && String(reward.product_id) === String(selectedId);
+    const isFree = Number(reward.discount_amount) >= Number(reward.price) - 0.005;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className =
+      "loyalty-reward-btn" + (selected ? " is-selected" : "") + (affordable ? "" : " is-locked");
+    button.disabled = !affordable;
+    button.setAttribute("aria-pressed", String(selected));
+
+    const main = document.createElement("span");
+    main.className = "loyalty-reward-main";
+    const name = document.createElement("span");
+    name.className = "loyalty-reward-name";
+    name.textContent = reward.name;
+    const sub = document.createElement("span");
+    sub.className = "loyalty-reward-sub";
+    sub.textContent = isFree
+      ? `Free drink · ${points} pts`
+      : `${formatPeso(reward.discount_amount)} off · ${points} pts`;
+    main.append(name, sub);
+
+    const state = document.createElement("span");
+    state.className = "loyalty-reward-state";
+    state.textContent = selected
+      ? "Applied ✓"
+      : affordable
+        ? "Use points"
+        : `${points - balance} more pts`;
+
+    button.append(main, state);
+    button.addEventListener("click", () => selectLoyaltyReward(reward.product_id, selected));
+    list.appendChild(button);
+  });
+}
+
+function selectLoyaltyReward(productId, alreadySelected) {
+  const select = document.getElementById("loyaltyRewardProduct");
+  const checkbox = document.getElementById("redeemLoyaltyCheckbox");
+  if (!select || !checkbox) return;
+  if (alreadySelected) {
+    select.value = "";
+    checkbox.checked = false;
+  } else {
+    select.value = String(productId);
+    checkbox.checked = true;
+  }
+  renderCartSidebar(false);
 }
 
 function getCartLoyaltyRedemption(cart = getCart()) {
@@ -357,6 +448,30 @@ function cartChangeQty(lineId, d) {
     return;
   }
   item.qty = Math.max(1, item.qty + d);
+  saveCart(cart);
+  renderCartSidebar(false);
+}
+
+function cartSetQty(lineId, value) {
+  const cart = getCart();
+  const item = cart.find((i) => i.lineId === lineId);
+  if (!item) return;
+  const requestedQty = Number(value);
+  if (!Number.isInteger(requestedQty) || requestedQty < 1) {
+    showToast("warning", "Enter a quantity of at least 1.");
+    renderCartSidebar(false);
+    return;
+  }
+
+  const otherProductQty = cart
+    .filter((i) => i !== item && Number(i.productId) === Number(item.productId))
+    .reduce((sum, i) => sum + Number(i.qty || 0), 0);
+  const cap = cartStockCap(cart, item.productId);
+  const maxQty = cap === null ? requestedQty : Math.max(1, cap - otherProductQty);
+  item.qty = Math.min(requestedQty, maxQty);
+  if (item.qty < requestedQty) {
+    showToast("warning", `Estimated stock limit reached for ${item.name}.`);
+  }
   saveCart(cart);
   renderCartSidebar(false);
 }
@@ -452,9 +567,9 @@ function loadPickupSlots() {
   const messageEl = document.getElementById("pickupSlotMessage");
   if (!timeEl) return;
   const previousValue = timeEl.value;
-  const previousWasAsap =
-    !pickupTimeManuallySelected ||
-    timeEl.options[timeEl.selectedIndex]?.dataset.asap === "true";
+  // Until the customer picks something themselves, keep defaulting to ASAP
+  // (or the first open time when ASAP is not offered).
+  const useDefaultChoice = !pickupTimeManuallySelected;
   pickupSlotsLoading = true;
   updateProceedButton();
   fetch(`${APP_URL}/api/pickup-slots.php?date=${todayInManila()}`)
@@ -475,11 +590,13 @@ function loadPickupSlots() {
           messageEl.textContent = slots.length
             ? "All pickup times are full for today."
             : "Ordering is closed for today.";
-      } else if (previousWasAsap) {
-        timeEl.value = available[0].value;
+      } else if (useDefaultChoice) {
+        const asapSlot = available.find((slot) => slot.asap);
+        timeEl.value = (asapSlot || available[0]).value;
         if (messageEl)
-          messageEl.textContent =
-            "Pickup is available today only. ASAP follows the earliest available time.";
+          messageEl.textContent = asapSlot
+            ? "Pickup is available today only. ASAP means we make it as soon as we can."
+            : "Pickup is available today only.";
       } else if (available.some((slot) => slot.value === previousValue)) {
         timeEl.value = previousValue;
         if (messageEl)
@@ -579,9 +696,11 @@ function proceedToPayment() {
   }
   const pickupDate = todayInManila();
   const pickupTime = pickupTimeEl.value;
-  const pickupTimestamp = new Date(
-    `${pickupDate}T${pickupTime}:00+08:00`,
-  ).getTime();
+  // ASAP is not a clock time, so only a chosen time can be "too soon".
+  const pickupTimestamp =
+    pickupTime === "ASAP"
+      ? Infinity
+      : new Date(`${pickupDate}T${pickupTime}:00+08:00`).getTime();
   if (pickupTimestamp < Date.now() + 5 * 60 * 1000) {
     loadPickupSlots();
     showToast(
@@ -603,31 +722,72 @@ function proceedToPayment() {
   if (loyaltyDiscount)
     loyaltyDiscount.textContent = `−₱${redemption.discount.toFixed(2)} (${redemption.points} points for ${redemption.productName})`;
   document.getElementById("refNo").value = "";
-  if (window.PAYMONGO_ENABLED) setupGatewayPaymentModal();
+  const free = cartTotalAfterPoints(cart) <= 0;
+  configurePaymentModal(
+    free ? "free" : window.PAYMONGO_ENABLED ? "gateway" : "manual",
+  );
   document.getElementById("paymentModal").hidden = false;
 }
 
-// Online GCash: hide the manual "send money + paste reference" parts.
-function setupGatewayPaymentModal() {
+function cartTotalAfterPoints(cart = getCart()) {
+  const subtotal = cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0);
+  return Math.round((subtotal - getCartLoyaltyRedemption(cart).discount) * 100) / 100;
+}
+
+// The payment step has three shapes, and the same modal is reused between them
+// (a customer can edit the cart and come back):
+//   free    - points cover everything: nothing to pay, no GCash details
+//   gateway - online GCash through PayMongo: no manual reference number
+//   manual  - send money and paste the reference number
+function configurePaymentModal(mode) {
   const modal = document.getElementById("paymentModal");
-  ["gcashPaymentName", "gcashPaymentNumber"].forEach((id) => {
-    const row = document.getElementById(id)?.closest(".confirm-row");
-    if (row) row.style.display = "none";
-  });
-  const refInput = document.getElementById("refNo");
-  if (refInput) refInput.style.display = "none";
-  const refLabel = modal.querySelector('label[for="refNo"]');
-  if (refLabel) refLabel.style.display = "none";
-  const hint = modal.querySelector("p.cart-hint");
-  if (hint) hint.style.display = "none";
+  const heading = document.getElementById("paymentHeading");
   const sub = modal.querySelector(".confirm-subheading");
-  if (sub)
-    sub.textContent =
-      "You'll be taken to GCash's secure payment page to pay for this order.";
   const btn = document.getElementById("submitPaymentButton");
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = "Pay with GCash";
+  // Remember what the server rendered so "manual" can restore it exactly.
+  if (!modal.dataset.defaults) {
+    modal.dataset.defaults = JSON.stringify({
+      heading: heading?.textContent || "",
+      sub: sub?.textContent || "",
+      btn: btn?.textContent || "",
+      btnDisabled: !!btn?.disabled,
+    });
+  }
+  const defaults = JSON.parse(modal.dataset.defaults);
+  const manual = mode === "manual";
+  const show = (el, on) => {
+    if (el) el.style.display = on ? "" : "none";
+  };
+  ["gcashPaymentName", "gcashPaymentNumber"].forEach((id) =>
+    show(document.getElementById(id)?.closest(".confirm-row"), manual),
+  );
+  show(document.getElementById("refNo"), manual);
+  show(modal.querySelector('label[for="refNo"]'), manual);
+  show(modal.querySelector("p.cart-hint"), manual);
+
+  if (mode === "free") {
+    if (heading) heading.textContent = "Place your order";
+    if (sub) sub.textContent = "Your points cover this order, so there's nothing to pay.";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Place order";
+    }
+  } else if (mode === "gateway") {
+    if (heading) heading.textContent = defaults.heading;
+    if (sub)
+      sub.textContent =
+        "You'll be taken to GCash's secure payment page to pay for this order.";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Pay with GCash";
+    }
+  } else {
+    if (heading) heading.textContent = defaults.heading;
+    if (sub) sub.textContent = defaults.sub;
+    if (btn) {
+      btn.disabled = defaults.btnDisabled;
+      btn.textContent = defaults.btn;
+    }
   }
 }
 
@@ -647,9 +807,12 @@ function submitOrder() {
     return;
   }
   // Online GCash (PayMongo) needs no reference number; the manual flow does.
-  const useGateway = !!window.PAYMONGO_ENABLED;
-  const refNo = useGateway ? "" : document.getElementById("refNo").value.trim();
-  if (!useGateway) {
+  // An order fully covered by points needs neither.
+  const isFree = cartTotalAfterPoints(cart) <= 0;
+  const useGateway = !!window.PAYMONGO_ENABLED && !isFree;
+  const refNo =
+    useGateway || isFree ? "" : document.getElementById("refNo").value.trim();
+  if (!useGateway && !isFree) {
     if (!refNo) {
       showToast("warning", "Please enter your GCash reference number.");
       return;
@@ -692,7 +855,16 @@ function submitOrder() {
     .then((r) => r.json())
     .then((res) => {
       if (res.ok && res.redirect_url) {
-        // Online GCash: hand the customer over to PayMongo's payment page.
+        // Online GCash: the order now exists on the server (held until it is
+        // paid), so the cart is emptied before handing the customer over to
+        // PayMongo. Otherwise pressing Back would show a full cart and invite
+        // a duplicate order. If they abandon the payment they can finish or
+        // cancel it from My Orders, and Reorder refills the cart.
+        saveCart([]);
+        const redeemBox = document.getElementById("redeemLoyaltyCheckbox");
+        if (redeemBox) redeemBox.checked = false;
+        const rewardPick = document.getElementById("loyaltyRewardProduct");
+        if (rewardPick) rewardPick.value = "";
         window.location.href = res.redirect_url;
         return;
       }
@@ -724,9 +896,11 @@ function submitOrder() {
     })
     .finally(() => {
       placeBtn.disabled = false;
-      placeBtn.textContent = window.PAYMONGO_ENABLED
-        ? "Pay with GCash"
-        : "Submit order";
+      placeBtn.textContent = isFree
+        ? "Place order"
+        : window.PAYMONGO_ENABLED
+          ? "Pay with GCash"
+          : "Submit order";
     });
 }
 
@@ -738,8 +912,9 @@ function openConfirmModal(res, meta) {
   );
   document.getElementById("confPickup").textContent =
     `${dateLabel}, ${meta.pickupLabel}`;
-  document.getElementById("confPayment").textContent =
-    "GCash — pending verification";
+  document.getElementById("confPayment").textContent = res.free_order
+    ? "Paid with points"
+    : "GCash — pending verification";
   document.getElementById("confTotal").textContent =
     "\u20b1" + Number(res.total).toFixed(2);
   const redeemedRow = document.getElementById("confPointsRedeemedRow");
@@ -830,8 +1005,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("loyaltyRewardProduct")
     ?.addEventListener("change", () => renderCartSidebar(false));
-  // Refresh while the drawer is open. If the selection is still the automatic
-  // ASAP choice, it advances as time passes; an explicitly chosen time stays put.
+  // Refresh while the drawer is open so times that pass or fill up drop out.
+  // An explicitly chosen time stays put as long as it is still available.
   window.setInterval(() => {
     if (document.getElementById("cartSidebar")?.classList.contains("open")) {
       loadPickupSlots();

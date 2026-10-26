@@ -9,9 +9,10 @@ $products = $db->query(
   'SELECT p.id, p.name, p.has_sizes, c.name AS category_name
      FROM products p
      JOIN categories c ON c.id = p.category_id
+    WHERE p.archived_at IS NULL AND c.archived_at IS NULL
     ORDER BY c.sort_order, c.name, p.name'
 )->fetchAll(PDO::FETCH_ASSOC);
-$inventoryItems = $db->query('SELECT id, name, unit, quantity_on_hand FROM inventory_items ORDER BY name')
+$inventoryItems = $db->query('SELECT id, name, unit, quantity_on_hand FROM inventory_items WHERE archived_at IS NULL ORDER BY name')
   ->fetchAll(PDO::FETCH_ASSOC);
 $selectedProductId = (int) ($_POST['product_id'] ?? $_GET['product_id'] ?? ($products[0]['id'] ?? 0));
 $selectedProduct = null;

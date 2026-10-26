@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   $ok = true;
   foreach ($items as $item) {
     $pid  = (int)($item['id'] ?? 0);
-    $stmt = $db->prepare("SELECT id,name,price FROM products WHERE id=? AND is_available=1");
+    $stmt = $db->prepare("SELECT p.id,p.name,p.price FROM products p JOIN categories c ON c.id=p.category_id WHERE p.id=? AND p.is_available=1 AND p.archived_at IS NULL AND c.archived_at IS NULL");
     $stmt->execute([$pid]);
     $prod = $stmt->fetch();
     if (!$prod) {
@@ -133,7 +133,7 @@ try {
 
 // Load product images for cart thumbnails
 $products = $db->query(
-  "SELECT id, image_path FROM products WHERE is_available = 1"
+  "SELECT p.id, p.image_path FROM products p JOIN categories c ON c.id = p.category_id WHERE p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL"
 )->fetchAll();
 
 layoutHeader('My Cart', '');

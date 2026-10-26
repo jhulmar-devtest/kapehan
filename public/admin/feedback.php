@@ -139,7 +139,7 @@ try {
        FROM order_details
        GROUP BY product_id
      ) od ON od.product_id = p.id
-     WHERE pr.total_ratings > 0
+     WHERE pr.total_ratings > 0 AND p.archived_at IS NULL AND c.archived_at IS NULL
      ORDER BY pr.avg_rating DESC, pr.total_ratings DESC
      LIMIT 20"
   )->fetchAll();

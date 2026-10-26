@@ -61,15 +61,18 @@ function loyaltyProductRewards(PDO $db): array
        FROM loyalty_product_rewards r
        JOIN products p ON p.id = r.product_id
        JOIN categories c ON c.id = p.category_id
-      WHERE r.is_active = 1 AND p.is_available = 1 AND c.name != 'Add-ons'
+      WHERE r.is_active = 1 AND p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL AND c.name != 'Add-ons'
       ORDER BY p.name, p.id"
   );
+  // The discount is capped at the drink's current price. If an admin lowers a
+  // price below the saved discount, the reward becomes "free drink" instead of
+  // offering a discount that checkout would then refuse.
   return array_map(static fn(array $row): array => [
     'product_id' => (int) $row['product_id'],
     'name' => (string) $row['name'],
     'price' => (float) $row['price'],
     'points_required' => (int) $row['points_required'],
-    'discount_amount' => (float) $row['discount_amount'],
+    'discount_amount' => min((float) $row['discount_amount'], (float) $row['price']),
   ], $stmt->fetchAll(PDO::FETCH_ASSOC));
 }
 
@@ -101,8 +104,9 @@ function loyaltyRedemptionForProduct(PDO $db, int $balance, int $productId, arra
     return [...$empty, 'message' => 'This account no longer has enough points for that drink reward.'];
   }
 
-  $discountCents = (int) round((float) $reward['discount_amount'] * 100);
   $productCents = (int) round((float) $reward['price'] * 100);
+  // Same cap as loyaltyProductRewards(): never more than the drink's price.
+  $discountCents = min((int) round((float) $reward['discount_amount'] * 100), $productCents);
   $lineCents = (int) round((float) ($line['price'] ?? $line['unit_price'] ?? $line['sub'] ?? 0) * 100);
   $availableCents = max(0, (int) round($availableTotal * 100));
   if ($discountCents < 1 || $discountCents > $productCents || $discountCents > $lineCents || $discountCents > $availableCents) {

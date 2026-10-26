@@ -93,11 +93,9 @@ if (isset($_GET['resume']) && $order['payment_status'] !== PAY_STATUS_PAID && $o
 // (never arrived, or this page was opened first), ask PayMongo directly so a
 // customer who really paid is never left looking at "unpaid". Throttled,
 // because the waiting screen reloads this page every few seconds.
-if (
-  $order['payment_status'] !== PAY_STATUS_PAID && $order['status'] !== STATUS_CANCELLED
-  && $_SERVER['REQUEST_METHOD'] === 'GET'
-  && paymongoReconcileThrottled($db, (int) $order['id'], 12) === 'paid'
-) {
+if ($order['payment_status'] !== PAY_STATUS_PAID && $order['status'] !== STATUS_CANCELLED
+    && $_SERVER['REQUEST_METHOD'] === 'GET'
+    && paymongoReconcileThrottled($db, (int) $order['id'], 12) === 'paid') {
   $order = $loadOrder() ?: $order;
 }
 

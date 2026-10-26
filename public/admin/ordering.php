@@ -16,10 +16,10 @@ function adminSaveProductSetup(PDO $db, int $productId, bool $hasSizes): void
   }
 
   $sizeOptions = $hasSizes
-    ? $db->query("SELECT id, label FROM size_options WHERE is_active = 1 ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC)
+    ? $db->query("SELECT id, label FROM size_options WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC)
     : [];
   $validSizes = array_column($sizeOptions, 'label');
-  $validItemIds = array_fill_keys(array_map('intval', $db->query('SELECT id FROM inventory_items')->fetchAll(PDO::FETCH_COLUMN)), true);
+  $validItemIds = array_fill_keys(array_map('intval', $db->query('SELECT id FROM inventory_items WHERE archived_at IS NULL')->fetchAll(PDO::FETCH_COLUMN)), true);
   $recipeRows = [];
   $seenItems = [];
   $quantitiesBySize = is_array($rawQuantities) ? $rawQuantities : [];
@@ -65,7 +65,7 @@ function adminSaveProductSetup(PDO $db, int $productId, bool $hasSizes): void
     $marks = implode(',', array_fill(0, count($addonIds), '?'));
     $validAddons = $db->prepare(
       "SELECT DISTINCT a.id FROM addons a JOIN addon_ingredients ai ON ai.addon_id = a.id
-        WHERE a.status = 'active' AND a.id IN ($marks)"
+        WHERE a.status = 'active' AND a.archived_at IS NULL AND a.id IN ($marks)"
     );
     $validAddons->execute($addonIds);
     $validAddonIds = array_map('intval', $validAddons->fetchAll(PDO::FETCH_COLUMN));
@@ -107,11 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['size_action'])) {
   verifyCsrf();
   $action = $_POST['size_action'];
 
-  if ($action === 'delete') {
+  if ($action === 'archive') {
     $id = (int) ($_POST['size_id'] ?? 0);
-    $db->prepare("DELETE FROM size_options WHERE id = ?")->execute([$id]);
-    auditLog(ROLE_ADMIN, currentUserId(), 'delete_size', 'size_options', $id);
-    flash('global', 'Size option deleted.', 'success');
+    $db->prepare("UPDATE size_options SET archived_at = NOW(), is_active = 0 WHERE id = ? AND archived_at IS NULL")->execute([$id]);
+    auditLog(ROLE_ADMIN, currentUserId(), 'archive_size', 'size_options', $id);
+    flash('global', 'Size option archived. You can restore it from the Archive page.', 'success');
   } else {
     $label   = sanitizeString($_POST['label'] ?? '', 30);
     $adj     = round((float) ($_POST['price_adjustment'] ?? 0), 2);
@@ -139,38 +139,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['size_action'])) {
   redirect(APP_URL . '/admin/ordering.php?tab=sizes');
 }
 
-// ---- Handle DELETE ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST['_method'] === 'DELETE') {
+// ---- Handle product archive ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST['_method'] === 'ARCHIVE') {
   verifyCsrf();
   $id = (int)$_POST['product_id'];
 
-  // BUG FIX: this used to unconditionally run
-  // `DELETE od FROM order_details od WHERE od.product_id = ?` before
-  // deleting the product — silently destroying the line items of every
-  // PAST order that ever included it, corrupting historical receipts,
-  // sales reports, and audit records. Deleting a menu item is a routine
-  // admin action (e.g. removing a seasonal drink); it should never be
-  // able to reach back and rewrite completed transactions. If a product
-  // has real order history, refuse the hard delete and point to the
-  // existing "deactivate" toggle instead, which removes it from the
-  // menu without touching anything historical.
-  $stmt = $db->prepare("SELECT COUNT(*) FROM order_details WHERE product_id = ?");
-  $stmt->execute([$id]);
-  if ((int) $stmt->fetchColumn() > 0) {
-    flash('global', 'This product has order history and cannot be deleted, to keep past receipts and reports intact. Use "Deactivate" instead to remove it from the menu.', 'error');
-    redirect(APP_URL . '/admin/ordering.php');
-  }
-
-  // Delete the old image file if it exists
-  $stmt = $db->prepare("SELECT image_path FROM products WHERE id=?");
-  $stmt->execute([$id]);
-  $row = $stmt->fetch();
-  if ($row && $row['image_path'] && file_exists(UPLOAD_DIR . $row['image_path'])) {
-    unlink(UPLOAD_DIR . $row['image_path']);
-  }
-  $db->prepare("DELETE FROM products WHERE id=?")->execute([$id]);
-  auditLog(ROLE_ADMIN, currentUserId(), 'delete_product', 'products', $id);
-  flash('global', 'Product deleted.', 'success');
+  $db->prepare('UPDATE products SET archived_at = NOW() WHERE id = ? AND archived_at IS NULL')->execute([$id]);
+  auditLog(ROLE_ADMIN, currentUserId(), 'archive_product', 'products', $id);
+  flash('global', 'Product archived. You can restore it from the Archive page.', 'success');
   redirect(APP_URL . '/admin/ordering.php');
 }
 
@@ -178,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST[
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
   verifyCsrf();
   $id = (int)$_POST['toggle_id'];
-  $db->prepare("UPDATE products SET is_available = NOT is_available WHERE id=?")->execute([$id]);
+  $db->prepare("UPDATE products SET is_available = NOT is_available WHERE id=? AND archived_at IS NULL")->execute([$id]);
   flash('global', 'Product availability updated.', 'success');
   redirect(APP_URL . '/admin/ordering.php');
 }
@@ -195,6 +171,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
   $desc     = sanitizeString($_POST['description'] ?? '', 500);
   $hasSizes  = isset($_POST['has_sizes'])  ? 1 : 0;
   $hasSugar  = isset($_POST['has_sugar'])  ? 1 : 0;
+
+  $validCategory = $db->prepare('SELECT 1 FROM categories WHERE id = ? AND archived_at IS NULL');
+  $validCategory->execute([$catId]);
+  if (!$validCategory->fetchColumn()) {
+    flash('global', 'Choose an active menu category.', 'error');
+    flashOldInput($_POST);
+    redirect($productSetupUrl);
+  }
 
   $spotlightPinned = isset($_POST['spotlight_pinned']) ? 1 : 0;
   $spotlightUntilRaw = trim($_POST['spotlight_pinned_until'] ?? '');
@@ -292,7 +276,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
     if ($newImageName && $oldImageToDelete && file_exists(UPLOAD_DIR . $oldImageToDelete)) {
       unlink(UPLOAD_DIR . $oldImageToDelete);
     }
-    flash('global', $successMessage, 'success');
+    // A loyalty reward discounts a fixed peso amount. If this price now sits
+    // below it, the reward is capped at the price (the drink becomes free for
+    // those points), so tell the admin instead of leaving it a surprise.
+    if ($pid > 0) {
+      try {
+        $rewardCheck = $db->prepare('SELECT discount_amount, points_required FROM loyalty_product_rewards WHERE product_id = ? AND is_active = 1');
+        $rewardCheck->execute([$savedProductId]);
+        $reward = $rewardCheck->fetch(PDO::FETCH_ASSOC);
+        if ($reward && (float) $reward['discount_amount'] > (float) $price) {
+          $successMessage .= ' Heads up: this drink’s loyalty reward is ₱' . number_format((float) $reward['discount_amount'], 2)
+            . ' off, more than the new price, so it now gives the drink for free (' . (int) $reward['points_required']
+            . ' points). Update it on the Loyalty page if that is not intended.';
+        }
+      } catch (Throwable $e) {
+        // loyalty tables not installed: nothing to check
+      }
+    }
+    flash('global', $successMessage, str_contains($successMessage, 'Heads up') ? 'warning' : 'success');
   } catch (Throwable $e) {
     if ($db->inTransaction()) $db->rollBack();
     if ($newImageName && file_exists(UPLOAD_DIR . $newImageName)) unlink(UPLOAD_DIR . $newImageName);
@@ -340,7 +341,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_category'])) {
     redirect(APP_URL . '/admin/ordering.php?tab=categories');
   }
   if ($parentId !== null) {
-    $parentCheck = $db->prepare('SELECT id FROM categories WHERE id = ? AND parent_id IS NULL');
+  $parentCheck = $db->prepare('SELECT id FROM categories WHERE id = ? AND parent_id IS NULL AND archived_at IS NULL');
     $parentCheck->execute([$parentId]);
     if (!$parentCheck->fetchColumn()) {
       flash('global', 'Choose a valid top-level category, or leave it blank to create one.', 'error');
@@ -363,8 +364,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_category'])) {
   redirect(APP_URL . '/admin/ordering.php?tab=categories');
 }
 
-// ---- Handle DELETE CATEGORY ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST['_method'] === 'DELETE_CATEGORY') {
+// ---- Handle category archive ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST['_method'] === 'ARCHIVE_CATEGORY') {
   verifyCsrf();
   $catId = (int)($_POST['category_id'] ?? 0);
 
@@ -377,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST[
   $queue = [$catId];
   while (!empty($queue)) {
     $current = array_shift($queue);
-    $stmt = $db->prepare("SELECT id FROM categories WHERE parent_id = ?");
+    $stmt = $db->prepare("SELECT id FROM categories WHERE parent_id = ? AND archived_at IS NULL");
     $stmt->execute([$current]);
     $children = $stmt->fetchAll(PDO::FETCH_COLUMN);
     foreach ($children as $childId) {
@@ -388,49 +389,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_method']) && $_POST[
 
   $placeholders = implode(',', array_fill(0, count($categoryIds), '?'));
 
-  // BUG FIX: same issue as the single-product delete above, at larger
-  // scale — this used to run a JOIN DELETE against order_details for
-  // every product in the category (and all its subcategories) before
-  // deleting them, wiping the historical line items of every past order
-  // that ever included any of those products. Refuse the whole deletion
-  // if any product in this category tree has order history, rather than
-  // silently corrupting some past orders and not others.
-  $stmt = $db->prepare(
-    "SELECT COUNT(*) FROM order_details od
-     JOIN products p ON od.product_id = p.id
-     WHERE p.category_id IN ($placeholders)"
-  );
-  $stmt->execute($categoryIds);
-  if ((int) $stmt->fetchColumn() > 0) {
-    flash('global', 'This category contains products with order history and cannot be deleted, to keep past receipts and reports intact. Deactivate the products or category instead.', 'error');
-    redirect(APP_URL . '/admin/ordering.php?tab=categories');
+  $db->beginTransaction();
+  try {
+    $db->prepare("UPDATE categories SET archived_at = NOW() WHERE id IN ($placeholders) AND archived_at IS NULL")->execute($categoryIds);
+    $db->prepare("UPDATE products SET archived_at = NOW() WHERE category_id IN ($placeholders) AND archived_at IS NULL")->execute($categoryIds);
+    $db->commit();
+    auditLog(ROLE_ADMIN, currentUserId(), 'archive_category_tree', 'categories', $catId);
+    flash('global', 'Category and its products archived. You can restore them from the Archive page.', 'success');
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    error_log('Archive category failed: ' . $e->getMessage());
+    flash('global', 'Could not archive this category.', 'error');
   }
-
-  $stmt = $db->prepare("SELECT image_path FROM products WHERE category_id IN ($placeholders)");
-  $stmt->execute($categoryIds);
-  $images = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-  foreach ($images as $img) {
-    if ($img && file_exists(UPLOAD_DIR . $img)) {
-      unlink(UPLOAD_DIR . $img);
-    }
-  }
-
-  // Now delete products (safe — we just confirmed none have order history)
-  $db->prepare("DELETE FROM products WHERE category_id IN ($placeholders)")->execute($categoryIds);
-
-  // Finally delete categories
-  $db->prepare("DELETE FROM categories WHERE id IN ($placeholders)")->execute($categoryIds);
-
-  auditLog(ROLE_ADMIN, currentUserId(), 'delete_category', 'categories', $catId);
-  flash('global', 'Category and its contents deleted.', 'success');
   redirect(APP_URL . '/admin/ordering.php?tab=categories');
 }
 
 // ---- Load products ----
 $catFilter = (int)($_GET['cat'] ?? 0);
 $params    = [];
-$where     = '';
+$where     = 'WHERE p.archived_at IS NULL AND c.archived_at IS NULL';
 
 if ($catFilter > 0) {
   // Check if this is a parent category or a child category
@@ -440,16 +417,16 @@ if ($catFilter > 0) {
 
   if ($category && $category['parent_id'] === null) {
     // This is a parent category - get products from all its children
-    $stmt = $db->prepare("SELECT id FROM categories WHERE parent_id = ?");
+    $stmt = $db->prepare("SELECT id FROM categories WHERE parent_id = ? AND archived_at IS NULL");
     $stmt->execute([$catFilter]);
     $childIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $childIds[] = $catFilter; // Include the parent itself in case it has direct products
     $placeholders = implode(',', array_fill(0, count($childIds), '?'));
-    $where = "WHERE p.category_id IN ($placeholders)";
+    $where .= " AND p.category_id IN ($placeholders)";
     $params = $childIds;
   } else {
     // This is a child category - get only its products
-    $where = 'WHERE p.category_id = ?';
+    $where .= ' AND p.category_id = ?';
     $params[] = $catFilter;
   }
 }
@@ -469,7 +446,7 @@ foreach ($products as $product) {
 
 // Load category tree: parents first, then children grouped under them
 $allCats = $db->query(
-  "SELECT * FROM categories ORDER BY sort_order"
+  "SELECT * FROM categories WHERE archived_at IS NULL ORDER BY sort_order"
 )->fetchAll();
 // Separate into groups and sub-categories
 $catGroups = array_filter($allCats, fn($c) => $c['parent_id'] === null);
@@ -485,7 +462,7 @@ $assignableCats = array_filter($allCats, function ($c) use ($catsByParent) {
   return empty($catsByParent[$c['id']]);
 });
 $productCountsByCategory = [];
-foreach ($db->query('SELECT category_id, COUNT(*) AS product_count FROM products GROUP BY category_id')->fetchAll(PDO::FETCH_ASSOC) as $countRow) {
+foreach ($db->query('SELECT category_id, COUNT(*) AS product_count FROM products WHERE archived_at IS NULL GROUP BY category_id')->fetchAll(PDO::FETCH_ASSOC) as $countRow) {
   $productCountsByCategory[(int) $countRow['category_id']] = (int) $countRow['product_count'];
 }
 $totalCategoryProducts = array_sum($productCountsByCategory);
@@ -494,7 +471,7 @@ $totalCategoryProducts = array_sum($productCountsByCategory);
 $imgBase = APP_URL . '/../uploads/products/';
 
 // Sizes & Pricing sub-tab data (item 13)
-$sizeOptions = $db->query("SELECT * FROM size_options ORDER BY sort_order, id")->fetchAll();
+$sizeOptions = $db->query("SELECT * FROM size_options WHERE archived_at IS NULL ORDER BY sort_order, id")->fetchAll();
 $activeSizeCount = count(array_filter($sizeOptions, static fn($size) => (int)$size['is_active'] === 1));
 $nextSizeSortOrder = $sizeOptions ? max(array_map(static fn($size) => (int)$size['sort_order'], $sizeOptions)) + 1 : 1;
 layoutHeader('Ordering');
@@ -505,6 +482,7 @@ layoutHeader('Ordering');
     <div class="page-header-title">Menu Management</div>
     <div class="page-header-sub">Manage products, categories, add-ons, and drink sizes.</div>
   </div>
+  <div class="page-header-actions"><a href="<?= APP_URL ?>/admin/archive.php" class="btn btn-ghost"><i class="fa-solid fa-box-archive"></i> Archive</a></div>
 </div>
 <?php showFlash('global'); ?>
 
@@ -1058,9 +1036,9 @@ layoutHeader('Ordering');
             <div class="category-actions">
               <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($groupData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
               <button class="btn btn-sm btn-outline" type="button" onclick="openCategoryModal(<?= (int)$group['id'] ?>)"><i class="fa-solid fa-folder-plus"></i> Add subcategory</button>
-              <form method="POST" onsubmit="return confirmCategoryDelete(this, <?= (int)$groupProductCount ?>)">
-                <?= csrfField() ?><input type="hidden" name="_method" value="DELETE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$group['id'] ?>">
-                <button type="submit" class="btn btn-sm btn-danger" <?= $groupChildren ? 'disabled title="Remove its subcategories before deleting this group"' : ($groupProductCount > 0 ? 'title="Deleting this category also deletes its products if they have no order history"' : '') ?>><i class="fa-solid fa-trash"></i> Delete</button>
+              <form method="POST" onsubmit="return confirmCategoryArchive(this, <?= (int)$groupProductCount ?>)">
+                <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$group['id'] ?>">
+                <button type="submit" class="btn btn-sm btn-danger" title="Archive this category and its subcategories and products"><i class="fa-solid fa-box-archive"></i> Archive</button>
               </form>
             </div>
           </header>
@@ -1077,9 +1055,9 @@ layoutHeader('Ordering');
                   <div class="category-actions">
                     <a class="btn btn-sm btn-ghost" href="<?= e(APP_URL) ?>/admin/product-setup.php?category_id=<?= (int)$sub['id'] ?>"><i class="fa-solid fa-plus"></i> Add product</a>
                     <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($subData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
-                    <form method="POST" onsubmit="return confirmCategoryDelete(this, <?= (int)$subCount ?>)">
-                      <?= csrfField() ?><input type="hidden" name="_method" value="DELETE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$sub['id'] ?>">
-                      <button type="submit" class="btn btn-sm btn-danger" <?= $subCount > 0 ? 'title="Deleting this category also deletes its products if they have no order history"' : '' ?>><i class="fa-solid fa-trash"></i></button>
+                    <form method="POST" onsubmit="return confirmCategoryArchive(this, <?= (int)$subCount ?>)">
+                      <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$sub['id'] ?>">
+                      <button type="submit" class="btn btn-sm btn-danger" aria-label="Archive <?= e($sub['name']) ?>"><i class="fa-solid fa-box-archive"></i></button>
                     </form>
                   </div>
                 </div>
@@ -1219,11 +1197,11 @@ layoutHeader('Ordering');
                 <td>
                   <div class="size-actions">
                     <button type="button" class="btn btn-sm btn-outline" onclick='openSizeModal(<?= json_encode($s, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Edit</button>
-                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this size option? Products using this size will no longer offer it.')">
+                    <form method="POST" style="display:inline" onsubmit="return confirm('Archive this size option? It will be hidden from checkout and can be restored later.')">
                       <?= csrfField() ?>
-                      <input type="hidden" name="size_action" value="delete">
+                      <input type="hidden" name="size_action" value="archive">
                       <input type="hidden" name="size_id" value="<?= $s['id'] ?>">
-                      <button type="submit" class="btn btn-sm btn-danger" aria-label="Delete <?= e($s['label']) ?>"><i class="fa-solid fa-trash"></i></button>
+                      <button type="submit" class="btn btn-sm btn-danger" aria-label="Archive <?= e($s['label']) ?>"><i class="fa-solid fa-box-archive"></i></button>
                     </form>
                   </div>
                 </td>
@@ -1267,7 +1245,7 @@ layoutHeader('Ordering');
 
 <!-- ===================== ADD-ONS LIST MODAL ===================== -->
 <div class="modal-overlay hidden" id="addons-list-modal">
-  <div class="modal" style="max-width:800px;width:95vw;">
+  <div class="modal" style="max-width:1040px;width:96vw;">
     <div class="modal-header">
       <div class="modal-title">
         <i class="fa-solid fa-layer-group"></i> Add-on catalog
@@ -1320,6 +1298,32 @@ layoutHeader('Ordering');
           padding-left: 36px
         }
 
+        .addons-catalog-summary {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          margin: 0 0 14px
+        }
+
+        .addons-catalog-stat {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          padding: 11px 13px;
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          background: var(--surface-raised)
+        }
+
+        .addons-catalog-stat i { color: var(--primary-color) }
+        .addons-catalog-stat span { display: block; color: var(--text-muted); font-size: .72rem }
+        .addons-catalog-stat strong { display: block; font-size: 1rem; font-variant-numeric: tabular-nums }
+
+        .addons-catalog-toolbar select { width: 150px }
+        .addon-catalog-action { white-space: nowrap }
+        .addon-stock-summary { min-width: 180px; max-width: 320px; white-space: normal; line-height: 1.45 }
+
         @media(max-width:600px) {
           .addons-catalog-toolbar {
             align-items: stretch;
@@ -1329,11 +1333,20 @@ layoutHeader('Ordering');
           .addons-catalog-search {
             max-width: none
           }
+
+          .addons-catalog-summary { grid-template-columns: 1fr 1fr }
+          .addons-catalog-toolbar select { width: 100% }
         }
       </style>
-      <div class="addons-catalog-note"><i class="fa-solid fa-circle-info"></i><span>Add-ons use shared stock managed in <a href="<?= APP_URL ?>/admin/inventory.php" style="font-weight:700">Inventory</a>. Open a product’s setup to choose which add-ons it offers.</span></div>
+      <div class="addons-catalog-note"><i class="fa-solid fa-circle-info"></i><span>Manage activation here. Add-on names, prices, and stock portions are configured from <a href="<?= APP_URL ?>/admin/inventory.php" style="font-weight:700">Inventory</a>. Product assignments are managed in each product’s setup.</span></div>
+      <div class="addons-catalog-summary" aria-live="polite">
+        <div class="addons-catalog-stat"><i class="fa-solid fa-circle-check"></i><div><span>Active</span><strong id="addons-active-count">—</strong></div></div>
+        <div class="addons-catalog-stat"><i class="fa-solid fa-circle-pause"></i><div><span>Inactive</span><strong id="addons-inactive-count">—</strong></div></div>
+        <div class="addons-catalog-stat"><i class="fa-solid fa-link"></i><div><span>Product assignments</span><strong id="addons-assignment-count">—</strong></div></div>
+      </div>
       <div class="addons-catalog-toolbar">
         <label class="addons-catalog-search"><i class="fa-solid fa-magnifying-glass"></i><input id="addons-list-search" type="search" class="form-control" aria-label="Search add-ons" placeholder="Search add-ons or stock items" autocomplete="off"></label>
+        <select id="addons-status-filter" class="form-control" aria-label="Filter add-ons by status"><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
         <span class="text-muted" id="addons-list-count" style="font-size:.82rem">Loading add-ons…</span>
       </div>
 
@@ -1341,10 +1354,12 @@ layoutHeader('Ordering');
         <table class="data-table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Add-on</th>
               <th>Price</th>
-              <th>Stock item / portion</th>
+              <th>Stock recipe</th>
+              <th>Products</th>
               <th>Status</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody id="addons-list-body">
@@ -1428,7 +1443,7 @@ layoutHeader('Ordering');
 
   function openAddonsListModal() {
     document.getElementById('addons-list-modal').classList.remove('hidden');
-    loadAddonsList();
+    loadAddonsList(true);
   }
 
   function closeAddonsListModal() {
@@ -1438,29 +1453,84 @@ layoutHeader('Ordering');
     if (event.target === event.currentTarget) closeAddonsListModal();
   });
 
-  function loadAddonsList() {
+  let addonCatalog = [];
+  const addonListUrl = '<?= APP_URL ?>/api/get_addons.php';
+  const addonStatusUrl = '<?= APP_URL ?>/api/toggle_addon_status.php';
+
+  function loadAddonsList(resetFilters = false) {
     const body = document.getElementById('addons-list-body');
     const search = document.getElementById('addons-list-search');
-    if (search) search.value = '';
-    body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</td></tr>';
-    fetch('<?= APP_URL ?>/api/get_addons.php').then(response => response.json()).then(data => {
-      const count = document.getElementById('addons-list-count');
-      if (!data.success || !data.addons.length) {
-        if (count) count.textContent = '0 add-ons';
-        body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-layer-group" style="display:block;font-size:1.4rem;margin-bottom:8px;color:var(--primary-color)"></i>No stocked add-ons yet. Add an add-on from Inventory.</td></tr>';
+    if (resetFilters) {
+      if (search) search.value = '';
+      document.getElementById('addons-status-filter').value = 'all';
+    }
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</td></tr>';
+    fetch(addonListUrl).then(response => response.json()).then(data => {
+      if (!data.success) throw new Error(data.error || 'Could not load add-ons.');
+      addonCatalog = data.addons || [];
+      renderAddonCatalog();
+      if (!addonCatalog.length) {
+        document.getElementById('addons-list-count').textContent = '0 add-ons';
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fa-solid fa-layer-group" style="display:block;font-size:1.4rem;margin-bottom:8px;color:var(--primary-color)"></i>No add-ons yet. Create one from Inventory.</td></tr>';
         return;
       }
-      if (count) count.textContent = `${data.addons.length} add-on${data.addons.length===1?'':'s'}`;
-      body.innerHTML = data.addons.map(addon => {
-        const active = addon.status === 'active';
-        const searchText = [addon.name, addon.inventory_name || ''].join(' ').toLowerCase();
-        return `<tr data-addon-search="${e(searchText)}"><td><strong>${e(addon.name)}</strong></td><td>₱${Number(addon.price).toFixed(2)}</td><td>${e(addon.inventory_name||'—')} <span class="text-muted">(${Number(addon.qty_per_unit||0).toFixed(3)} ${e(addon.inventory_unit||'')})</span></td><td><span class="badge ${active?'badge-ready':'badge-cancelled'}">${e(addon.status)}</span></td></tr>`;
-      }).join('');
-      applyAddonSearch();
     }).catch(() => {
       document.getElementById('addons-list-count').textContent = 'Could not load';
-      body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--status-cancelled)">Could not load add-ons. Try again.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--status-cancelled)">Could not load add-ons. Try again.</td></tr>';
     });
+  }
+
+  function renderAddonCatalog() {
+    const body = document.getElementById('addons-list-body');
+    const activeCount = addonCatalog.filter(addon => addon.status === 'active').length;
+    const inactiveCount = addonCatalog.length - activeCount;
+    const assignmentCount = addonCatalog.reduce((sum, addon) => sum + Number(addon.product_count || 0), 0);
+    document.getElementById('addons-active-count').textContent = activeCount;
+    document.getElementById('addons-inactive-count').textContent = inactiveCount;
+    document.getElementById('addons-assignment-count').textContent = assignmentCount;
+    if (!addonCatalog.length) return;
+    body.innerHTML = addonCatalog.map(addon => {
+      const active = addon.status === 'active';
+      const stockReady = Number(addon.stock_item_count) > 0 && Number(addon.stock_item_count) === Number(addon.active_stock_item_count);
+      const searchText = [addon.name, addon.stock_summary || ''].join(' ').toLowerCase();
+      const action = active
+        ? `<button type="button" class="btn btn-sm btn-ghost addon-catalog-action" onclick="toggleCatalogAddon(${Number(addon.id)},'inactive',this)"><i class="fa-solid fa-pause"></i> Deactivate</button>`
+        : stockReady
+          ? `<button type="button" class="btn btn-sm btn-outline addon-catalog-action" onclick="toggleCatalogAddon(${Number(addon.id)},'active',this)"><i class="fa-solid fa-play"></i> Activate</button>`
+          : '<span class="text-muted" title="Configure an active inventory stock item before activation">Fix stock first</span>';
+      const stockText = addon.stock_summary || 'No stock item linked';
+      const readiness = stockReady ? '' : '<small class="text-muted" style="display:block;margin-top:3px">Needs active stock setup</small>';
+      return `<tr data-addon-search="${e(searchText)}" data-addon-status="${active?'active':'inactive'}">
+        <td><strong>${e(addon.name)}</strong></td>
+        <td>₱${Number(addon.price).toFixed(2)}</td>
+        <td class="addon-stock-summary">${e(stockText)}${readiness}</td>
+        <td>${Number(addon.product_count || 0)}</td>
+        <td><span class="badge ${active?'badge-ready':'badge-cancelled'}">${active?'Active':'Inactive'}</span></td>
+        <td>${action}</td>
+      </tr>`;
+    }).join('');
+    applyAddonSearch();
+  }
+
+  async function toggleCatalogAddon(addonId, nextStatus, button) {
+    const previousLabel = button.innerHTML;
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    const formData = new FormData();
+    formData.append('addon_id', String(addonId));
+    formData.append('status', nextStatus);
+    formData.append('csrf_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+    try {
+      const response = await fetch(addonStatusUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Could not update this add-on.');
+      showToast(`Add-on ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`, 'success');
+      loadAddonsList(false);
+    } catch (error) {
+      showToast(error.message || 'Could not update this add-on.', 'error');
+      button.disabled = false;
+      button.innerHTML = previousLabel;
+    }
   }
 
   function applyAddonSearch() {
@@ -1469,23 +1539,25 @@ layoutHeader('Ordering');
     if (!search || !body) return;
     const query = search.value.trim().toLowerCase();
     const rows = Array.from(body.querySelectorAll('tr[data-addon-search]'));
+    const status = document.getElementById('addons-status-filter')?.value || 'all';
     let visible = 0;
     rows.forEach(row => {
-      row.hidden = !row.dataset.addonSearch.includes(query);
+      row.hidden = !row.dataset.addonSearch.includes(query) || (status !== 'all' && row.dataset.addonStatus !== status);
       if (!row.hidden) visible++;
     });
     const count = document.getElementById('addons-list-count');
-    if (count) count.textContent = query ? `${visible} of ${rows.length} add-ons match` : `${rows.length} add-on${rows.length===1?'':'s'}`;
+    if (count) count.textContent = query || status !== 'all' ? `${visible} of ${rows.length} add-ons shown` : `${rows.length} add-on${rows.length===1?'':'s'}`;
     let empty = body.querySelector('[data-addon-empty]');
     if (!empty) {
       empty = document.createElement('tr');
       empty.dataset.addonEmpty = '1';
-      empty.innerHTML = '<td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No add-ons match this search.</td>';
+      empty.innerHTML = '<td colspan="6" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No add-ons match these filters.</td>';
       body.appendChild(empty);
     }
-    empty.hidden = query === '' || visible > 0;
+    empty.hidden = visible > 0 || rows.length === 0;
   }
   document.getElementById('addons-list-search').addEventListener('input', applyAddonSearch);
+  document.getElementById('addons-status-filter').addEventListener('change', applyAddonSearch);
 </script>
 
 <script>
@@ -1510,10 +1582,10 @@ layoutHeader('Ordering');
     document.getElementById('category-name').focus();
   }
 
-  function confirmCategoryDelete(form, productCount) {
+  function confirmCategoryArchive(form, productCount) {
     const products = productCount === 1 ? '1 product' : `${productCount} products`;
-    const impact = productCount > 0 ? ` This also deletes its ${products} if they have no sales history.` : '';
-    return confirm(`Delete this category?${impact} Categories with products in past orders cannot be deleted.`);
+    const impact = productCount > 0 ? ` Its ${products} will be archived too.` : '';
+    return confirm(`Archive this category and all its subcategories?${impact} You can restore them later from Archive.`);
   }
 
   function closeCategoryModal() {

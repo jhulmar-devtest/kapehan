@@ -30,7 +30,7 @@ try {
         SELECT a.id, a.name, a.price
         FROM addons a
         INNER JOIN product_addons pa ON a.id = pa.addon_id
-        WHERE pa.product_id = ? AND a.status = 'active'
+        WHERE pa.product_id = ? AND a.status = 'active' AND a.archived_at IS NULL
         ORDER BY a.name
     ");
   $stmt->execute([$productId]);

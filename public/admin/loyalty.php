@@ -136,7 +136,7 @@ $products = $db->query(
   "SELECT p.id, p.name, p.price, p.is_available, r.points_required, r.discount_amount, r.is_active
      FROM products p JOIN categories c ON c.id = p.category_id
      LEFT JOIN loyalty_product_rewards r ON r.product_id = p.id
-    WHERE c.name != 'Add-ons' ORDER BY p.name"
+    WHERE c.name != 'Add-ons' AND p.archived_at IS NULL AND c.archived_at IS NULL ORDER BY p.name"
 )->fetchAll(PDO::FETCH_ASSOC);
 $rewardAudit = $db->query(
   'SELECT product_name_snapshot, old_points_required, new_points_required, old_discount_amount, new_discount_amount, old_is_active, new_is_active, actor_id, created_at

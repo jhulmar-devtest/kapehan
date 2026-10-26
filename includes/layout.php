@@ -70,6 +70,7 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
     $nav .= navItem('fa-cash-register', 'Cash Drawer', $appUrl . '/admin/cash-drawer.php', $pageTitle);
     $nav .= navItem('fa-award',        'Loyalty',     $appUrl . '/admin/loyalty.php',   $pageTitle);
     $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
+    $nav .= navItem('fa-box-archive',  'Archive',    $appUrl . '/admin/archive.php',   $pageTitle);
     $nav .= '<div class="nav-section-label">System</div>';
     try {
       $conflictReportCount = (int) Database::getInstance()->query("SELECT COUNT(*) FROM registration_conflict_reports WHERE status = 'pending'")->fetchColumn();

@@ -200,7 +200,7 @@ $allProducts = $db->query(
    JOIN categories c  ON p.category_id = c.id
    LEFT JOIN categories cp ON c.parent_id = cp.id
    LEFT JOIN product_rating_summary prs ON prs.product_id = p.id
-   WHERE c.name != 'Add-ons'
+   WHERE c.name != 'Add-ons' AND p.archived_at IS NULL AND c.archived_at IS NULL
    ORDER BY c.sort_order, p.name"
 )->fetchAll();
 $stockAvailability = inventoryProductAvailabilityMap($db, array_column($allProducts, 'id'));
@@ -214,8 +214,8 @@ $soldCounts = array_column($allProducts, 'total_sold');
 rsort($soldCounts);
 $bestSellerThreshold = $soldCounts[min(4, count($soldCounts) - 1)] ?? 0;
 
-$allCats = $db->query("SELECT * FROM categories WHERE name != 'Add-ons' ORDER BY sort_order")->fetchAll();
-$posSizeOptions = $db->query("SELECT label, price_adjustment FROM size_options WHERE is_active = 1 ORDER BY sort_order, label")->fetchAll(PDO::FETCH_ASSOC);
+$allCats = $db->query("SELECT * FROM categories WHERE name != 'Add-ons' AND archived_at IS NULL ORDER BY sort_order")->fetchAll();
+$posSizeOptions = $db->query("SELECT label, price_adjustment FROM size_options WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order, label")->fetchAll(PDO::FETCH_ASSOC);
 $catsByParent = [];
 foreach ($allCats as $cat) {
   if ($cat['parent_id']) $catsByParent[$cat['parent_id']][] = $cat;
@@ -1027,55 +1027,91 @@ layoutHeader('Walk-in POS', '');
   .pos-item-stepper {
     display: flex;
     align-items: center;
-    background: var(--surface-raised);
-    border: 1px solid var(--border-color);
+    gap: 5px;
+    background: transparent;
+    border: 0;
     border-radius: var(--radius-full);
-    padding: 2px;
-    overflow: hidden;
+    padding: 0;
     width: max-content;
   }
 
   .pos-qty-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 15px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    background: var(--surface-color);
+    color: var(--primary-color);
+    font-size: 17px;
     font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    line-height: 1;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
   }
 
-  .pos-qty-btn:hover {
-    background: var(--text-color);
-    color: var(--surface-color);
+  .pos-qty-btn:hover:not(:disabled) {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-on-primary);
   }
 
-  .pos-qty-btn.minus:hover {
+  .pos-qty-btn.minus {
+    color: var(--status-cancelled);
+  }
+
+  .pos-qty-btn.minus:hover:not(:disabled) {
     background: var(--status-cancelled);
-    color: #fff;
+    border-color: var(--status-cancelled);
+    color: var(--text-on-primary);
+  }
+
+  .pos-qty-btn:active:not(:disabled) {
+    transform: scale(.94);
+  }
+
+  .pos-qty-btn:disabled {
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: .5;
+  }
+
+  .pos-qty-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   .pos-qty-input {
-    width: 32px;
+    width: 46px;
+    height: 28px;
+    padding: 0 3px;
     text-align: center;
-    background: transparent;
-    border: none;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     font-size: 0.85rem;
     font-weight: 800;
     color: var(--text-color);
     outline: none;
   }
 
-  .pos-item-remove {
+  .pos-qty-input:focus-visible {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-subtle);
+  }
+
+  .pos-item-actions {
     position: absolute;
     top: -8px;
     right: -8px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .pos-item-edit,
+  .pos-item-remove {
     width: 22px;
     height: 22px;
     border-radius: 50%;
@@ -1089,11 +1125,13 @@ layoutHeader('Walk-in POS', '');
     justify-content: center;
     transition: all var(--transition-fast);
     box-shadow: var(--shadow-xs);
-    opacity: 0;
+    opacity: 1;
   }
 
-  .pos-item:hover .pos-item-remove {
-    opacity: 1;
+  .pos-item-edit:hover {
+    background: var(--primary-color);
+    color: var(--text-on-primary);
+    border-color: var(--primary-color);
   }
 
   .pos-item-remove:hover {
@@ -1652,16 +1690,19 @@ layoutHeader('Walk-in POS', '');
           data-parent="<?= $p['cat_parent'] ?>"
           data-name="<?= strtolower(e($p['name'])) ?>"
           data-avail="<?= $p['is_available'] ? '1' : '0' ?>"
+          data-product-name="<?= e($p['name']) ?>"
+          data-price="<?= number_format((float) $p['price'], 2, '.', '') ?>"
+          data-image-path="<?= e($p['image_path'] ?? '') ?>"
+          data-has-sizes="<?= (int) $p['has_sizes'] ?>"
+          data-has-sugar="<?= (int) $p['has_sugar'] ?>"
+          data-has-addons="<?= (int) $p['has_addons'] ?>"
           <?php if ($p['is_available']):
             $hasOptions = $p['has_sizes'] || $p['has_sugar'] || $p['has_addons'];
-            $useModal = $hasOptions || $p['has_inventory'];
-            $onclick = $useModal
-              ? "openPosModal({$p['id']}, " . htmlspecialchars(json_encode($p['name'])) . ", {$p['price']}, " . htmlspecialchars(json_encode($p['image_path'] ?? '')) . ", " . (int)$p['has_sizes'] . ", " . (int)$p['has_sugar'] . ", " . (int)$p['has_addons'] . ")"
-              : "quickAddToCart({$p['id']}, " . htmlspecialchars(json_encode($p['name'])) . ", {$p['price']})";
+            $onclick = "openPosModal({$p['id']}, " . htmlspecialchars(json_encode($p['name'])) . ", {$p['price']}, " . htmlspecialchars(json_encode($p['image_path'] ?? '')) . ", " . (int)$p['has_sizes'] . ", " . (int)$p['has_sugar'] . ", " . (int)$p['has_addons'] . ")";
           ?>
           role="button"
           tabindex="0"
-          aria-label="<?= $useModal ? 'Customize ' . e($p['name']) : 'Add ' . e($p['name']) ?>, <?= peso($p['price']) ?>"
+          aria-label="<?= $hasOptions || $p['has_inventory'] ? 'Customize ' . e($p['name']) : 'Choose quantity for ' . e($p['name']) ?>, <?= peso($p['price']) ?>"
           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
           onclick="<?= $onclick ?>"
           <?php endif; ?>>
@@ -2114,15 +2155,18 @@ layoutHeader('Walk-in POS', '');
         '<div class="pos-item-name">' + e(item.name) + '</div>' + noteHtml +
         '<div class="pos-item-unit-price">₱' + item.price.toFixed(2) + ' each</div>' +
         '<div class="pos-item-stepper">' +
-        '<button class="pos-qty-btn minus" onclick="updateQty(\'' + key + '\',-1)">−</button>' +
-        '<input class="pos-qty-input" type="number" min="1" max="' + posLineMax(item) + '" value="' + item.qty + '" ' +
-        'onchange="setQty(\'' + key + '\',this.value)" onclick="this.select()">' +
-        '<button class="pos-qty-btn" ' + (posCanIncrement(item) ? '' : 'disabled') + ' onclick="updateQty(\'' + key + '\',1)">+</button>' +
+        '<button type="button" class="pos-qty-btn minus" aria-label="Decrease quantity" ' + (item.qty <= 1 ? 'disabled' : '') + ' onclick="updateQty(\'' + key + '\',-1)">−</button>' +
+        '<input class="pos-qty-input" type="number" min="1" step="1" max="' + posLineMax(item) + '" value="' + item.qty + '" ' +
+        'aria-label="Quantity for ' + e(item.name) + '" onchange="setQty(\'' + key + '\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()" onclick="this.select()">' +
+        '<button type="button" class="pos-qty-btn plus" aria-label="Increase quantity" ' + (posCanIncrement(item) ? '' : 'disabled') + ' onclick="updateQty(\'' + key + '\',1)">+</button>' +
         '</div>' +
         '</div>' +
         '<div class="pos-item-right">' +
         '<div class="pos-item-sub">₱' + sub.toFixed(2) + '</div>' +
-        '<button class="pos-item-remove" onclick="removeItem(\'' + key + '\')" title="Remove"><i class="fa-solid fa-xmark"></i></button>' +
+        '<div class="pos-item-actions">' +
+        '<button type="button" class="pos-item-edit" onclick="editPosItem(\'' + key + '\')" aria-label="Edit ' + e(item.name) + '" title="Edit"><i class="fa-solid fa-pen"></i></button>' +
+        '<button type="button" class="pos-item-remove" onclick="removeItem(\'' + key + '\')" aria-label="Remove ' + e(item.name) + '" title="Remove"><i class="fa-solid fa-xmark"></i></button>' +
+        '</div>' +
         '</div>' +
         '</div>';
     });
@@ -2201,6 +2245,25 @@ layoutHeader('Walk-in POS', '');
 
   function removeItem(key) {
     confirmRemoveItem(key);
+  }
+
+  function editPosItem(key) {
+    const item = cart[key];
+    const card = item ? document.getElementById('pcard-' + item.productId) : null;
+    if (!item || !card) {
+      if (typeof window.showToast === 'function') showToast('warning', 'This product is no longer available to edit.');
+      return;
+    }
+    openPosModal(
+      item.productId,
+      card.dataset.productName,
+      Number(card.dataset.price),
+      card.dataset.imagePath,
+      card.dataset.hasSizes === '1',
+      card.dataset.hasSugar === '1',
+      card.dataset.hasAddons === '1',
+      key
+    );
   }
 
   function confirmRemoveItem(key) {
@@ -2813,46 +2876,62 @@ layoutHeader('Walk-in POS', '');
   .pm-qty-ctrl {
     display: flex;
     align-items: center;
-    gap: 2px;
-    border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-    background: var(--surface-raised);
+    gap: 7px;
+    border: 0;
+    border-radius: var(--radius-full);
+    padding: 0;
+    background: transparent;
     flex-shrink: 0;
   }
 
   .pm-qty-btn {
-    width: 34px;
-    height: 34px;
-    border: none;
-    border-radius: calc(var(--radius-sm) - 2px);
-    background: transparent;
-    font-size: 15px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--surface-color);
+    color: var(--primary-color);
+    font-size: 18px;
     font-weight: 700;
     font-family: inherit;
-    color: var(--text-secondary);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition-fast);
+    line-height: 1;
+    box-shadow: var(--shadow-xs);
+    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
   }
 
-  .pm-qty-btn:hover {
+  .pm-qty-btn:hover:not(:disabled) {
     background: var(--primary-color);
+    border-color: var(--primary-color);
     color: var(--text-on-primary);
   }
 
+  .pm-qty-btn.minus { color: var(--status-cancelled); }
+  .pm-qty-btn.minus:hover:not(:disabled) { background: var(--status-cancelled); border-color: var(--status-cancelled); color: var(--text-on-primary); }
+  .pm-qty-btn:active:not(:disabled) { transform: scale(.94); }
+  .pm-qty-btn:disabled { background: var(--surface-raised); color: var(--text-muted); box-shadow: none; cursor: not-allowed; opacity: .45; }
+  .pm-qty-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
   .pm-qty-num {
-    width: 34px;
+    width: 48px;
+    height: 38px;
+    padding: 0 3px;
     text-align: center;
-    border: none;
-    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    background: var(--surface-color);
     font-size: 0.88rem;
     font-weight: 700;
     font-family: inherit;
     color: var(--text-color);
     outline: none;
+  }
+
+  .pm-qty-num:focus-visible {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-subtle);
   }
 
   .pm-add-btn {
@@ -2904,6 +2983,7 @@ layoutHeader('Walk-in POS', '');
         <span id="pm-icon" class="pm-thumb-icon"><i class="fa-solid fa-mug-hot"></i></span>
       </div>
       <div class="pm-header-text">
+        <div class="pm-section-label" id="pm-mode-label">Customize order</div>
         <div class="pm-product-name" id="pm-name"></div>
         <div class="pm-base-price">Base: <span id="pm-base"></span></div>
       </div>
@@ -2944,12 +3024,12 @@ layoutHeader('Walk-in POS', '');
     </div>
     <div class="pm-footer">
       <div class="pm-qty-ctrl">
-        <button class="pm-qty-btn" id="pm-qty-minus" onclick="posChangeQty(-1)">−</button>
-        <input type="number" id="pm-qty" class="pm-qty-num" value="1" min="1" max="99" oninput="posRecalc()" onclick="this.select()">
-        <button class="pm-qty-btn" id="pm-qty-plus" onclick="posChangeQty(1)">+</button>
+        <button type="button" class="pm-qty-btn minus" id="pm-qty-minus" aria-label="Decrease quantity" onclick="posChangeQty(-1)">−</button>
+        <input type="number" id="pm-qty" class="pm-qty-num" aria-label="Quantity to add" value="1" min="1" max="99" step="1" inputmode="numeric" oninput="posRecalc()" onclick="this.select()">
+        <button type="button" class="pm-qty-btn plus" id="pm-qty-plus" aria-label="Increase quantity" onclick="posChangeQty(1)">+</button>
       </div>
       <button class="pm-add-btn" id="pm-add-btn" onclick="posAddToCart()">
-        <i class="fa-solid fa-cart-plus"></i> Add to Order
+        <i class="fa-solid fa-cart-plus" id="pm-add-icon"></i> <span id="pm-add-label">Add to Order</span>
         <div class="pm-price-col">
           <span class="pm-unit-lbl">each <span id="pm-unit"></span></span>
           <span class="pm-total-lbl" id="pm-total"></span>
@@ -2979,7 +3059,8 @@ layoutHeader('Walk-in POS', '');
     maxToAdd: null
   };
 
-  function openPosModal(id, name, basePrice, imgPath, hasSizes, hasSugar, hasAddons) {
+  function openPosModal(id, name, basePrice, imgPath, hasSizes, hasSugar, hasAddons, editKey = null) {
+    const existingItem = editKey && cart[editKey] ? cart[editKey] : null;
     _pos = {
       id,
       name,
@@ -2989,6 +3070,8 @@ layoutHeader('Walk-in POS', '');
       hasSugar: !!hasSugar,
       hasAddons: !!hasAddons,
       addons: [],
+      editKey: existingItem ? editKey : null,
+      selectedAddonIds: existingItem ? [...(existingItem.addonIds || [])].map(Number) : [],
       stockEstimate: null,
       stockLoading: true,
       stockRequest: 0,
@@ -3001,6 +3084,9 @@ layoutHeader('Walk-in POS', '');
 
     document.getElementById('pm-name').textContent = name;
     document.getElementById('pm-base').textContent = '₱' + parseFloat(basePrice).toFixed(2);
+    document.getElementById('pm-mode-label').textContent = existingItem ? 'Edit order item' : 'Customize order';
+    document.getElementById('pm-add-label').textContent = existingItem ? 'Save Changes' : 'Add to Order';
+    document.getElementById('pm-add-icon').className = existingItem ? 'fa-solid fa-check' : 'fa-solid fa-cart-plus';
 
     const imgEl = document.getElementById('pm-img');
     const iconEl = document.getElementById('pm-icon');
@@ -3013,10 +3099,12 @@ layoutHeader('Walk-in POS', '');
       iconEl.style.display = '';
     }
 
-    document.querySelectorAll('.pm-size-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
-    document.querySelectorAll('.pm-sugar-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
-    document.getElementById('pm-notes').value = '';
-    document.getElementById('pm-qty').value = 1;
+    const selectedSize = existingItem ? POS_SIZES.findIndex(size => size.label === existingItem.size) : 0;
+    const selectedSugar = existingItem ? POS_SUGAR.indexOf(existingItem.sugar) : 0;
+    document.querySelectorAll('.pm-size-btn').forEach((b, i) => b.classList.toggle('active', i === Math.max(0, selectedSize)));
+    document.querySelectorAll('.pm-sugar-btn').forEach((b, i) => b.classList.toggle('active', i === Math.max(0, selectedSugar)));
+    document.getElementById('pm-notes').value = existingItem?.customNote || '';
+    document.getElementById('pm-qty').value = existingItem ? existingItem.qty : 1;
 
     document.getElementById('pm-addons-container').innerHTML = `
       <div style="text-align:center;padding:1rem;color:var(--text-muted)">
@@ -3057,7 +3145,7 @@ layoutHeader('Walk-in POS', '');
     let html = '<div class="pm-addon-grid">';
     addons.forEach(addon => {
       html += `<label class="pm-addon-row">
-        <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" onchange="posRecalc();posUpdateStockEstimate()">
+        <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" ${_pos.selectedAddonIds.includes(Number(addon.id)) ? 'checked' : ''} onchange="posRecalc();posUpdateStockEstimate()">
         <div class="pm-addon-check"><i class="fa-solid fa-check"></i></div>
         <span class="pm-addon-name">${e(addon.name)}</span>
         <span class="pm-addon-price">+₱${parseFloat(addon.price).toFixed(2)}</span>
@@ -3068,7 +3156,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   function posCurrentProductQty() {
-    return posProductQuantity(_pos.id);
+    return posProductQuantity(_pos.id) - Number(cart[_pos.editKey]?.qty || 0);
   }
 
   function posModalMaxQty() {
@@ -3161,33 +3249,6 @@ layoutHeader('Walk-in POS', '');
     if (e.target === this) closePosModal();
   });
 
-  /* ── Speed path: a product with no size/sugar/add-on options needs no
-     modal at all — one tap adds it straight to the cart. This matters
-     for a till: most of what a cashier rings up (bottled drinks,
-     pastries, snacks) has nothing to configure, so forcing every item
-     through the customize modal costs real time over a shift. ── */
-  function quickAddToCart(id, name, price) {
-    const key = id + '|plain';
-    if (!cart[key]) cart[key] = {
-      productId: id,
-      name,
-      price: parseFloat(price),
-      note: '',
-      qty: 0
-    };
-    cart[key].qty += 1;
-
-    const card = document.getElementById('pcard-' + id);
-    if (card) {
-      card.style.transition = 'transform 0.12s';
-      card.style.transform = 'scale(0.94)';
-      setTimeout(() => {
-        card.style.transform = '';
-      }, 120);
-    }
-    renderCart();
-  }
-
   function posRecalc() {
     const sizeIdx = [...document.querySelectorAll('.pm-size-btn')].findIndex(b => b.classList.contains('active'));
     const sizeAdj = _pos.hasSizes ? (POS_SIZES[sizeIdx]?.adj ?? 0) : 0;
@@ -3242,7 +3303,7 @@ layoutHeader('Walk-in POS', '');
     if (notes) noteParts.push('"' + notes + '"');
     const note = noteParts.join(' · ');
 
-    if (!cart[key]) cart[key] = {
+    const updatedItem = {
       productId: _pos.id,
       name: _pos.name,
       price: finalPrice,
@@ -3252,9 +3313,22 @@ layoutHeader('Walk-in POS', '');
       sugar,
       addonIds: chosenAddonIds,
       stockMax: _pos.stockEstimate?.tracked ? Number(_pos.stockEstimate.max_quantity) : null,
-      qty: 0
+      qty
     };
-    cart[key].qty += qty;
+    if (_pos.editKey) {
+      if (!cart[_pos.editKey]) {
+        if (typeof window.showToast === 'function') showToast('warning', 'This cart item is no longer available to edit.');
+        closePosModal();
+        return;
+      }
+      delete cart[_pos.editKey];
+      if (cart[key]) cart[key].qty += qty;
+      else cart[key] = updatedItem;
+    } else if (cart[key]) {
+      cart[key].qty += qty;
+    } else {
+      cart[key] = updatedItem;
+    }
 
     const card = document.getElementById('pcard-' + _pos.id);
     if (card) {

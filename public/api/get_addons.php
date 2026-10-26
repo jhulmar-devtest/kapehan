@@ -21,17 +21,26 @@ try {
             INNER JOIN addon_ingredients ai ON ai.addon_id = a.id
             INNER JOIN inventory_items i ON i.id = ai.inventory_item_id
             LEFT JOIN product_addons pa ON a.id = pa.addon_id AND pa.product_id = ?
-            WHERE a.status = 'active'
+            WHERE a.status = 'active' AND a.archived_at IS NULL AND i.archived_at IS NULL
             ORDER BY a.name
         ");
     $stmt->execute([$productId]);
     $addons = $stmt->fetchAll();
   } else {
     $stmt = $db->query("
-            SELECT a.id, a.name, a.price, a.status, i.name AS inventory_name, i.unit AS inventory_unit, ai.qty_per_unit
+            SELECT a.id, a.name, a.price, a.status,
+                   GROUP_CONCAT(DISTINCT CONCAT(i.name, ' · ', FORMAT(ai.qty_per_unit, 3), ' ', i.unit) ORDER BY i.name SEPARATOR ', ') AS stock_summary,
+                   COUNT(DISTINCT ai.inventory_item_id) AS stock_item_count,
+                   COUNT(DISTINCT CASE WHEN i.archived_at IS NULL THEN ai.inventory_item_id END) AS active_stock_item_count,
+                   COUNT(DISTINCT CASE WHEN p.archived_at IS NULL AND c.archived_at IS NULL THEN pa.product_id END) AS product_count
             FROM addons a
-            INNER JOIN addon_ingredients ai ON ai.addon_id = a.id
-            INNER JOIN inventory_items i ON i.id = ai.inventory_item_id
+            LEFT JOIN addon_ingredients ai ON ai.addon_id = a.id
+            LEFT JOIN inventory_items i ON i.id = ai.inventory_item_id
+            LEFT JOIN product_addons pa ON pa.addon_id = a.id
+            LEFT JOIN products p ON p.id = pa.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE a.archived_at IS NULL
+            GROUP BY a.id, a.name, a.price, a.status
             ORDER BY a.name
         ");
     $addons = $stmt->fetchAll();
@@ -47,6 +56,10 @@ try {
       'inventory_name' => $a['inventory_name'] ?? null,
       'inventory_unit' => $a['inventory_unit'] ?? null,
       'qty_per_unit' => isset($a['qty_per_unit']) ? (float)$a['qty_per_unit'] : null,
+      'stock_summary' => $a['stock_summary'] ?? null,
+      'stock_item_count' => isset($a['stock_item_count']) ? (int)$a['stock_item_count'] : 0,
+      'active_stock_item_count' => isset($a['active_stock_item_count']) ? (int)$a['active_stock_item_count'] : 0,
+      'product_count' => isset($a['product_count']) ? (int)$a['product_count'] : 0,
       'is_checked' => isset($a['is_checked']) ? (bool)$a['is_checked'] : null,
     ], $addons)
   ]);

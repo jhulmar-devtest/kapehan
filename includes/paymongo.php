@@ -48,11 +48,9 @@ function paymongoApi(string $method, string $path, ?array $body = null, int $tim
   $raw = curl_exec($ch);
   if ($raw === false) {
     $err = curl_error($ch);
-    curl_close($ch);
     throw new RuntimeException('PayMongo request failed: ' . $err);
   }
   $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-  curl_close($ch);
   $decoded = json_decode((string) $raw, true);
   return ['status' => $status, 'body' => is_array($decoded) ? $decoded : null];
 }

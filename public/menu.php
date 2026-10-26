@@ -17,9 +17,31 @@
 require_once __DIR__ . '/../config/init.php';
 require_once __DIR__ . '/../includes/loyalty.php';
 require_once __DIR__ . '/../includes/inventory.php';
+require_once __DIR__ . '/../includes/paymongo.php';
 
 $role       = currentRole(); // null for guests
 $loggedIn   = isLoggedIn() && in_array($role, [ROLE_STUDENT, ROLE_FACULTY], true);
+
+// An online order the customer started but has not paid for yet. Shown as a
+// notice so leaving PayMongo's page (a failed or abandoned payment does not
+// return to this site) never leaves them wondering what happened to the order.
+$unpaidOrder = null;
+if ($loggedIn) {
+  $ownerColumn = $role === ROLE_STUDENT ? 'student_id' : 'faculty_id';
+  $unpaidStmt = Database::getInstance()->prepare(
+    "SELECT o.id, o.order_number
+       FROM orders o JOIN payments p ON p.order_id = o.id
+      WHERE o.{$ownerColumn} = ? AND o.status = 'pending'
+        AND p.gateway = 'paymongo' AND p.payment_status = 'pending'
+      ORDER BY o.id DESC LIMIT 1"
+  );
+  $unpaidStmt->execute([(int) currentUserId()]);
+  $unpaidOrder = $unpaidStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+  // It may already be paid (webhook not arrived yet): confirm before nagging.
+  if ($unpaidOrder && paymongoReconcileThrottled(Database::getInstance(), (int) $unpaidOrder['id'], 15) === 'paid') {
+    $unpaidOrder = null;
+  }
+}
 
 // ---- Products: flat categories, no parent grouping (items 4 & 5) ----
 $db = Database::getInstance();
@@ -28,6 +50,8 @@ $loyaltyRules = loyaltyRules($db);
 $loyaltyProductRewards = $loyaltyReady ? loyaltyProductRewards($db) : [];
 $minRewardPoints = $loyaltyProductRewards ? min(array_column($loyaltyProductRewards, 'points_required')) : PHP_INT_MAX;
 $loyaltyBalance = $loggedIn ? loyaltyPointsBalance($db, $role, (int) currentUserId()) : 0;
+$rewardByProduct = [];
+foreach ($loyaltyProductRewards as $rewardRow) $rewardByProduct[$rewardRow['product_id']] = $rewardRow;
 $products = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id,
           COALESCE(ROUND(AVG(pr.rating),1), 0) AS avg_rating,
@@ -42,7 +66,7 @@ $products = $db->query(
    JOIN categories c ON p.category_id = c.id
    LEFT JOIN product_ratings pr ON pr.product_id = p.id
    LEFT JOIN order_details od   ON od.product_id  = p.id
-   WHERE c.name != 'Add-ons'
+   WHERE c.name != 'Add-ons' AND p.archived_at IS NULL AND c.archived_at IS NULL
    GROUP BY p.id, c.name, c.id, c.sort_order
    ORDER BY c.sort_order, p.name"
 )->fetchAll();
@@ -70,7 +94,7 @@ $bestSellerThreshold = ($soldArr[0] ?? 0) > 0 ? ($soldArr[min(4, count($soldArr)
 $productCategoryIds = array_values(array_unique(array_map(static fn($product) => (int) $product['cat_id'], $products)));
 if ($productCategoryIds) {
   $categoryStmt = $db->prepare(
-    "SELECT c.* FROM categories c WHERE c.name != 'Add-ons' AND c.id IN (" . implode(',', array_fill(0, count($productCategoryIds), '?')) . ') ORDER BY c.sort_order, c.name'
+    "SELECT c.* FROM categories c WHERE c.archived_at IS NULL AND c.name != 'Add-ons' AND c.id IN (" . implode(',', array_fill(0, count($productCategoryIds), '?')) . ') ORDER BY c.sort_order, c.name'
   );
   $categoryStmt->execute($productCategoryIds);
   $categories = $categoryStmt->fetchAll();
@@ -81,7 +105,7 @@ if ($productCategoryIds) {
 // Size options — editable via admin, falls back to the old constant if table is empty
 $sizeOptions = [];
 try {
-  $sizeOptions = $db->query("SELECT * FROM size_options WHERE is_active = 1 ORDER BY sort_order")->fetchAll();
+  $sizeOptions = $db->query("SELECT * FROM size_options WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order")->fetchAll();
 } catch (\Throwable $e) { /* migration not run yet */
 }
 if (empty($sizeOptions)) {
@@ -328,6 +352,81 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     .user-menu-item:hover {
       background: var(--surface-raised);
+    }
+
+    .cm-quantity-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-full);
+      background: var(--surface-raised);
+    }
+
+    .cm-quantity-input {
+      width: 48px;
+      height: 34px;
+      padding: 0 2px;
+      border: 0;
+      border-radius: var(--radius-sm);
+      outline: none;
+      background: transparent;
+      color: var(--text-color);
+      text-align: center;
+      font: inherit;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cm-quantity-input:focus-visible {
+      outline: 2px solid var(--primary-color);
+      background: var(--surface-color);
+    }
+
+    .cm-quantity-input::-webkit-inner-spin-button,
+    .cm-quantity-input::-webkit-outer-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    .cm-quantity-input[type="number"] {
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+
+    .cm-quantity-control .qty-btn {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border-color);
+      border-radius: 50%;
+      background: var(--surface-color);
+      color: var(--primary-color);
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: var(--shadow-xs);
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
+    }
+
+    .cm-quantity-control .qty-btn:hover:not(:disabled) {
+      border-color: var(--primary-color);
+      background: var(--primary-color);
+      color: var(--text-on-primary);
+    }
+
+    .cm-quantity-control .qty-btn:active:not(:disabled) {
+      transform: scale(.94);
+    }
+
+    .cm-quantity-control .qty-btn:disabled {
+      background: var(--surface-raised);
+      color: var(--text-muted);
+      box-shadow: none;
+      cursor: not-allowed;
+      opacity: .45;
     }
 
     .btn {
@@ -879,6 +978,49 @@ $storeClose = getSetting('store_close_time', '20:00');
       letter-spacing: -.01em;
     }
 
+    .points-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--accent-subtle);
+      border: 1px solid var(--accent-color);
+      color: var(--text-primary, inherit);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .points-chip i {
+      color: var(--accent-dark);
+    }
+
+    .menu-card-reward {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .menu-card-reward i {
+      color: var(--accent-dark);
+    }
+
+    .menu-card-reward.is-ready {
+      color: var(--primary-color);
+    }
+
+    @media (max-width: 480px) {
+      .points-chip-label {
+        display: none;
+      }
+    }
+
     .menu-card-meta {
       display: flex;
       justify-content: space-between;
@@ -1212,26 +1354,39 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
 
       .header-inner {
+        display: grid;
+        grid-template-areas: "brand actions" "search search";
+        grid-template-columns: minmax(0, 1fr) auto;
         height: auto;
-        flex-wrap: wrap;
-        gap: 10px;
+        gap: 10px 12px;
         padding-block: 10px;
       }
 
       .logo {
+        grid-area: brand;
         min-width: 0;
+        gap: 8px;
       }
 
       .logo-name {
         font-size: .8rem;
       }
 
-      .logo {
-        order: 1;
+      .logo-copy {
+        min-width: 0;
+      }
+
+      .logo-name,
+      .logo-sub {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .header-actions {
-        order: 2;
+        grid-area: actions;
+        min-width: 0;
+        margin-left: 0;
         gap: 8px;
       }
 
@@ -1240,20 +1395,33 @@ $storeClose = getSetting('store_close_time', '20:00');
       }
 
       .user-menu-btn {
-        width: 44px;
-        min-width: 44px;
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
         padding: 0;
         border-radius: 50%;
       }
 
       .header-search {
+        grid-area: search;
         display: flex;
-        order: 3;
         width: 100%;
-        flex: 1 0 100%;
+        flex: none;
         min-width: 0;
         padding: 10px 14px;
         font-size: .95rem;
+      }
+
+      .header-actions > .btn {
+        min-height: 42px;
+        padding: 0 13px;
+        font-size: .83rem;
+      }
+
+      .cart-btn {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
       }
 
       .category-scroll {
@@ -1361,6 +1529,52 @@ $storeClose = getSetting('store_close_time', '20:00');
         padding-inline: 12px;
       }
 
+      .header-inner {
+        column-gap: 8px;
+      }
+
+      .logo img {
+        width: 38px;
+        height: 38px;
+      }
+
+      .logo-name {
+        font-size: .74rem;
+      }
+
+      .logo-sub {
+        font-size: .56rem;
+        letter-spacing: .02em;
+      }
+
+      .header-actions {
+        gap: 5px;
+      }
+
+      .header-actions > .btn {
+        padding-inline: 10px;
+      }
+
+      .points-chip {
+        width: 38px;
+        height: 38px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .points-chip-count,
+      .points-chip-label {
+        display: none;
+      }
+
+      .user-menu-btn,
+      .cart-btn {
+        width: 38px;
+        min-width: 38px;
+        height: 38px;
+        flex-basis: 38px;
+      }
+
       .menu-grid {
         gap: 9px;
       }
@@ -1401,7 +1615,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     <div class="container header-inner">
       <a href="<?= APP_URL ?>/landing.php" class="logo">
         <img src="<?= APP_URL ?>/../assets/images/logo.png" alt="<?= APP_NAME ?>" onerror="this.style.display='none'">
-        <span>
+        <span class="logo-copy">
           <span class="logo-name"><?= APP_NAME ?></span>
           <span class="logo-sub">EARIST Cavite Campus</span>
         </span>
@@ -1414,6 +1628,11 @@ $storeClose = getSetting('store_close_time', '20:00');
 
       <div class="header-actions">
         <?php if ($loggedIn): ?>
+          <?php if ($loyaltyReady): ?>
+            <a href="<?= APP_URL ?>/account.php#loyaltyHeading" class="points-chip" title="Your loyalty points" aria-label="<?= number_format($loyaltyBalance) ?> loyalty points">
+              <i class="fa-solid fa-star" aria-hidden="true"></i> <span class="points-chip-count"><?= number_format($loyaltyBalance) ?></span> <span class="points-chip-label">pts</span>
+            </a>
+          <?php endif; ?>
           <div class="user-menu">
             <button class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Account menu for <?= e($_SESSION['full_name'] ?? 'User') ?>" aria-haspopup="true" aria-controls="userMenuDropdown">
               <i class="fa-solid fa-circle-user" style="font-size: 22px; flex:none"></i>
@@ -1448,6 +1667,18 @@ $storeClose = getSetting('store_close_time', '20:00');
   </header>
 
   <main class="container">
+
+    <?php if ($unpaidOrder): $unpaidUrl = APP_URL . '/payment-return.php?order=' . urlencode($unpaidOrder['order_number']); ?>
+      <div role="status" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0;padding:12px 16px;background:var(--accent-subtle);border:1px solid var(--accent-color);border-radius:var(--radius-sm)">
+        <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+        <span style="flex:1;min-width:220px;font-size:14px">
+          <strong>Order <?= e($unpaidOrder['order_number']) ?> is waiting for payment.</strong>
+          It is released if unpaid after <?= (int) PAYMONGO_UNPAID_ORDER_MINUTES ?> minutes.
+        </span>
+        <a class="btn btn-primary" style="padding:8px 14px;font-size:13px" href="<?= e($unpaidUrl) ?>&amp;resume=1">Complete payment</a>
+        <a class="btn btn-ghost" style="padding:8px 14px;font-size:13px" href="<?= e($unpaidUrl) ?>&amp;cancelled=1">Cancel order</a>
+      </div>
+    <?php endif; ?>
 
     <section class="menu-intro" aria-labelledby="menuTitle">
       <div class="menu-intro-copy">
@@ -1512,6 +1743,12 @@ $storeClose = getSetting('store_close_time', '20:00');
                 id="card-<?= $p['id'] ?>"
                 data-cat="<?= $p['cat_id'] ?>"
                 data-name="<?= strtolower(e($p['name'])) ?>"
+                data-product-name="<?= e($p['name']) ?>"
+                data-price="<?= number_format((float) $p['price'], 2, '.', '') ?>"
+                data-image-path="<?= e($p['image_path'] ?? '') ?>"
+                data-has-sizes="<?= (int) $p['has_sizes'] ?>"
+                data-has-sugar="<?= (int) $p['has_sugar'] ?>"
+                data-has-addons="<?= (int) $p['has_addons'] ?>"
                 aria-disabled="<?= empty($p['is_orderable']) ? 'true' : 'false' ?>"
                 role="button"
                 tabindex="<?= empty($p['is_orderable']) ? '-1' : '0' ?>"
@@ -1538,6 +1775,16 @@ $storeClose = getSetting('store_close_time', '20:00');
                       <span class="card-rating-badge"><i class="fa-solid fa-star"></i> <?= $p['avg_rating'] ?></span>
                     <?php endif; ?>
                   </div>
+                  <?php if ($loyaltyReady && isset($rewardByProduct[(int) $p['id']])):
+                    $rw = $rewardByProduct[(int) $p['id']];
+                    $rwFree = $rw['discount_amount'] >= (float) $p['price'] - 0.005;
+                    $rwReady = $loggedIn && $loyaltyBalance >= $rw['points_required'];
+                  ?>
+                    <div class="menu-card-reward<?= $rwReady ? ' is-ready' : '' ?>" title="Redeem loyalty points for this drink">
+                      <i class="fa-solid fa-star" aria-hidden="true"></i>
+                      <?= $rwFree ? 'Free' : e(peso($rw['discount_amount'])) . ' off' ?> with <?= number_format($rw['points_required']) ?> pts<?= $rwReady ? ' · ready' : '' ?>
+                    </div>
+                  <?php endif; ?>
                 </div>
                 <div class="menu-card-add"><i class="fa-solid fa-plus"></i></div>
               </div>
@@ -1588,12 +1835,18 @@ $storeClose = getSetting('store_close_time', '20:00');
           <input class="field-input" id="deliveryLocation" maxlength="255" placeholder="Building, office, or room" required>
         <?php endif; ?>
 
-        <div class="loyalty-cart-option">
-          <label><input type="checkbox" id="redeemLoyaltyCheckbox" <?= $loyaltyReady && $loyaltyProductRewards && $loyaltyBalance >= $minRewardPoints ? '' : 'disabled' ?>> Redeem points</label>
-          <span id="loyaltyCartHint"><?= $loyaltyReady ? number_format($loyaltyBalance) . ' points available · choose a reward drink in your cart' : 'Points will be available after the loyalty database migration is applied.' ?></span>
+        <div class="loyalty-cart" id="loyaltyCart">
+          <div class="loyalty-cart-head">
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+            <strong>Your points</strong>
+            <span class="loyalty-cart-balance" id="loyaltyCartBalance"><?= number_format($loyaltyBalance) ?> pts</span>
+          </div>
+          <div class="loyalty-reward-list" id="loyaltyRewardList"></div>
+          <p class="cart-hint" id="loyaltyCartHint"><?= $loyaltyReady ? 'Add a reward drink to your cart to use your points.' : 'Points will be available after the loyalty database migration is applied.' ?></p>
+          <!-- State holders for the cart script; the reward buttons above drive them. -->
+          <input type="checkbox" id="redeemLoyaltyCheckbox" hidden tabindex="-1" aria-hidden="true">
+          <select id="loyaltyRewardProduct" hidden tabindex="-1" aria-hidden="true"><option value=""></option></select>
         </div>
-        <label for="loyaltyRewardProduct" class="cart-hint" style="display:block;margin-top:8px">Reward drink in this order</label>
-        <select id="loyaltyRewardProduct" class="field-select" disabled><option value="">Add an eligible reward drink to your cart</option></select>
         <div class="cart-total-row loyalty-subtotal-row" id="cartSubtotalRow" style="margin-top:12px">
           <span>Subtotal</span><span id="cartSubtotal">₱0.00</span>
         </div>
@@ -1602,7 +1855,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         </div>
 
         <div class="cart-total-row" style="margin-top:16px">
-          <span>Total</span><span id="cartTotal">\u20b10.00</span>
+          <span>Total</span><span id="cartTotal">₱0.00</span>
         </div>
         <button class="btn btn-primary" id="proceedPaymentButton" style="width:100%" onclick="proceedToPayment()" disabled>Proceed to payment</button>
         <p style="font-size:11.5px;color:var(--text-muted);margin-top:8px;text-align:center">Store hours: <?= e($storeOpen) ?> - <?= e($storeClose) ?></p>
@@ -1692,7 +1945,7 @@ $storeClose = getSetting('store_close_time', '20:00');
   <div class="modal-overlay" id="customModal" hidden>
     <div class="modal-box wide product-modal" role="dialog" aria-modal="true" aria-labelledby="cmName">
       <div class="product-modal-head">
-        <span class="product-modal-kicker"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i> Customize your drink</span>
+        <span class="product-modal-kicker"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i> <span id="cmModalTitle">Customize your drink</span></span>
         <button type="button" class="modal-close product-modal-close" onclick="closeCustomModal()" aria-label="Close product options">&times;</button>
       </div>
       <div id="cmImg" style="height:168px;border-radius:14px;background:var(--surface-raised);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px"></div>
@@ -1717,12 +1970,12 @@ $storeClose = getSetting('store_close_time', '20:00');
       <input class="field-input" id="cmNote" placeholder="e.g. no ice, extra hot">
 
       <div style="display:flex;align-items:center;gap:14px;margin-top:18px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <button class="qty-btn" id="cmQtyMinus" onclick="cmChangeQty(-1)">−</button>
-          <span id="cmQty" style="min-width:20px;text-align:center;font-weight:700">1</span>
-          <button class="qty-btn" id="cmQtyPlus" onclick="cmChangeQty(1)">+</button>
+        <div class="cm-quantity-control" role="group" aria-label="Product quantity">
+          <button type="button" class="qty-btn minus" id="cmQtyMinus" aria-label="Decrease quantity" onclick="cmChangeQty(-1)">−</button>
+          <input class="cm-quantity-input" id="cmQty" type="number" min="1" max="99" step="1" inputmode="numeric" aria-label="Quantity to add" value="1" oninput="cmSetQty(this.value)" onblur="cmNormalizeQty()" onkeydown="if(event.key==='Enter')this.blur()">
+          <button type="button" class="qty-btn plus" id="cmQtyPlus" aria-label="Increase quantity" onclick="cmChangeQty(1)">+</button>
         </div>
-        <button class="btn btn-primary" id="cmAddButton" style="flex:1" onclick="confirmAddToCart()">Add to Cart — <span id="cmTotal"></span></button>
+        <button class="btn btn-primary" id="cmAddButton" style="flex:1" onclick="confirmAddToCart()"><span id="cmSubmitLabel">Add to Cart</span> — <span id="cmTotal"></span></button>
       </div>
     </div>
   </div>
@@ -1832,7 +2085,11 @@ $storeClose = getSetting('store_close_time', '20:00');
       maxToAdd: null
     };
 
-    function openCustomModal(id, name, base, imgPath, hasSizes, hasSugar, hasAddons) {
+    function openCustomModal(id, name, base, imgPath, hasSizes, hasSugar, hasAddons, editLineId = null) {
+      const existingItem = editLineId ? getCart().find(item => item.lineId === editLineId) : null;
+      const selectedSizeIdx = existingItem && hasSizes ? Math.max(0, SIZES.findIndex(size => size.label === existingItem.size)) : 0;
+      const selectedSugarIdx = existingItem && hasSugar ? Math.max(0, SUGAR_LEVELS.indexOf(existingItem.sugar)) : 0;
+      const existingAddonNames = existingItem ? (existingItem.addons || []) : [];
       _cm = {
         id,
         name,
@@ -1841,16 +2098,20 @@ $storeClose = getSetting('store_close_time', '20:00');
         hasSugar: !!hasSugar,
         hasAddons: !!hasAddons,
         addons: [],
-        sizeIdx: 0,
-        sugarIdx: 0,
-        selectedAddons: [],
-        qty: 1,
+        sizeIdx: selectedSizeIdx,
+        sugarIdx: selectedSugarIdx,
+        selectedAddons: existingItem ? (existingItem.addon_ids || []).map(Number) : [],
+        existingAddonNames,
+        editLineId: existingItem ? existingItem.lineId : null,
+        qty: existingItem ? Math.max(1, Number(existingItem.qty) || 1) : 1,
         stockEstimate: null,
         stockLoading: true,
         stockRequest: 0,
         maxToAdd: null
       };
       document.getElementById('cmName').textContent = name;
+      document.getElementById('cmModalTitle').textContent = _cm.editLineId ? 'Edit your item' : 'Customize your drink';
+      document.getElementById('cmSubmitLabel').textContent = _cm.editLineId ? 'Save changes' : 'Add to Cart';
       const imgBox = document.getElementById('cmImg');
       imgBox.innerHTML = imgPath ? `<img src="${APP_URL}/../uploads/products/${imgPath}" style="width:100%;height:100%;object-fit:cover">` : '<i class="fa-solid fa-mug-hot" style="font-size:35px;color:var(--text-placeholder)"></i>';
 
@@ -1858,14 +2119,14 @@ $storeClose = getSetting('store_close_time', '20:00');
       if (hasSizes) {
         document.getElementById('cmSizes').setAttribute('role', 'radiogroup');
         document.getElementById('cmSizes').innerHTML = SIZES.map((s, i) =>
-          `<div class="pay-option ${i===0?'active':''}" data-i="${i}" role="radio" aria-checked="${i===0}" tabindex="0" onclick="cmPick('size',${i})">${s.label}${s.adj?' +\u20b1'+s.adj:''}</div>`
+          `<div class="pay-option ${i===_cm.sizeIdx?'active':''}" data-i="${i}" role="radio" aria-checked="${i===_cm.sizeIdx}" tabindex="0" onclick="cmPick('size',${i})">${s.label}${s.adj?' +\u20b1'+s.adj:''}</div>`
         ).join('');
       }
       document.getElementById('cmSugarBlock').hidden = !hasSugar;
       if (hasSugar) {
         document.getElementById('cmSugars').setAttribute('role', 'radiogroup');
         document.getElementById('cmSugars').innerHTML = SUGAR_LEVELS.map((s, i) =>
-          `<div class="pay-option ${i===0?'active':''}" data-i="${i}" role="radio" aria-checked="${i===0}" tabindex="0" onclick="cmPick('sugar',${i})">${s}</div>`
+          `<div class="pay-option ${i===_cm.sugarIdx?'active':''}" data-i="${i}" role="radio" aria-checked="${i===_cm.sugarIdx}" tabindex="0" onclick="cmPick('sugar',${i})">${s}</div>`
         ).join('');
       }
       document.getElementById('cmAddonBlock').hidden = !hasAddons;
@@ -1875,14 +2136,17 @@ $storeClose = getSetting('store_close_time', '20:00');
             if (Number(_cm.id) !== Number(id)) return;
             const list = data.addons || [];
             _cm.addons = list;
+            if (!_cm.selectedAddons.length && _cm.existingAddonNames.length) {
+              _cm.selectedAddons = list.filter(addon => _cm.existingAddonNames.includes(addon.name)).map(addon => Number(addon.id));
+            }
             document.getElementById('cmAddons').innerHTML = list.map(a =>
-              `<label style="display:flex;align-items:center;gap:8px;padding:6px 0"><input type="checkbox" onchange="cmToggleAddon(${a.id})"> ${a.name} (+\u20b1${a.price})</label>`
+              `<label style="display:flex;align-items:center;gap:8px;padding:6px 0"><input type="checkbox" ${_cm.selectedAddons.includes(Number(a.id)) ? 'checked' : ''} onchange="cmToggleAddon(${a.id})"> ${a.name} (+\u20b1${a.price})</label>`
             ).join('');
             cmUpdateStockEstimate();
           });
       }
-      document.getElementById('cmNote').value = '';
-      document.getElementById('cmQty').textContent = '1';
+      document.getElementById('cmNote').value = existingItem?.note || '';
+      document.getElementById('cmQty').value = _cm.qty;
       cmUpdateTotal();
       document.getElementById('customModal').hidden = false;
       cmUpdateStockEstimate();
@@ -1918,7 +2182,28 @@ $storeClose = getSetting('store_close_time', '20:00');
     function cmChangeQty(d) {
       const max = _cm.maxToAdd === null ? 99 : Math.min(99, _cm.maxToAdd);
       _cm.qty = Math.max(1, Math.min(max || 1, _cm.qty + d));
-      document.getElementById('cmQty').textContent = _cm.qty;
+      document.getElementById('cmQty').value = _cm.qty;
+      cmUpdateTotal();
+    }
+
+    function cmSetQty(value) {
+      const input = document.getElementById('cmQty');
+      const parsed = Number.parseInt(value, 10);
+      if (value === '' || !Number.isInteger(parsed) || parsed < 1) {
+        _cm.qty = 0;
+        cmUpdateTotal();
+        return;
+      }
+      const max = _cm.maxToAdd === null ? 99 : Math.min(99, _cm.maxToAdd);
+      _cm.qty = Math.min(parsed, max || 1);
+      if (Number(input.value) !== _cm.qty) input.value = _cm.qty;
+      cmUpdateTotal();
+    }
+
+    function cmNormalizeQty() {
+      const max = _cm.maxToAdd === null ? 99 : Math.min(99, _cm.maxToAdd);
+      _cm.qty = Math.max(1, Math.min(max || 1, _cm.qty || 1));
+      document.getElementById('cmQty').value = _cm.qty;
       cmUpdateTotal();
     }
 
@@ -1953,7 +2238,7 @@ $storeClose = getSetting('store_close_time', '20:00');
           _cm.maxToAdd = null;
         } else {
           const cart = getCart();
-          const currentQty = cart.filter(item => Number(item.productId) === Number(_cm.id)).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+          const currentQty = cart.filter(item => Number(item.productId) === Number(_cm.id) && item.lineId !== _cm.editLineId).reduce((sum, item) => sum + Number(item.qty || 0), 0);
           _cm.maxToAdd = Math.max(0, Number(result.max_quantity || 0) - currentQty);
           cart.filter(item => Number(item.productId) === Number(_cm.id)).forEach(item => {
             item.stockMax = Number(result.max_quantity || 0);
@@ -1975,7 +2260,7 @@ $storeClose = getSetting('store_close_time', '20:00');
           }
         }
         _cm.qty = Math.max(1, Math.min(_cm.qty, _cm.maxToAdd === null ? 99 : Math.max(1, _cm.maxToAdd)));
-        document.getElementById('cmQty').textContent = _cm.qty;
+        document.getElementById('cmQty').value = _cm.qty;
         cmUpdateTotal();
       } catch (error) {
         if (requestId !== _cmStockRequest) return;
@@ -2001,22 +2286,34 @@ $storeClose = getSetting('store_close_time', '20:00');
 
     function cmUpdateTotal() {
       document.getElementById('cmPrice').textContent = '\u20b1' + cmUnitPrice().toFixed(2) + ' base';
-      document.getElementById('cmTotal').textContent = '\u20b1' + (cmUnitPrice() * _cm.qty).toFixed(2);
+      const validQty = Number.isInteger(_cm.qty) && _cm.qty >= 1;
+      document.getElementById('cmTotal').textContent = validQty ? '\u20b1' + (cmUnitPrice() * _cm.qty).toFixed(2) : 'Enter quantity';
       const max = _cm.maxToAdd;
+      document.getElementById('cmQty').max = max === null ? 99 : Math.min(99, max);
       document.getElementById('cmQtyPlus').disabled = _cm.stockLoading || (max !== null && _cm.qty >= max);
       document.getElementById('cmQtyMinus').disabled = _cm.qty <= 1;
-      document.getElementById('cmAddButton').disabled = _cm.stockLoading || max === 0 || (max !== null && _cm.qty > max);
+      document.getElementById('cmAddButton').disabled = !validQty || _cm.stockLoading || max === 0 || (max !== null && _cm.qty > max);
     }
 
     function confirmAddToCart() {
+      if (!Number.isInteger(_cm.qty) || _cm.qty < 1) {
+        showToast('warning', 'Enter a quantity of at least 1.');
+        return;
+      }
       if (_cm.stockLoading || _cm.maxToAdd === 0 || (_cm.maxToAdd !== null && _cm.qty > _cm.maxToAdd)) {
         showToast('warning', 'The selected product quantity exceeds the estimated stock available.');
         return;
       }
       const cart = getCart();
+      const existingItem = _cm.editLineId ? cart.find(item => item.lineId === _cm.editLineId) : null;
+      if (_cm.editLineId && !existingItem) {
+        showToast('warning', 'This cart item is no longer available to edit.');
+        closeCustomModal();
+        return;
+      }
       const addonNames = _cm.selectedAddons.map(id => _cm.addons.find(a => a.id === id)?.name).filter(Boolean);
-      cart.push({
-        lineId: 'l_' + Date.now() + Math.random().toString(16).slice(2),
+      const updatedItem = {
+        lineId: existingItem?.lineId || ('l_' + Date.now() + Math.random().toString(16).slice(2)),
         productId: _cm.id,
         name: _cm.name,
         size: _cm.hasSizes ? SIZES[_cm.sizeIdx].label : null,
@@ -2027,11 +2324,33 @@ $storeClose = getSetting('store_close_time', '20:00');
         qty: _cm.qty,
         stockMax: _cm.stockEstimate?.tracked ? Number(_cm.stockEstimate.max_quantity) : null,
         note: document.getElementById('cmNote').value.trim(),
-      });
+      };
+      if (existingItem) Object.assign(existingItem, updatedItem);
+      else cart.push(updatedItem);
       saveCart(cart);
       closeCustomModal();
       openCart();
     }
+
+    window.editCartItem = function(lineId) {
+      const item = getCart().find(line => line.lineId === lineId);
+      const card = item ? document.getElementById('card-' + item.productId) : null;
+      if (!item || !card) {
+        showToast('warning', 'This product is no longer available in the menu.');
+        return;
+      }
+      closeCart();
+      openCustomModal(
+        item.productId,
+        card.dataset.productName,
+        Number(card.dataset.price),
+        card.dataset.imagePath,
+        card.dataset.hasSizes === '1',
+        card.dataset.hasSugar === '1',
+        card.dataset.hasAddons === '1',
+        item.lineId
+      );
+    };
 
     /* ── Cart sidebar / checkout / toasts now live in assets/js/cart-drawer.js
        (shared with orders.php / account.php). This page's only special

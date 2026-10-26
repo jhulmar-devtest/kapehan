@@ -8,7 +8,7 @@ $productId = (int) ($_GET['id'] ?? 0);
 $defaultCategoryId = (int) ($_GET['category_id'] ?? 0);
 $product = null;
 if ($productId > 0) {
-  $stmt = $db->prepare('SELECT * FROM products WHERE id = ?');
+  $stmt = $db->prepare('SELECT * FROM products WHERE id = ? AND archived_at IS NULL');
   $stmt->execute([$productId]);
   $product = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
   if (!$product) {
@@ -21,7 +21,7 @@ $old = getOldInput();
 $old = is_array($old) ? $old : [];
 $editing = $product !== null;
 $field = static fn(string $key, $fallback = '') => array_key_exists($key, $old) ? $old[$key] : $fallback;
-$categoryRows = $db->query('SELECT id, name, parent_id FROM categories ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+$categoryRows = $db->query('SELECT id, name, parent_id FROM categories WHERE archived_at IS NULL ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
 $categoryChildren = [];
 $categoryNames = [];
 foreach ($categoryRows as $categoryRow) {
@@ -36,15 +36,15 @@ foreach ($assignableCategories as $category) {
     : ($categoryNames[(int) $category['parent_id']] ?? '') . ' / ' . $category['name'];
 }
 
-$sizeOptions = $db->query('SELECT id, label FROM size_options WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_ASSOC);
-$inventoryItems = $db->query('SELECT id, name, unit FROM inventory_items ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+$sizeOptions = $db->query('SELECT id, label FROM size_options WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order, id')->fetchAll(PDO::FETCH_ASSOC);
+$inventoryItems = $db->query('SELECT id, name, unit FROM inventory_items WHERE archived_at IS NULL ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
 $addonOptions = $db->query(
   "SELECT a.id, a.name, a.price,
           GROUP_CONCAT(CONCAT(i.name, ' · ', FORMAT(ai.qty_per_unit, 3), ' ', i.unit) ORDER BY i.name SEPARATOR ', ') AS stock_summary
      FROM addons a
      JOIN addon_ingredients ai ON ai.addon_id = a.id
      JOIN inventory_items i ON i.id = ai.inventory_item_id
-    WHERE a.status = 'active'
+    WHERE a.status = 'active' AND a.archived_at IS NULL AND i.archived_at IS NULL
     GROUP BY a.id, a.name, a.price
     ORDER BY a.name"
 )->fetchAll(PDO::FETCH_ASSOC);
@@ -463,9 +463,9 @@ layoutHeader('Ordering');
       <p>Set the product details, connect the stock it uses, and choose which add-ons customers can request.</p>
     </div>
     <?php if ($editing): ?>
-      <form method="POST" action="<?= e(APP_URL) ?>/admin/ordering.php" onsubmit="return confirm('Delete this product? This cannot be undone.');">
-        <?= csrfField() ?><input type="hidden" name="_method" value="DELETE"><input type="hidden" name="product_id" value="<?= $productId ?>">
-        <button type="submit" class="btn btn-danger"><i class="fa-solid fa-trash"></i> Delete product</button>
+      <form method="POST" action="<?= e(APP_URL) ?>/admin/ordering.php" onsubmit="return confirm('Archive this product? It will be hidden from active pages and can be restored later.');">
+        <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE"><input type="hidden" name="product_id" value="<?= $productId ?>">
+        <button type="submit" class="btn btn-danger"><i class="fa-solid fa-box-archive"></i> Archive product</button>
       </form>
     <?php endif; ?>
   </div>
