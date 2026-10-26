@@ -958,7 +958,7 @@ INSERT INTO `order_details` (`id`, `order_id`, `product_id`, `quantity`, `price_
 CREATE TABLE `order_feedback` (
   `id` int UNSIGNED NOT NULL,
   `order_id` int UNSIGNED NOT NULL COMMENT 'One feedback per order',
-  `student_id` int UNSIGNED NOT NULL,
+  `student_id` int UNSIGNED DEFAULT NULL,
   `faculty_id` int UNSIGNED DEFAULT NULL,
   `cashier_id` int UNSIGNED DEFAULT NULL COMMENT 'NULL for walk-in orders processed by unknown cashier',
   `rating` tinyint NOT NULL,

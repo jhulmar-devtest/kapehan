@@ -55,16 +55,24 @@ try {
 
 // ── Summary stats ─────────────────────────────────────────────
 try {
-  $stmt = $db->query(
+  $statsConditions = [$periodWhere];
+  $statsParams     = [];
+  if ($filterCashier > 0) {
+    $statsConditions[] = "f.cashier_id = ?";
+    $statsParams[]     = $filterCashier;
+  }
+  $stmt = $db->prepare(
     "SELECT COUNT(*) AS total,
-            ROUND(AVG(rating),2) AS avg_rating,
-            SUM(rating=5) AS five_star,
-            SUM(rating=4) AS four_star,
-            SUM(rating=3) AS three_star,
-            SUM(rating=2) AS two_star,
-            SUM(rating=1) AS one_star
-     FROM order_feedback"
+            ROUND(AVG(f.rating),2) AS avg_rating,
+            COALESCE(SUM(f.rating=5),0) AS five_star,
+            COALESCE(SUM(f.rating=4),0) AS four_star,
+            COALESCE(SUM(f.rating=3),0) AS three_star,
+            COALESCE(SUM(f.rating=2),0) AS two_star,
+            COALESCE(SUM(f.rating=1),0) AS one_star
+     FROM order_feedback f
+     WHERE " . implode(' AND ', $statsConditions)
   );
+  $stmt->execute($statsParams);
   $summary = $stmt->fetch();
 } catch (\Throwable $e) {
   $summary = ['total' => 0, 'avg_rating' => 0, 'five_star' => 0, 'four_star' => 0, 'three_star' => 0, 'two_star' => 0, 'one_star' => 0];
@@ -82,6 +90,7 @@ try {
             SUM(f.rating<=2) AS low_star
      FROM cashiers c
      JOIN order_feedback f ON f.cashier_id = c.id
+     WHERE $periodWhere
      GROUP BY c.id, c.full_name
      ORDER BY avg_rating DESC, total_reviews DESC"
   );
@@ -91,7 +100,12 @@ try {
 }
 
 // ── Cashier list for filter ───────────────────────────────────
-$allCashiers = $db->query("SELECT id, full_name FROM cashiers WHERE is_active=1 ORDER BY full_name")->fetchAll();
+$allCashiers = $db->query(
+  "SELECT id, full_name FROM cashiers
+    WHERE is_active = 1
+       OR id IN (SELECT DISTINCT cashier_id FROM order_feedback WHERE cashier_id IS NOT NULL)
+    ORDER BY full_name"
+)->fetchAll();
 
 // ── Product ratings summary ───────────────────────────────────
 try {
@@ -258,7 +272,7 @@ layoutHeader('Feedback');
   <div>
     <div class="page-header-title">Customer Feedback</div>
     <div class="page-header-sub">
-      <?= (int)($summary['total'] ?? 0) ?> review<?= ($summary['total'] ?? 0) != 1 ? 's' : '' ?> total
+      <?= (int)($summary['total'] ?? 0) ?> review<?= ($summary['total'] ?? 0) != 1 ? 's' : '' ?><?= ($filterCashier || $filterPeriod !== 'all') ? ' in selection' : ' total' ?>
       <?php if (($summary['avg_rating'] ?? 0) > 0): ?>
         · <?= number_format($summary['avg_rating'], 1) ?> avg rating
       <?php endif; ?>
@@ -272,8 +286,7 @@ layoutHeader('Feedback');
     <div class="empty-state" style="padding:var(--space-10)">
       <i class="fa-solid fa-star"></i>
       <h3>No feedback yet</h3>
-      <p>Once students rate their claimed orders, reviews will appear here.<br>
-        Make sure you have run <code style="background:var(--surface-sunken);padding:1px 6px;border-radius:3px">feedback_migration.sql</code> first.</p>
+      <p>Once customers rate their claimed orders, reviews will appear here.</p>
     </div>
   </div>
 <?php else: ?>
@@ -290,7 +303,7 @@ layoutHeader('Feedback');
         <div class="avg-big"><?= number_format((float)($summary['avg_rating'] ?? 0), 1) ?></div>
         <div class="avg-star" style="margin:6px 0 2px">
           <?php $avg = (float)($summary['avg_rating'] ?? 0);
-          for ($s = 1; $s <= 5; $s++) echo $s <= $avg ? '★' : '☆'; ?>
+          for ($s = 1; $s <= 5; $s++) echo $s <= round($avg) ? '★' : '☆'; ?>
         </div>
         <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:var(--space-4)">
           out of 5 · <?= (int)($summary['total'] ?? 0) ?> review<?= ($summary['total'] ?? 0) != 1 ? 's' : '' ?>
@@ -350,7 +363,7 @@ layoutHeader('Feedback');
   <!-- Row 2: Feedback list with filters -->
   <div class="card">
     <div class="card-header">
-      <div class="card-title"><i class="fa-solid fa-comments"></i> All Reviews</div>
+      <div class="card-title"><i class="fa-solid fa-comments"></i> All Reviews<?php if (count($feedbackRows) >= 200): ?> <small class="text-muted" style="font-weight:400">(latest 200)</small><?php endif; ?></div>
       <!-- Filters -->
       <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center">
         <!-- Period -->
@@ -373,7 +386,7 @@ layoutHeader('Feedback');
           onchange="applyFilter('cashier',this.value)">
           <option value="0">All Cashiers</option>
           <?php foreach ($allCashiers as $c): ?>
-            <option value="<?= $c['id'] ?>" <?= $filterCashier === $c['id'] ? 'selected' : '' ?>><?= e($c['full_name']) ?></option>
+            <option value="<?= $c['id'] ?>" <?= $filterCashier === (int) $c['id'] ? 'selected' : '' ?>><?= e($c['full_name']) ?></option>
           <?php endforeach; ?>
         </select>
         <?php if ($filterCashier || $filterRating || $filterPeriod !== 'all'): ?>
@@ -394,7 +407,7 @@ layoutHeader('Feedback');
           <thead>
             <tr>
               <th>Order</th>
-              <th>Student</th>
+              <th>Customer</th>
               <th>Cashier</th>
               <th>Rating</th>
               <th>Comment</th>
@@ -463,8 +476,7 @@ layoutHeader('Feedback');
     <div class="empty-state">
       <i class="fa-solid fa-star"></i>
       <h3>No product ratings yet</h3>
-      <p>Ratings appear after students rate their claimed orders.<br>
-        Make sure you have run <code style="background:var(--surface-sunken);padding:1px 6px;border-radius:3px">product_ratings_migration.sql</code> first.</p>
+      <p>Ratings appear after customers rate the items in their claimed orders.</p>
     </div>
   </div>
 <?php else: ?>

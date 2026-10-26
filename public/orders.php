@@ -19,6 +19,23 @@ $userId   = currentUserId();
 $isStudent = $role === ROLE_STUDENT;
 $fkColumn  = $isStudent ? 'student_id' : 'faculty_id';
 
+// ── AJAX: distinct products in a claimed order (used by Rate modal) ──
+if (isset($_GET['get_rate_items'])) {
+  header('Content-Type: application/json');
+  $oid = (int) $_GET['get_rate_items'];
+  $stmt = $db->prepare(
+    "SELECT DISTINCT od.product_id, p.name
+       FROM order_details od
+       JOIN orders o ON o.id = od.order_id
+       JOIN products p ON p.id = od.product_id
+      WHERE od.order_id = ? AND o.{$fkColumn} = ? AND o.status = 'claimed'
+      ORDER BY p.name"
+  );
+  $stmt->execute([$oid, $userId]);
+  echo json_encode(['items' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+  exit;
+}
+
 // ── AJAX: return order items as JSON (used by Reorder) ──────
 if (isset($_GET['get_order_items'])) {
   header('Content-Type: application/json');
@@ -136,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_feedback'])) {
   $orderId        = (int) ($_POST['order_id'] ?? 0);
   $cashierRating  = (int) ($_POST['rating'] ?? 0);
   $comment        = sanitizeString($_POST['comment'] ?? '', 500);
-  $productRatings = $_POST['product_rating'] ?? [];
+  $productRatings = is_array($_POST['product_rating'] ?? null) ? $_POST['product_rating'] : [];
 
   if ($cashierRating < 1 || $cashierRating > 5) {
     flash('global', 'Please select an overall star rating.', 'error');
@@ -181,23 +198,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_feedback'])) {
 
     if (!empty($productRatings)) {
       $pstmt = $db->prepare(
-        "INSERT INTO product_ratings (feedback_id, order_id, product_id, student_id, rating) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO product_ratings (feedback_id, order_id, product_id, student_id, faculty_id, rating)
+         VALUES (?, ?, ?, ?, ?, ?)"
       );
+      $ratedProducts = [];
       foreach ($productRatings as $pid => $prating) {
         $pid = (int) $pid;
         $prating = (int) $prating;
         if (!in_array($pid, $validProductIds, true)) continue;
         if ($prating < 1 || $prating > 5) continue;
-        $pstmt->execute([$feedbackId, $orderId, $pid, $isStudent ? $userId : null, $prating]);
+        // uq_product_order allows one rating per product per order
+        if (isset($ratedProducts[$pid])) continue;
+        $ratedProducts[$pid] = true;
+        $pstmt->execute([
+          $feedbackId,
+          $orderId,
+          $pid,
+          $isStudent ? $userId : null,
+          $isStudent ? null : $userId,
+          $prating,
+        ]);
       }
     }
 
     $db->commit();
     flash('global', 'Thank you for your feedback!', 'success');
   } catch (\Throwable $e) {
-    $db->rollBack();
-    error_log($e->getMessage());
-    flash('global', 'Could not save feedback. Please try again.', 'error');
+    if ($db->inTransaction()) $db->rollBack();
+    // 23000 = unique violation: a double-submit raced past the "already rated" check
+    if ($e instanceof PDOException && $e->getCode() === '23000' && str_contains($e->getMessage(), 'order_id')) {
+      flash('global', 'You have already rated this order.', 'error');
+    } else {
+      error_log($e->getMessage());
+      flash('global', 'Could not save feedback. Please try again.', 'error');
+    }
   }
   redirect(APP_URL . '/orders.php');
 }
@@ -436,6 +470,58 @@ function renderOrderTimeline(string $status): string
       color: #f5a623;
     }
 
+    .rate-error {
+      color: var(--danger-color, #c0392b);
+      font-size: 13px;
+      margin: -8px 0 12px;
+    }
+
+    .rate-items {
+      border-top: 1px solid var(--border-color);
+      padding-top: 12px;
+      margin-bottom: 14px;
+    }
+
+    .rate-items-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .rate-items-title span {
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    .rate-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 5px 0;
+      font-size: 13px;
+    }
+
+    .rate-item-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rate-item-stars {
+      display: flex;
+      gap: 3px;
+      font-size: 17px;
+      color: var(--border-color);
+      cursor: pointer;
+    }
+
+    .rate-item-stars i.active {
+      color: #f5a623;
+    }
+
     .modal-box textarea {
       width: 100%;
       padding: 11px 13px;
@@ -662,7 +748,12 @@ function renderOrderTimeline(string $status): string
           <i class="fa-solid fa-star" data-v="5" onclick="setStar(5)"></i>
         </div>
         <input type="hidden" name="rating" id="rate-rating" value="0">
-        <textarea name="comment" placeholder="Anything you'd like to share? (optional)"></textarea>
+        <div class="rate-error" id="rateError" hidden>Please tap a star to rate your order.</div>
+        <div id="rateItems" class="rate-items" hidden>
+          <div class="rate-items-title">Rate your items <span>(optional)</span></div>
+          <div id="rateItemsList"></div>
+        </div>
+        <textarea name="comment" id="rate-comment" maxlength="500" placeholder="Anything you'd like to share? (optional)"></textarea>
         <button type="submit" class="btn btn-primary" style="width:100%;margin-top:16px">Submit Feedback</button>
       </form>
     </div>
@@ -774,14 +865,78 @@ function renderOrderTimeline(string $status): string
     function openRateModal(orderId) {
       document.getElementById('rate-order-id').value = orderId;
       document.getElementById('rate-rating').value = 0;
+      document.getElementById('rate-comment').value = '';
+      document.getElementById('rateError').hidden = true;
+      document.getElementById('rateItems').hidden = true;
+      document.getElementById('rateItemsList').innerHTML = '';
       document.querySelectorAll('#starRow i').forEach(s => s.classList.remove('active'));
       document.getElementById('rateModal').hidden = false;
+      loadRateItems(orderId);
     }
 
     function setStar(v) {
       document.getElementById('rate-rating').value = v;
+      document.getElementById('rateError').hidden = true;
       document.querySelectorAll('#starRow i').forEach(s => s.classList.toggle('active', parseInt(s.dataset.v) <= v));
     }
+
+    /* Per-item stars are optional — if this request fails the customer
+       can still submit the overall rating. */
+    function loadRateItems(orderId) {
+      fetch(`${APP_URL}/orders.php?get_rate_items=${orderId}`, {
+          credentials: 'same-origin'
+        })
+        .then(r => r.json())
+        .then(data => {
+          // Ignore a late response if the modal has moved on to another order
+          if (document.getElementById('rate-order-id').value !== String(orderId)) return;
+          const items = data.items || [];
+          if (!items.length) return;
+          const list = document.getElementById('rateItemsList');
+          items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'rate-item';
+
+            const name = document.createElement('div');
+            name.className = 'rate-item-name';
+            name.textContent = item.name;
+
+            const stars = document.createElement('div');
+            stars.className = 'rate-item-stars';
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = `product_rating[${item.product_id}]`;
+            input.value = 0;
+            input.disabled = true; // not submitted until the customer picks a rating
+
+            for (let v = 1; v <= 5; v++) {
+              const star = document.createElement('i');
+              star.className = 'fa-solid fa-star';
+              star.dataset.v = v;
+              star.addEventListener('click', () => {
+                input.value = v;
+                input.disabled = false;
+                stars.querySelectorAll('i').forEach(s => s.classList.toggle('active', parseInt(s.dataset.v) <= v));
+              });
+              stars.appendChild(star);
+            }
+
+            row.append(name, stars, input);
+            list.appendChild(row);
+          });
+          document.getElementById('rateItems').hidden = false;
+        })
+        .catch(() => {
+          /* item ratings are optional */ });
+    }
+
+    document.getElementById('rateForm').addEventListener('submit', e => {
+      if (parseInt(document.getElementById('rate-rating').value, 10) < 1) {
+        e.preventDefault();
+        document.getElementById('rateError').hidden = false;
+      }
+    });
 
     /* ── Live order-status polling (item: "what happens next") ──
        Ongoing orders (pending/preparing/ready) are re-checked every

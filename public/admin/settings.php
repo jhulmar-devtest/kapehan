@@ -432,7 +432,7 @@ layoutHeader('Settings');
       <a href="<?= APP_URL ?>/admin/feedback.php" class="link-card">
         <i class="fa-solid fa-arrow-up-right-from-square link-card-arrow" aria-hidden="true"></i>
         <div class="link-card-icon"><i class="fa-solid fa-star"></i></div>
-        <div class="link-card-title">Feedback Moderation</div>
+        <div class="link-card-title">Customer Feedback</div>
         <div class="link-card-stat">
           <?= $feedbackTotal ?> review<?= $feedbackTotal !== 1 ? 's' : '' ?>
           <?php if ($feedbackAvg !== null): ?> &middot; <?= $feedbackAvg ?> ★ avg<?php endif; ?>
