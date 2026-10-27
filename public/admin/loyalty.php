@@ -160,6 +160,18 @@ if (in_array($selectedType, [ROLE_STUDENT, ROLE_FACULTY], true) && $selectedId >
 layoutHeader('Loyalty');
 ?>
 <style>
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0
+  }
+
   .loyalty-page {
     display: grid;
     gap: 20px
@@ -217,7 +229,7 @@ layoutHeader('Loyalty');
     letter-spacing: -.03em
   }
 
-  .loyalty-stat span {
+  .loyalty-stat>div>span {
     display: block;
     margin-top: 5px;
     color: var(--text-muted);
@@ -271,6 +283,10 @@ layoutHeader('Loyalty');
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xs)
+  }
+
+  .loyalty-card[id] {
+    scroll-margin-top: 84px
   }
 
   .loyalty-card-head {
@@ -390,7 +406,12 @@ layoutHeader('Loyalty');
   }
 
   .loyalty-table tbody tr:hover {
-    background: rgba(243, 240, 236, .48)
+    background: var(--surface-raised)
+  }
+
+  .loyalty-table tbody tr.is-selected,
+  .loyalty-table tbody tr.is-selected:hover {
+    background: var(--primary-subtle)
   }
 
   .loyalty-table td small {
@@ -701,16 +722,19 @@ layoutHeader('Loyalty');
     }
 
     .loyalty-adjust-form {
-      grid-template-columns: 1fr 1fr
-    }
-
-    .loyalty-adjust-form .loyalty-field:nth-child(2) {
-      grid-column: 1/-1
+      grid-template-columns: 1fr
     }
 
     .loyalty-adjust-form .btn {
-      grid-column: 1/-1;
       width: 100%
+    }
+
+    .reward-cell {
+      min-width: 300px
+    }
+
+    .reward-edit-form {
+      grid-template-columns: 1fr 1fr
     }
   }
 
@@ -731,7 +755,7 @@ layoutHeader('Loyalty');
       border-radius: 9px
     }
 
-    .loyalty-stat span {
+    .loyalty-stat>div>span {
       font-size: 10px
     }
 
@@ -821,7 +845,15 @@ layoutHeader('Loyalty');
     </div>
     <div class="loyalty-card-body">
       <form method="GET" class="loyalty-search">
-        <div class="loyalty-search-field"><i class="fa-solid fa-magnifying-glass"></i><input class="form-control" type="search" name="q" value="<?= e($search) ?>" placeholder="Search by name, school ID, or email" aria-label="Search customers"></div><button class="btn btn-secondary" type="submit">Search</button><?php if ($search !== ''): ?><a class="btn btn-ghost" href="<?= APP_URL ?>/admin/loyalty.php">Clear</a><?php endif; ?><span class="loyalty-result-count">Maximum 250 accounts</span>
+        <div class="loyalty-search-field"><i class="fa-solid fa-magnifying-glass"></i><input class="form-control" type="search" name="q" value="<?= e($search) ?>" placeholder="Search by name, school ID, or email" aria-label="Search customers"></div><button class="btn btn-secondary" type="submit">Search</button><?php if ($search !== ''): ?><a class="btn btn-ghost" href="<?= APP_URL ?>/admin/loyalty.php">Clear</a><?php endif; ?>
+        <span class="loyalty-result-count">
+          <?php if ($search === ''): ?>
+            Showing <?= number_format(count($customers)) ?> of <?= number_format($totalCustomers) ?> accounts
+          <?php else: ?>
+            <?= number_format(count($customers)) ?> matching <?= count($customers) === 1 ? 'account' : 'accounts' ?>
+          <?php endif; ?>
+          <?= count($customers) >= 250 ? ' (list limited to 250)' : '' ?>
+        </span>
       </form>
       <div class="loyalty-table-wrap">
         <table class="loyalty-table">
@@ -838,14 +870,14 @@ layoutHeader('Loyalty');
             <?php if (!$customers): ?><tr>
                 <td colspan="5" class="loyalty-empty"><i class="fa-regular fa-face-meh" aria-hidden="true"></i><br>No customer accounts match this search.</td>
               </tr><?php else: foreach ($customers as $customer): ?>
-                <tr>
+                <tr class="<?= ($customer['customer_type'] === $selectedType && (int) $customer['customer_id'] === $selectedId) ? 'is-selected' : '' ?>">
                   <td>
                     <div class="loyalty-customer"><span class="loyalty-avatar" aria-hidden="true"><?= e(mb_substr($customer['full_name'], 0, 1)) ?></span><span><strong><?= e($customer['full_name']) ?></strong><small><?= e($customer['email'] ?? '') ?></small></span></div>
                   </td>
                   <td><?= e(ucfirst($customer['customer_type'])) ?><small><?= e($customer['identifier']) ?></small></td>
                   <td class="loyalty-points"><?= number_format((int) $customer['balance']) ?> pts</td>
                   <td><span class="loyalty-status<?= (int) $customer['is_active'] ? '' : ' inactive' ?>"><?= (int) $customer['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                  <td><a class="btn btn-sm btn-secondary" href="<?= APP_URL ?>/admin/loyalty.php?customer_type=<?= e($customer['customer_type']) ?>&amp;customer_id=<?= (int) $customer['customer_id'] ?>#customer-ledger">View ledger</a></td>
+                  <td><a class="btn btn-sm btn-secondary" href="<?= APP_URL ?>/admin/loyalty.php?<?= e(http_build_query(array_filter(['q' => $search, 'customer_type' => $customer['customer_type'], 'customer_id' => (int) $customer['customer_id']]))) ?>#customer-ledger">View ledger</a></td>
                 </tr>
             <?php endforeach;
                   endif; ?>
@@ -873,7 +905,7 @@ layoutHeader('Loyalty');
               <p>Adjustments are signed: use a minus to remove points.</p>
             </div><span class="loyalty-balance-value"><?= number_format($selectedCustomer['balance']) ?> pts</span>
           </div>
-          <form method="POST" class="loyalty-adjust-form"><input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>"><input type="hidden" name="action" value="adjust_points"><input type="hidden" name="customer_type" value="<?= e($selectedType) ?>"><input type="hidden" name="customer_id" value="<?= (int) $selectedCustomer['id'] ?>">
+          <form method="POST" class="loyalty-adjust-form"><?= csrfField() ?><input type="hidden" name="action" value="adjust_points"><input type="hidden" name="customer_type" value="<?= e($selectedType) ?>"><input type="hidden" name="customer_id" value="<?= (int) $selectedCustomer['id'] ?>">
             <div class="loyalty-field"><label for="points-delta">Points</label><input class="form-control" id="points-delta" type="number" name="points_delta" min="-100000" max="100000" step="1" required placeholder="e.g. 50"></div>
             <div class="loyalty-field"><label for="points-note">Reason</label><input class="form-control" id="points-note" type="text" name="note" maxlength="255" minlength="5" required placeholder="Why are you adjusting the balance?"></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-plus-minus"></i> Post adjustment</button>
           </form>
@@ -942,9 +974,9 @@ layoutHeader('Loyalty');
                 <td class="reward-drink"><strong><?= e($product['name']) ?></strong><?php if (!(int) $product['is_available']): ?><small>Not currently available for sale</small><?php endif; ?></td>
                 <td class="reward-price">₱<?= number_format((float) $product['price'], 2) ?></td>
                 <td class="reward-cell">
-                  <form method="POST" class="reward-edit-form"><input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>"><input type="hidden" name="action" value="save_drink_reward"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                  <form method="POST" class="reward-edit-form"><?= csrfField() ?><input type="hidden" name="action" value="save_drink_reward"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
                     <div class="loyalty-field"><label for="reward-points-<?= (int) $product['id'] ?>">Points required</label><input class="form-control" id="reward-points-<?= (int) $product['id'] ?>" type="number" name="points_required" min="1" max="100000" step="1" required value="<?= $product['points_required'] !== null ? (int) $product['points_required'] : '' ?>" placeholder="e.g. 500"></div>
-                    <div class="loyalty-field"><label for="reward-discount-<?= (int) $product['id'] ?>">Discount (₱)</label><input class="form-control" id="reward-discount-<?= (int) $product['id'] ?>" type="number" name="discount_amount" min="0.01" max="<?= number_format((float) $product['price'], 2, '.', '') ?>" step="0.01" required value="<?= $product['discount_amount'] !== null ? number_format((float) $product['discount_amount'], 2, '.', '') : '' ?>" placeholder="e.g. 20.00"></div><label class="reward-toggle"><input type="checkbox" name="is_active" value="1" <?= (int) ($product['is_active'] ?? 0) ? 'checked' : '' ?>> Active</label><button class="btn btn-sm btn-primary" type="submit">Save</button>
+                    <div class="loyalty-field"><label for="reward-discount-<?= (int) $product['id'] ?>">Discount (₱)</label><input class="form-control" id="reward-discount-<?= (int) $product['id'] ?>" type="number" name="discount_amount" min="0.01" max="<?= number_format(max((float) $product['price'], 0.01), 2, '.', '') ?>" step="0.01" required value="<?= $product['discount_amount'] !== null ? number_format((float) $product['discount_amount'], 2, '.', '') : '' ?>" placeholder="e.g. 20.00"></div><label class="reward-toggle"><input type="checkbox" name="is_active" value="1" <?= (int) ($product['is_active'] ?? 0) ? 'checked' : '' ?>> Active</label><button class="btn btn-sm btn-primary" type="submit">Save</button>
                   </form>
                 </td>
               </tr><?php endforeach; ?>

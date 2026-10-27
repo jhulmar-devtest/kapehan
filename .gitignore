@@ -22,3 +22,6 @@ Thumbs.db
 # ── Logs ─────────────────────────────────────────────────────────
 *.log
 error_log
+
+# ── Private customer refund uploads ─────────────────────────────
+/storage/private/refund-qr/

@@ -359,7 +359,7 @@ function pendingRefundCount(): int
 {
   try {
     $db   = Database::getInstance();
-    $stmt = $db->query("SELECT COUNT(*) FROM refund_requests WHERE status = 'pending'");
+    $stmt = $db->query("SELECT (SELECT COUNT(*) FROM refund_requests WHERE status = 'pending') + (SELECT COUNT(*) FROM order_cancellation_requests WHERE status = 'refund_required')");
     return (int) $stmt->fetchColumn();
   } catch (Throwable $e) {
     return 0;

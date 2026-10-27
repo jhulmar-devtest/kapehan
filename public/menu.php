@@ -1878,7 +1878,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         <p class="cart-hint" style="color:var(--danger-color,#b42318);font-size:13px">The shop's GCash recipient name and number need to be set by an admin (Admin &rarr; Settings) before customers can pay.</p>
       <?php endif; ?>
       <label class="field-label" for="refNo">GCash reference number</label>
-      <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="20">
+      <input class="field-input" id="refNo" type="text" inputmode="numeric" pattern="[0-9]{<?= (int) GCASH_REF_DIGITS ?>}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="<?= (int) GCASH_REF_DIGITS ?>">
       <div class="confirm-actions" style="margin-top:18px">
         <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
         <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= gcashPaymentNumber() !== '' && gcashPaymentName() !== '' ? '' : 'disabled' ?>>Submit order</button>

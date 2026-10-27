@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $items        = json_decode($_POST['cart_items'] ?? '[]', true);
   $payMethod    = in_array($_POST['pay_method'] ?? '', ['cash', 'GCash']) ? $_POST['pay_method'] : 'cash';
   $cash         = $payMethod === 'cash' ? round((float)($_POST['cash_received'] ?? 0), 2) : 0;
-  $gcashRef     = $payMethod === 'GCash' ? sanitizeString($_POST['gcash_reference'] ?? '', 50) : null;
+  $gcashRef     = $payMethod === 'GCash' ? trim((string) ($_POST['gcash_reference'] ?? '')) : null;
   $denomsRaw    = json_decode($_POST['denominations'] ?? '{}', true) ?: [];
   $discountType = sanitizeString($_POST['discount_type'] ?? 'none');
   if (!in_array($discountType, ['none', 'pwd', 'senior'])) $discountType = 'none';
@@ -33,11 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
     redirect(APP_URL . '/cashier/walkin.php');
   }
   if ($payMethod === 'GCash') {
-    $gcashRef = normalizeGcashRef($gcashRef);
-    if ($refError = gcashRefError($gcashRef)) {
+    if ($refError = gcashRefInputError($gcashRef)) {
       flash('global', $refError, 'error');
       redirect(APP_URL . '/cashier/walkin.php');
     }
+    $gcashRef = normalizeGcashRef($gcashRef);
     if (gcashRefInUse($db, $gcashRef)) {
       flash('global', 'This GCash reference number was already used for another order.', 'error');
       redirect(APP_URL . '/cashier/walkin.php');
@@ -83,8 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $total = round($subtotal - $discountAmount, 2);
 
   if ($allOk) {
+    $gcashRefLockName = null;
     $db->beginTransaction();
     try {
+      if ($payMethod === 'GCash') {
+        $gcashRefLockName = gcashRefLock($db, $gcashRef);
+        if ($gcashRefLockName === null) throw new RuntimeException('Another order is using this GCash reference. Please try again.');
+        if (gcashRefInUse($db, $gcashRef)) throw new RuntimeException('This GCash reference number was already used for another order.');
+      }
       $activeDrawer = getOpenCashDrawer($db, true);
       if (!$activeDrawer || $activeDrawer['business_date'] !== date('Y-m-d')) {
         throw new RuntimeException('The drawer day is not open for today. Close any overdue drawer, then open today’s drawer before processing walk-in orders.');
@@ -162,6 +168,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       }
 
       $db->commit();
+      gcashRefUnlock($db, $gcashRefLockName);
+      $gcashRefLockName = null;
       auditLog(ROLE_CASHIER, currentUserId(), 'create_walkin_order', 'orders', $orderId);
       $_SESSION['last_order_id'] = $orderId;
 
@@ -173,6 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       redirect(APP_URL . '/cashier/receipt.php');
     } catch (\Throwable $e) {
       $db->rollBack();
+      gcashRefUnlock($db, $gcashRefLockName);
       error_log($e->getMessage());
       flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.', 'error');
       redirect(APP_URL . '/cashier/walkin.php');
@@ -1880,8 +1889,10 @@ layoutHeader('Walk-in POS', '');
             type="text"
             id="gcash-ref-input"
             class="gcash-ref-input"
+            inputmode="numeric"
+            pattern="[0-9]{<?= (int) GCASH_REF_DIGITS ?>}"
             placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference no."
-            maxlength="50"
+            maxlength="<?= (int) GCASH_REF_DIGITS ?>"
             autocomplete="off"
             oninput="onGcashRefInput()"
             onclick="this.select()">
@@ -2095,10 +2106,13 @@ layoutHeader('Walk-in POS', '');
 
   // ── GCash reference validation ─────────────────────────────────────────────
   function onGcashRefInput() {
-    const ref = document.getElementById('gcash-ref-input').value.trim();
+    const refInput = document.getElementById('gcash-ref-input');
+    const digits = refInput.value.replace(/\D/g, '').slice(0, <?= (int) GCASH_REF_DIGITS ?>);
+    if (refInput.value !== digits) refInput.value = digits;
+    const ref = refInput.value;
     const confirmBtn = document.getElementById('cash-confirm-btn');
     const confirmLbl = document.getElementById('confirm-btn-label');
-    const valid = ref.replace(/\D/g, '').length === <?= (int) GCASH_REF_DIGITS ?>;
+    const valid = /^\d{<?= (int) GCASH_REF_DIGITS ?>}$/.test(ref);
     confirmBtn.disabled = !valid;
     confirmLbl.textContent = valid ?
       'Confirm GCash Payment' :

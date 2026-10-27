@@ -3,8 +3,10 @@
 Customers pay with GCash on PayMongo's page, and the order is marked **paid
 automatically**. No reference number, nothing for the cashier to check.
 
-If `PAYMONGO_SECRET_KEY` is empty, the shop keeps using the old manual
-GCash-reference flow. To switch back at any time: empty the key.
+If `PAYMONGO_SECRET_KEY` is empty, the shop keeps using the manual
+GCash-reference flow. Once configured, an admin can pause PayMongo for new
+checkouts at Admin > Settings without removing the secret key. Existing
+PayMongo sessions remain usable so customers can finish or cancel them.
 
 ## One-time setup
 
@@ -78,8 +80,25 @@ GCash-reference flow. To switch back at any time: empty the key.
 - **Cashier steps are enforced by the server:** an order can only move
   pending → preparing → ready → claimed (cancel from any of those), and an
   unpaid online order cannot move forward.
+- **Maintenance switch:** Admin > Settings can pause PayMongo for new orders.
+  New checkouts then use manual GCash if the recipient is configured. Existing
+  PayMongo payment pages stay usable so customers can finish or cancel them.
 - **Safety:** the webhook checks PayMongo's signature, ignores repeated
   deliveries, and checks that the amount paid matches the order.
+
+## Manual GCash review and cancellation
+
+Manual GCash references stay pending until a cashier checks the shop's GCash
+transaction history and uses **Verify Payment**. The cashier then starts
+preparation as a separate action. A customer can request cancellation while
+the order is still pending; the cashier must check whether money arrived.
+Unpaid orders can be cancelled and released. If payment arrived, the order is
+blocked from preparation and appears in Admin > Sales > Refunds. Complete the
+refund through the payment account first, then record its refund reference in
+the admin page. Refunds are not sent automatically by this app. Manual orders
+pending for more than 45 minutes are highlighted to staff for review, but are
+not automatically cancelled because the app cannot tell whether a transfer
+arrived from a customer-entered reference alone.
 
 ## If something goes wrong
 

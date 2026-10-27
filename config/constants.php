@@ -31,6 +31,9 @@ if (!defined('GCASH_PAYMENT_NAME')) {
 // GCash receipt as "Ref No. 1234 567 890123"). Change this one value if a
 // real receipt ever shows a different length.
 define('GCASH_REF_DIGITS', 13);
+// Older manual-GCash pre-orders are highlighted to staff for review. They are
+// never auto-cancelled because the app cannot verify a transfer by reference alone.
+define('MANUAL_GCASH_REVIEW_MINUTES', 45);
 // PayMongo (online GCash). Real values go in config/secrets.php; these empty
 // defaults keep the app on the manual GCash-reference flow until they are set.
 if (!defined('PAYMONGO_SECRET_KEY'))     define('PAYMONGO_SECRET_KEY', '');

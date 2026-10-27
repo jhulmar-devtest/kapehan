@@ -69,7 +69,7 @@
       window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;
     </script>
     <label class="field-label" for="refNo">GCash reference number</label>
-    <input class="field-input" id="refNo" inputmode="numeric" autocomplete="off" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="20">
+    <input class="field-input" id="refNo" type="text" inputmode="numeric" pattern="[0-9]{<?= (int) GCASH_REF_DIGITS ?>}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="<?= (int) GCASH_REF_DIGITS ?>-digit reference number" maxlength="<?= (int) GCASH_REF_DIGITS ?>">
     <div class="confirm-actions" style="margin-top:18px">
       <button class="btn btn-ghost" onclick="closePaymentModal()">Back to cart</button>
       <button class="btn btn-primary" id="submitPaymentButton" onclick="submitOrder()" <?= gcashPaymentNumber() !== '' && gcashPaymentName() !== '' ? '' : 'disabled' ?>>Submit order</button>

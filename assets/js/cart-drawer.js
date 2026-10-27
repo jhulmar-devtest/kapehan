@@ -25,6 +25,15 @@ function formatPeso(amount) {
   return "\u20b1" + Number(amount || 0).toFixed(2);
 }
 
+const gcashReferenceInput = document.getElementById("refNo");
+if (gcashReferenceInput) {
+  gcashReferenceInput.maxLength = Number(window.GCASH_REF_DIGITS) || 13;
+  gcashReferenceInput.addEventListener("input", () => {
+    const maxDigits = Number(window.GCASH_REF_DIGITS) || 13;
+    gcashReferenceInput.value = gcashReferenceInput.value.replace(/\D/g, "").slice(0, maxDigits);
+  });
+}
+
 /* ── Toasts (replaces browser alert() for all inline feedback) ── */
 function showToast(type, message, timeout = 4500) {
   const icons = {
@@ -817,7 +826,7 @@ function submitOrder() {
       showToast("warning", "Please enter your GCash reference number.");
       return;
     }
-    if (refNo.replace(/\D/g, "").length !== (window.GCASH_REF_DIGITS || 13)) {
+    if (!new RegExp(`^\\d{${window.GCASH_REF_DIGITS || 13}}$`).test(refNo)) {
       showToast(
         "warning",
         `Please enter the ${window.GCASH_REF_DIGITS || 13}-digit GCash reference number from your receipt.`,

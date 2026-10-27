@@ -74,6 +74,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_gcash'])) {
   redirect(APP_URL . '/admin/settings.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_payment_availability'])) {
+  verifyCsrf();
+  $enabled = ($_POST['paymongo_enabled'] ?? '0') === '1' ? '1' : '0';
+  setSetting('paymongo_enabled', $enabled);
+  auditLog(ROLE_ADMIN, currentUserId(), 'update_paymongo_availability', $enabled === '1' ? 'enabled' : 'paused');
+  flash('global', $enabled === '1' ? 'PayMongo checkout is enabled for new orders.' : 'PayMongo checkout is paused for new orders.', 'success');
+  redirect(APP_URL . '/admin/settings.php');
+}
+
 $storeOpen   = getSetting('store_open_time', '07:00');
 $storeClose  = getSetting('store_close_time', '20:00');
 $slotInterval = getSetting('pickup_slot_interval_minutes', '15');
@@ -405,6 +414,30 @@ layoutHeader('Settings');
           <div class="form-group"><label class="form-label" for="gcash-confirm-password">Admin password</label><input id="gcash-confirm-password" type="password" name="confirm_password" class="form-control" autocomplete="current-password" required placeholder="Enter your password"></div>
         </div>
         <div class="settings-form-actions"><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save payment recipient</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-head"><span class="settings-section-icon"><i class="fa-solid fa-toggle-on"></i></span>
+      <div>
+        <h2>Online GCash availability</h2>
+        <p class="sub">Pause PayMongo for new checkouts during maintenance. Existing payment sessions remain available so customers can finish or cancel them.</p>
+      </div>
+    </div>
+    <div class="settings-section-body">
+      <?php $paymongoConfigured = defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== ''; ?>
+      <?php if (!$paymongoConfigured): ?>
+        <div class="alert alert-info mb-3"><i class="fa-solid fa-circle-info"></i><div>PayMongo is not configured with a secret key. Manual GCash remains the checkout method.</div></div>
+      <?php endif; ?>
+      <form method="POST">
+        <?= csrfField() ?><input type="hidden" name="save_payment_availability" value="1">
+        <input type="hidden" name="paymongo_enabled" value="0">
+        <label style="display:flex;align-items:flex-start;gap:10px;max-width:680px">
+          <input type="checkbox" name="paymongo_enabled" value="1" <?= getSetting('paymongo_enabled', '1') === '1' ? 'checked' : '' ?> <?= !$paymongoConfigured ? 'disabled' : '' ?> style="margin-top:3px">
+          <span><strong>Accept new PayMongo checkouts</strong><br><small class="form-hint">When turned off, customers use the manual GCash flow. This does not change the status of orders already placed.</small></span>
+        </label>
+        <div class="settings-form-actions"><button type="submit" class="btn btn-primary" <?= !$paymongoConfigured ? 'disabled' : '' ?>><i class="fa-solid fa-floppy-disk"></i> Save payment availability</button></div>
       </form>
     </div>
   </div>

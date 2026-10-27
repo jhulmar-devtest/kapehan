@@ -42,7 +42,7 @@ try {
 
 $data = json_decode(file_get_contents('php://input'), true) ?? [];
 $items       = $data['items'] ?? [];
-$ref         = sanitizeString($data['reference_no'] ?? '', 100);
+$ref         = is_string($data['reference_no'] ?? null) ? trim($data['reference_no']) : '';
 $notes       = sanitizeString($data['notes'] ?? '', 500);
 $deliveryLocation = $role === ROLE_FACULTY
   ? sanitizeString($data['delivery_location'] ?? '', 255)
@@ -122,10 +122,10 @@ $manualPaymentError = function () use (&$ref, $db): ?array {
     return [503, 'Online ordering is temporarily unavailable while the shop configures its GCash account.'];
   }
   if (empty($ref)) return [422, 'GCash reference number is required.'];
-  // Keep digits only, check the length, and refuse a reference that was
-  // already used for another order (the same receipt can't pay twice).
+  if ($refError = gcashRefInputError($ref)) return [422, $refError];
+  // Refuse a reference already used for another order (the same receipt
+  // cannot pay twice).
   $ref = normalizeGcashRef($ref);
-  if ($refError = gcashRefError($ref)) return [422, $refError];
   if (gcashRefInUse($db, $ref)) {
     return [422, 'This GCash reference number was already used for another order. Please check your receipt.'];
   }
@@ -183,8 +183,14 @@ try {
   exit;
 }
 
+$gcashRefLockName = null;
 $db->beginTransaction();
 try {
+  if (!$viaGateway && !$mayBeFree && $ref !== null && $ref !== '') {
+    $gcashRefLockName = gcashRefLock($db, $ref);
+    if ($gcashRefLockName === null) throw new RuntimeException('Another checkout is using this GCash reference. Please try again.');
+    if (gcashRefInUse($db, $ref)) throw new RuntimeException('This GCash reference number was already used for another order. Please check your receipt.');
+  }
   // The per-slot row serializes concurrent checkouts for the same pickup
   // time. The count and insert now happen while holding this row lock.
   $db->prepare(
@@ -291,6 +297,8 @@ try {
   $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId, $redeemProductId, $details);
 
   $db->commit();
+  gcashRefUnlock($db, $gcashRefLockName);
+  $gcashRefLockName = null;
   auditLog($role, currentUserId(), 'place_preorder', 'orders', $orderId);
 
   if ($viaGateway) {
@@ -341,6 +349,7 @@ try {
   // Something can throw after the commit (audit log, response building); a
   // rollBack() with no open transaction would itself throw and hide this error.
   if ($db->inTransaction()) $db->rollBack();
+  gcashRefUnlock($db, $gcashRefLockName ?? null);
   error_log('checkout failed: ' . $e->getMessage());
   http_response_code($e instanceof RuntimeException ? 422 : 500);
   echo json_encode(['ok' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.']);

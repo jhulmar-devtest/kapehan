@@ -21,13 +21,14 @@ $db->query(
    WHERE lock_expire_at IS NOT NULL AND lock_expire_at < NOW() AND status NOT IN ('preparing', 'ready')"
 );
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_POST['new_status'])) {
   verifyCsrf();
   $oid    = (int)$_POST['order_id'];
   $status = $_POST['new_status'] ?? '';
   $allowed = [STATUS_PREPARING, STATUS_READY, STATUS_CLAIMED, STATUS_CANCELLED];
 
   // Check if order is locked by another cashier (unless cancelling)
+  $gatewayPaidAtCancel = false;
   if ($status !== STATUS_CANCELLED) {
     $lock = $db->prepare(
       "SELECT locked_by, lock_expire_at, status, c.full_name AS locked_by_name
@@ -63,8 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         redirect(APP_URL . '/cashier/preorders.php');
       }
       if ($closed === 'paid') {
-        flash('global', 'The customer just completed their online payment, so this order is now paid. Review it before cancelling: a cancelled paid order has to be refunded by hand.', 'warning');
-        redirect(APP_URL . '/cashier/preorders.php');
+        $gatewayPaidAtCancel = true;
       }
     }
 
@@ -92,12 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         throw new RuntimeException("This order is {$currentStatus}, so it can't be moved to {$status}.");
       }
 
+      $paymentStmt = $db->prepare('SELECT gateway, payment_status, amount_paid FROM payments WHERE order_id = ? FOR UPDATE');
+      $paymentStmt->execute([$oid]);
+      $paymentRow = $paymentStmt->fetch(PDO::FETCH_ASSOC);
+      $cancelRequestStmt = $db->prepare('SELECT id, status FROM order_cancellation_requests WHERE order_id = ? FOR UPDATE');
+      $cancelRequestStmt->execute([$oid]);
+      $cancelRequest = $cancelRequestStmt->fetch(PDO::FETCH_ASSOC);
+
+      if ($status === STATUS_PREPARING && $cancelRequest && in_array($cancelRequest['status'], ['pending', 'refund_required'], true)) {
+        throw new RuntimeException('Resolve the customer cancellation request before preparing this order.');
+      }
+
       // Online (PayMongo) orders must be paid before they can move forward.
       if ($status !== STATUS_CANCELLED) {
-        $gw = $db->prepare('SELECT gateway, payment_status FROM payments WHERE order_id = ? LIMIT 1');
-        $gw->execute([$oid]);
-        $gwRow = $gw->fetch(PDO::FETCH_ASSOC);
-        if ($gwRow && $gwRow['gateway'] === 'paymongo' && $gwRow['payment_status'] !== PAY_STATUS_PAID) {
+        if ($paymentRow && $paymentRow['payment_status'] !== PAY_STATUS_PAID) {
           throw new RuntimeException('This order is still waiting for the customer to finish paying online.');
         }
       }
@@ -112,22 +120,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
       }
 
       if ($status === STATUS_PREPARING) {
-        // The customer-submitted GCash reference remains pending until the
-        // cashier confirms it. Deduct ingredients in this same transaction.
-        $db->prepare(
-          "UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?"
-        )->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
         deductInventoryForOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
 
       if ($status === STATUS_CLAIMED) {
         loyaltyAwardOrder($db, $oid, ROLE_CASHIER, $currentUser);
       } elseif ($status === STATUS_CANCELLED) {
-        // The payment page was closed above, so an unpaid online payment is
-        // failed rather than left "pending" on a cancelled order.
-        $db->prepare(
-          "UPDATE payments SET payment_status = ? WHERE order_id = ? AND gateway = 'paymongo' AND payment_status = ?"
-        )->execute([PAY_STATUS_FAILED, $oid, PAY_STATUS_PENDING]);
+        if ($paymentRow && $paymentRow['payment_status'] === PAY_STATUS_PENDING) {
+          // Cashier cancellation closes a pending payment record for either
+          // manual GCash or PayMongo. Failed references can then be reused.
+          $db->prepare('UPDATE payments SET payment_status = ? WHERE order_id = ? AND payment_status = ?')
+            ->execute([PAY_STATUS_FAILED, $oid, PAY_STATUS_PENDING]);
+        }
+        if ($paymentRow && (float) $paymentRow['amount_paid'] > 0 && ($paymentRow['payment_status'] === PAY_STATUS_PAID || $gatewayPaidAtCancel)) {
+          $db->prepare(
+            "INSERT INTO order_cancellation_requests (order_id, requester_role, requester_id, reason, status, handled_by_cashier_id, handled_at)
+             VALUES (?, 'cashier', ?, 'Cashier cancelled a paid order; refund review required.', 'refund_required', ?, NOW())
+             ON DUPLICATE KEY UPDATE status = 'refund_required', handled_by_cashier_id = VALUES(handled_by_cashier_id), handled_at = NOW()"
+          )->execute([$oid, $currentUser, $currentUser]);
+        } elseif ($cancelRequest && $cancelRequest['status'] === 'pending') {
+          $db->prepare("UPDATE order_cancellation_requests SET status = 'cancelled_unpaid', handled_by_cashier_id = ?, handled_at = NOW() WHERE id = ?")
+            ->execute([$currentUser, $cancelRequest['id']]);
+        }
         loyaltyReverseOrder($db, $oid, ROLE_CASHIER, $currentUser);
         restoreInventoryForCancelledOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
@@ -144,6 +158,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
   redirect(APP_URL . '/cashier/preorders.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify_manual_payment'])) {
+  verifyCsrf();
+  $oid = (int) ($_POST['order_id'] ?? 0);
+  try {
+    $db->beginTransaction();
+    $stmt = $db->prepare("SELECT id, status FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
+    $stmt->execute([$oid]);
+    $orderRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$orderRow || $orderRow['status'] !== STATUS_PENDING) throw new RuntimeException('Only pending orders can have payment verified.');
+    $cancelStmt = $db->prepare("SELECT status FROM order_cancellation_requests WHERE order_id = ? FOR UPDATE");
+    $cancelStmt->execute([$oid]);
+    $cancelRequest = $cancelStmt->fetchColumn();
+    if ($cancelRequest === 'pending' || $cancelRequest === 'refund_required') throw new RuntimeException('Resolve the cancellation request before verifying payment.');
+    $payment = $db->prepare('SELECT gateway, payment_status FROM payments WHERE order_id = ? FOR UPDATE');
+    $payment->execute([$oid]);
+    $paymentRow = $payment->fetch(PDO::FETCH_ASSOC);
+    if (!$paymentRow || $paymentRow['gateway'] === 'paymongo') throw new RuntimeException('This action is only for manual GCash payments.');
+    if ($paymentRow['payment_status'] !== PAY_STATUS_PENDING) throw new RuntimeException('This payment is not awaiting manual verification.');
+    $db->prepare('UPDATE payments SET payment_status = ?, paid_at = NOW() WHERE order_id = ? AND payment_status = ?')
+      ->execute([PAY_STATUS_PAID, $oid, PAY_STATUS_PENDING]);
+    $db->commit();
+    auditLog(ROLE_CASHIER, $currentUser, 'verify_manual_gcash_payment', 'orders', $oid);
+    flash('global', 'Payment verified. You can now start preparing the order.', 'success');
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Could not verify this payment. Please try again.', 'error');
+  }
+  redirect(APP_URL . '/cashier/preorders.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_cancellation'])) {
+  verifyCsrf();
+  $oid = (int) ($_POST['order_id'] ?? 0);
+  $decision = (string) ($_POST['decision'] ?? '');
+  if (!in_array($decision, ['reject', 'unpaid', 'refund'], true)) {
+    flash('global', 'Choose a valid cancellation decision.', 'error');
+    redirect(APP_URL . '/cashier/preorders.php');
+  }
+
+  // For a PayMongo order, close its hosted page before cancelling it. If the
+  // gateway reports a completed payment, send it through the refund queue.
+  $gatewayPaid = false;
+  if ($decision === 'unpaid') {
+    $gw = $db->prepare('SELECT gateway, payment_status FROM payments WHERE order_id = ? LIMIT 1');
+    $gw->execute([$oid]);
+    $gwRow = $gw->fetch(PDO::FETCH_ASSOC);
+    if ($gwRow && $gwRow['gateway'] === 'paymongo' && $gwRow['payment_status'] === PAY_STATUS_PENDING) {
+      $closed = paymongoCloseOrderPaymentPage($db, $oid);
+      if ($closed === 'error') {
+        flash('global', 'Could not close the customer payment page. Please try again.', 'error');
+        redirect(APP_URL . '/cashier/preorders.php');
+      }
+      if ($closed === 'paid') $gatewayPaid = true;
+    }
+  }
+  if ($gatewayPaid) $decision = 'refund';
+
+  try {
+    $db->beginTransaction();
+    $orderStmt = $db->prepare("SELECT id, status FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
+    $orderStmt->execute([$oid]);
+    $orderRow = $orderStmt->fetch(PDO::FETCH_ASSOC);
+    $requestStmt = $db->prepare("SELECT id, status FROM order_cancellation_requests WHERE order_id = ? FOR UPDATE");
+    $requestStmt->execute([$oid]);
+    $requestRow = $requestStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$orderRow || $orderRow['status'] !== STATUS_PENDING || !$requestRow || $requestRow['status'] !== 'pending') {
+      throw new RuntimeException('This cancellation request is no longer waiting for review. Refresh the queue.');
+    }
+    $paymentStmt = $db->prepare('SELECT gateway, payment_status, amount_paid FROM payments WHERE order_id = ? FOR UPDATE');
+    $paymentStmt->execute([$oid]);
+    $paymentRow = $paymentStmt->fetch(PDO::FETCH_ASSOC);
+    if ($decision === 'refund' && $paymentRow && (float) $paymentRow['amount_paid'] <= 0) {
+      throw new RuntimeException('This order has no cash payment to refund. Choose the no-refund cancellation option instead.');
+    }
+
+    if ($decision === 'reject') {
+      $db->prepare("UPDATE order_cancellation_requests SET status = 'rejected', handled_by_cashier_id = ?, handled_at = NOW() WHERE id = ?")
+        ->execute([$currentUser, $requestRow['id']]);
+      $db->commit();
+      auditLog(ROLE_CASHIER, $currentUser, 'reject_order_cancellation', 'orders', $oid);
+      flash('global', 'Cancellation request declined. The order remains in the queue.', 'success');
+    } elseif ($decision === 'unpaid' && (!$paymentRow || (float) $paymentRow['amount_paid'] <= 0 || $paymentRow['payment_status'] !== PAY_STATUS_PAID)) {
+      $db->prepare("UPDATE orders SET status = ?, cashier_id = ?, locked_by = NULL, locked_at = NULL, lock_expire_at = NULL WHERE id = ?")
+        ->execute([STATUS_CANCELLED, $currentUser, $oid]);
+      if ($paymentRow && $paymentRow['payment_status'] === PAY_STATUS_PENDING) {
+        $db->prepare('UPDATE payments SET payment_status = ? WHERE order_id = ? AND payment_status = ?')
+          ->execute([PAY_STATUS_FAILED, $oid, PAY_STATUS_PENDING]);
+      }
+      $db->prepare("UPDATE order_cancellation_requests SET status = 'cancelled_unpaid', handled_by_cashier_id = ?, handled_at = NOW() WHERE id = ?")
+        ->execute([$currentUser, $requestRow['id']]);
+      loyaltyReverseOrder($db, $oid, ROLE_CASHIER, $currentUser);
+      restoreInventoryForCancelledOrder($db, $oid, ROLE_CASHIER, $currentUser);
+      $db->commit();
+      auditLog(ROLE_CASHIER, $currentUser, 'cancel_unpaid_order', 'orders', $oid);
+      flash('global', 'Order cancelled after confirming no payment was received. Reserved stock and pickup capacity were released.', 'success');
+    } else {
+      if (!$paymentRow) throw new RuntimeException('No payment record exists for this order. Ask an admin to review it.');
+      if ($paymentRow['gateway'] === 'paymongo' && $paymentRow['payment_status'] !== PAY_STATUS_PAID) {
+        throw new RuntimeException('PayMongo has not confirmed this payment. Do not mark it received manually.');
+      }
+      if (!$paymentRow || $paymentRow['payment_status'] !== PAY_STATUS_PAID) {
+        // The cashier has confirmed money arrived (or PayMongo reconciliation
+        // found it), so record that before routing the refund to an admin.
+        $db->prepare('UPDATE payments SET payment_status = ?, paid_at = COALESCE(paid_at, NOW()) WHERE order_id = ?')
+          ->execute([PAY_STATUS_PAID, $oid]);
+      }
+      $db->prepare("UPDATE order_cancellation_requests SET status = 'refund_required', handled_by_cashier_id = ?, handled_at = NOW() WHERE id = ?")
+        ->execute([$currentUser, $requestRow['id']]);
+      $db->commit();
+      auditLog(ROLE_CASHIER, $currentUser, 'route_order_cancellation_for_refund', 'orders', $oid);
+      flash('global', 'Payment recorded as received. The admin must complete and record the refund before the order is cancelled.', 'warning');
+    }
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Could not resolve this cancellation request. Please try again.', 'error');
+  }
+  redirect(APP_URL . '/cashier/preorders.php');
+}
+
 // Unlock orders locked by this cashier when they leave the page
 // This is handled via beforeunload event in JS
 
@@ -153,7 +286,8 @@ $orders = $db->query(
           COALESCE(s.full_name, f.full_name) AS customer_name,
           COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id,
           p.payment_method, p.reference_number, p.recipient_name, p.recipient_number,
-          p.gateway, p.payment_status AS pay_status,
+          p.gateway, p.payment_status AS pay_status, p.amount_paid,
+          cr.status AS cancellation_request_status, cr.reason AS cancellation_reason,
           c.full_name AS locked_by_name,
           GROUP_CONCAT(CONCAT(od.quantity,'× ',pr.name,
             IF(od.customization_note IS NOT NULL AND od.customization_note != '',
@@ -165,12 +299,13 @@ $orders = $db->query(
    JOIN order_details od ON o.id = od.order_id
    JOIN products pr ON od.product_id = pr.id
    LEFT JOIN payments p ON o.id = p.order_id
+   LEFT JOIN order_cancellation_requests cr ON cr.order_id = o.id
    LEFT JOIN cashiers c ON o.locked_by = c.id
    WHERE o.order_type = 'pre-order'
      AND o.status IN ('pending','preparing','ready')
    GROUP BY o.id, o.order_number, o.status, o.total_amount, o.created_at, o.notes, o.delivery_location,
             o.locked_by, o.locked_at, o.lock_expire_at,
-            customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, p.gateway, p.payment_status, c.full_name
+            customer_name, customer_id, p.payment_method, p.reference_number, p.recipient_name, p.recipient_number, p.gateway, p.payment_status, p.amount_paid, cr.status, cr.reason, c.full_name
    ORDER BY
      CASE
        WHEN o.pickup_time = 'ASAP' THEN 0
@@ -466,6 +601,83 @@ layoutHeader('Pre-orders', '');
     gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
+  }
+
+  .order-card-foot form {
+    min-width: 0;
+  }
+
+  .cancellation-review-form {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .cancellation-review-form .btn {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .cancellation-review-form .btn i {
+    flex: 0 0 auto;
+  }
+
+  .cancellation-request-panel {
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    color: #713b08;
+    background: #fff7e8;
+    border: 1px solid #edc780;
+    border-left: 4px solid #d58b17;
+    border-radius: var(--radius-xs);
+  }
+
+  .cancellation-request-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .cancellation-request-heading i {
+    flex: 0 0 auto;
+  }
+
+  .cancellation-reason-label {
+    margin-top: 10px;
+    color: #80521b;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .cancellation-reason {
+    margin-top: 3px;
+    color: #392710;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .cancellation-request-help {
+    margin-top: 8px;
+    color: #80521b;
+    font-size: 0.72rem;
+    line-height: 1.45;
   }
 
   /* Verify warning on pending */
@@ -772,7 +984,7 @@ layoutHeader('Pre-orders', '');
 <div class="alert alert-info mb-5" style="margin-bottom:var(--space-5)">
   <i class="fa-solid fa-circle-info"></i>
   <div>
-    <strong>How to verify payment:</strong> Orders marked <em>Paid online</em> were confirmed automatically by PayMongo. For manual GCash payments, before pressing <em>Start Preparing</em>, check the reference number below against your <strong>GCash inbox</strong> or ask to see the student's payment screenshot.
+    <strong>How to verify payment:</strong> Orders marked <em>Paid online</em> were confirmed automatically by PayMongo. For manual GCash payments, check the reference and amount in the shop's <strong>GCash transaction history</strong>, then use <em>Verify Payment</em> before starting preparation. A customer screenshot alone is not confirmation. If a cancellation is requested, check the account first; if money arrived, send the request to the admin refund queue.
     At pickup, use <strong>Verify ID</strong> to check the physical school ID, or scan the customer's QR and review the matched order before confirming handover.
   </div>
 </div>
@@ -915,9 +1127,25 @@ layoutHeader('Pre-orders', '');
             <?php else: ?>
               <div class="verify-notice">
                 <i class="fa-solid fa-triangle-exclamation"></i>
-                <div><strong>Verify before preparing:</strong> Check this reference number in your <?= $pay['label'] ?> inbox before pressing Start Preparing.</div>
+                <div><strong>Verify payment first:</strong> Check this reference number and exact amount in the shop's <?= $pay['label'] ?> transaction history, then mark it verified before preparation.</div>
               </div>
+              <?php if (time() - strtotime((string) $o['created_at']) >= MANUAL_GCASH_REVIEW_MINUTES * 60): ?>
+                <div class="verify-notice" style="margin-top:8px;background:#fff4e5;color:#7a3e00;border-color:#f0c36d"><i class="fa-solid fa-clock"></i><div><strong>Needs review:</strong> This order has been pending more than <?= (int) MANUAL_GCASH_REVIEW_MINUTES ?> minutes. Check the account before cancelling; the system will not assume whether the money arrived.</div></div>
+              <?php endif; ?>
             <?php endif; ?>
+          <?php endif; ?>
+
+          <?php if (($o['cancellation_request_status'] ?? '') === 'pending'): ?>
+            <div class="cancellation-request-panel" role="note" aria-label="Customer cancellation request">
+              <div class="cancellation-request-heading"><i class="fa-solid fa-circle-exclamation"></i><span>Customer requested cancellation</span></div>
+              <div class="cancellation-reason-label">Reason from customer</div>
+              <div class="cancellation-reason"><?= e(trim((string) ($o['cancellation_reason'] ?? '')) ?: 'No reason provided.') ?></div>
+              <div class="cancellation-request-help">Check the payment transaction history before choosing an outcome.</div>
+            </div>
+          <?php elseif (($o['cancellation_request_status'] ?? '') === 'refund_required'): ?>
+            <div class="verify-notice" style="background:#fff4e5;color:#7a3e00;border-color:#f0c36d">
+              <i class="fa-solid fa-rotate-left"></i><div><strong>Refund review required:</strong> This order is blocked from preparation until an admin records the completed refund.</div>
+            </div>
           <?php endif; ?>
 
           <!-- Notes -->
@@ -942,19 +1170,35 @@ layoutHeader('Pre-orders', '');
 
         <!-- Actions footer -->
         <div class="order-card-foot">
-          <form method="POST" style="display:flex;gap:var(--space-2);flex:1;flex-wrap:wrap" id="order-form-<?= $o['id'] ?>">
+          <form method="POST" class="<?= ($o['status'] === STATUS_PENDING && ($o['cancellation_request_status'] ?? '') === 'pending') ? 'cancellation-review-form' : '' ?>" style="display:flex;gap:var(--space-2);flex:1;flex-wrap:wrap" id="order-form-<?= $o['id'] ?>">
             <?= csrfField() ?>
             <input type="hidden" name="update_status" value="1">
             <input type="hidden" name="order_id" value="<?= $o['id'] ?>">
 
             <?php if ($o['status'] === STATUS_PENDING): ?>
               <?php $gwUnpaid = ($o['gateway'] ?? '') === 'paymongo' && ($o['pay_status'] ?? '') !== PAY_STATUS_PAID; ?>
-              <?php if ($gwUnpaid): ?>
+              <?php if (($o['cancellation_request_status'] ?? '') === 'pending'): ?>
+                <input type="hidden" name="resolve_cancellation" value="1">
+                <?php if (($o['pay_status'] ?? '') === PAY_STATUS_PAID && (float) ($o['amount_paid'] ?? 0) > 0): ?>
+                  <button class="btn btn-warning btn-sm flex-1" name="decision" value="refund" type="submit"><i class="fa-solid fa-rotate-left"></i> Payment received — admin refund</button>
+                <?php else: ?>
+                  <button class="btn btn-danger btn-sm flex-1" name="decision" value="unpaid" type="submit"><i class="fa-solid fa-ban"></i> No payment received / no refund due — cancel</button>
+                  <?php if (($o['pay_status'] ?? '') !== PAY_STATUS_PAID): ?><button class="btn btn-warning btn-sm flex-1" name="decision" value="refund" type="submit"><i class="fa-solid fa-rotate-left"></i> Payment received — admin refund</button><?php endif; ?>
+                <?php endif; ?>
+                <button class="btn btn-ghost btn-sm" name="decision" value="reject" type="submit">Decline request</button>
+              <?php elseif (($o['cancellation_request_status'] ?? '') === 'refund_required'): ?>
+                <button type="button" class="btn btn-warning btn-sm flex-1" disabled><i class="fa-solid fa-hourglass-half"></i> Awaiting admin refund</button>
+              <?php elseif ($gwUnpaid): ?>
                 <button type="button" class="btn btn-primary btn-sm flex-1" disabled>
                   <i class="fa-solid fa-hourglass-half"></i> Awaiting payment
                 </button>
+              <?php elseif (($o['gateway'] ?? '') !== 'paymongo' && ($o['pay_status'] ?? '') !== PAY_STATUS_PAID): ?>
+                <input type="hidden" name="verify_manual_payment" value="1">
+                <button type="button" class="btn btn-primary btn-sm flex-1" onclick="handleVerifyPayment(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>')">
+                  <i class="fa-solid fa-shield-check"></i> Verify Payment
+                </button>
               <?php else: ?>
-                <button type="button" class="btn btn-primary btn-sm flex-1" onclick="handleStartPreparing(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', '<?= e($pay['label']) ?>', <?= ($o['gateway'] ?? '') === 'paymongo' ? 'true' : 'false' ?>)">
+                <button type="button" class="btn btn-primary btn-sm flex-1" onclick="handleStartPreparing(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', '<?= e($pay['label']) ?>', <?= ($o['pay_status'] ?? '') === PAY_STATUS_PAID ? 'true' : 'false' ?>)">
                   <i class="fa-solid fa-fire"></i> Start Preparing
                 </button>
               <?php endif; ?>
@@ -972,9 +1216,11 @@ layoutHeader('Pre-orders', '');
             <?php endif; ?>
 
 
-            <button type="button" class="btn btn-danger btn-sm" onclick="handleCancelOrder(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>')" title="Cancel order">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
+            <?php if (!in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required'], true)): ?>
+              <button type="button" class="btn btn-danger btn-sm" onclick="handleCancelOrder(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', <?= ($o['pay_status'] ?? '') === PAY_STATUS_PAID ? 'true' : 'false' ?>)" title="Cancel order">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            <?php endif; ?>
 
           </form>
         </div>
@@ -1080,6 +1326,21 @@ layoutHeader('Pre-orders', '');
     } else {
       // Unlock the order if cancelled
       unlockOrder(orderId);
+    }
+  }
+
+  async function handleVerifyPayment(orderId, orderNumber) {
+    const confirmed = await confirmModal(
+      `Confirm that you checked the shop's GCash transaction history and received the exact amount for order <strong>${orderNumber}</strong>.`, {
+        title: 'Verify GCash Payment',
+        icon: 'fa-shield-check',
+        iconColor: 'warning',
+        confirmText: 'Yes, payment received'
+      }
+    );
+    if (confirmed) {
+      isSubmitting = true;
+      document.querySelector(`#order-form-${orderId}`).submit();
     }
   }
 
@@ -1350,9 +1611,11 @@ layoutHeader('Pre-orders', '');
     }
   }
 
-  async function handleCancelOrder(orderId, orderNumber) {
+  async function handleCancelOrder(orderId, orderNumber, paymentAlreadyVerified = false) {
     const confirmed = await confirmModal(
-      `Cancel order <strong>${orderNumber}</strong>? This action cannot be undone.`, {
+      paymentAlreadyVerified
+        ? `Cancel order <strong>${orderNumber}</strong>? The payment is recorded as received, so this will send it to the admin refund queue. A refund is not automatic.`
+        : `Cancel order <strong>${orderNumber}</strong>? First confirm that no payment was received. If money arrived, choose the payment received option and route it for admin refund review.`, {
         title: 'Cancel Order',
         icon: 'fa-triangle-exclamation',
         iconColor: 'danger',

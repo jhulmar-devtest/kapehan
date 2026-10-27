@@ -26,7 +26,7 @@ $stmt = $db->prepare("SELECT COUNT(*) FROM orders WHERE order_type='pre-order' A
 $stmt->execute();
 $activePreorders = (int) $stmt->fetchColumn();
 
-$stmt = $db->query("SELECT COUNT(*) FROM refund_requests WHERE status='pending'");
+$stmt = $db->query("SELECT COUNT(*) FROM order_cancellation_requests WHERE status='refund_required'");
 $pendingRefunds = (int) $stmt->fetchColumn();
 
 // ── Period-based Sales Report + Best Sellers (item 1 & 2) ───
@@ -359,11 +359,9 @@ layoutHeader('Sales', '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart
   <div class="stat-card <?= $pendingRefunds > 0 ? 'stat-red' : '' ?>">
     <div class="stat-icon <?= $pendingRefunds > 0 ? 'red' : 'brown' ?>"><i class="fa-solid fa-rotate-left"></i></div>
     <div class="stat-content">
-      <div class="stat-label">Pending Refunds</div>
+      <div class="stat-label">Refunds to Complete</div>
       <div class="stat-value"><?= $pendingRefunds ?></div>
-      <?php if ($pendingRefunds > 0): ?>
-        <div class="stat-sub"><a href="<?= APP_URL ?>/admin/orders.php" style="color:var(--primary-color);font-weight:600">Review now &rarr;</a></div>
-      <?php endif; ?>
+      <div class="stat-sub"><a href="<?= APP_URL ?>/admin/refunds.php" style="color:var(--primary-color);font-weight:600">Review refunds &rarr;</a></div>
     </div>
   </div>
 </div>

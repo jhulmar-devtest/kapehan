@@ -12,6 +12,7 @@
 
 require_once __DIR__ . '/../config/init.php';
 require_once __DIR__ . '/../includes/paymongo.php';
+require_once __DIR__ . '/../includes/refund-qr.php';
 requireRole(ROLE_STUDENT, ROLE_FACULTY);
 
 $db       = Database::getInstance();
@@ -235,6 +236,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_feedback'])) {
   redirect(APP_URL . '/orders.php');
 }
 
+// ── Request cancellation of a pre-order before preparation ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_order_cancellation'])) {
+  verifyCsrf();
+  $orderId = (int) ($_POST['order_id'] ?? 0);
+  $reason = sanitizeString($_POST['cancel_reason'] ?? '', 500);
+  if ($reason === '') {
+    flash('global', 'Tell us why you need to cancel this order.', 'error');
+    redirect(APP_URL . '/orders.php');
+  }
+
+  $newQrFilename = null;
+  $oldQrFilename = null;
+  $requestCommitted = false;
+  $db->beginTransaction();
+  try {
+    $stmt = $db->prepare(
+      "SELECT o.id, o.order_number, o.order_type, o.status, p.payment_method, p.gateway
+         FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+        WHERE o.id = ? AND o.{$fkColumn} = ? FOR UPDATE"
+    );
+    $stmt->execute([$orderId, $userId]);
+    $orderToCancel = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$orderToCancel || $orderToCancel['order_type'] !== ORDER_PREORDER || $orderToCancel['status'] !== STATUS_PENDING) {
+      throw new RuntimeException('Only pre-orders that are still pending can request cancellation. Please contact the shop if preparation has started.');
+    }
+
+    $isManualGcash = strtolower(trim((string) ($orderToCancel['payment_method'] ?? ''))) === 'gcash'
+      && ($orderToCancel['gateway'] ?? '') !== 'paymongo';
+    $refundGcashName = null;
+    $refundGcashNumber = null;
+    if ($isManualGcash) {
+      $refundGcashName = sanitizeString($_POST['refund_gcash_name'] ?? '', 100);
+      $refundGcashNumber = trim((string) ($_POST['refund_gcash_number'] ?? ''));
+      if ($refundGcashName === '') throw new RuntimeException('Enter the name on the GCash account that should receive the refund.');
+      if (!preg_match('/\A09[0-9]{9}\z/', $refundGcashNumber)) {
+        throw new RuntimeException('Enter a valid 11-digit GCash number starting with 09.');
+      }
+      $newQrFilename = storeRefundQrUpload($_FILES['refund_qr'] ?? null);
+    }
+
+    $existing = $db->prepare('SELECT id, status, refund_qr_filename FROM order_cancellation_requests WHERE order_id = ? FOR UPDATE');
+    $existing->execute([$orderId]);
+    $request = $existing->fetch(PDO::FETCH_ASSOC);
+    if ($request && $request['status'] !== 'rejected') {
+      throw new RuntimeException('A cancellation request is already being handled for this order.');
+    }
+    $oldQrFilename = $request['refund_qr_filename'] ?? null;
+
+    if ($request) {
+      $db->prepare(
+        "UPDATE order_cancellation_requests
+            SET requester_role = ?, requester_id = ?, reason = ?, status = 'pending', refund_reference = NULL,
+                refund_gcash_name = ?, refund_gcash_number = ?, refund_qr_filename = ?,
+                handled_by_cashier_id = NULL, handled_by_admin_id = NULL, handled_at = NULL
+          WHERE id = ?"
+      )->execute([$role, $userId, $reason, $refundGcashName, $refundGcashNumber, $newQrFilename, $request['id']]);
+    } else {
+      $db->prepare(
+        "INSERT INTO order_cancellation_requests
+           (order_id, requester_role, requester_id, reason, refund_gcash_name, refund_gcash_number, refund_qr_filename)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )->execute([$orderId, $role, $userId, $reason, $refundGcashName, $refundGcashNumber, $newQrFilename]);
+    }
+    $db->commit();
+    $requestCommitted = true;
+    if ($oldQrFilename && $oldQrFilename !== $newQrFilename) deleteRefundQrFile($oldQrFilename);
+    auditLog($role, $userId, 'request_order_cancellation', 'orders', $orderId);
+    flash('global', 'Cancellation request sent. If a refund is due, the shop can use the GCash details you provided.', 'success');
+  } catch (Throwable $e) {
+    if ($db->inTransaction()) $db->rollBack();
+    if (!$requestCommitted && $newQrFilename) deleteRefundQrFile($newQrFilename);
+    flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Could not send the cancellation request. Please try again.', 'error');
+  }
+  redirect(APP_URL . '/orders.php');
+}
+
 // ── Load orders, filtered by tab ─────────────────────────────
 $filter = $_GET['status'] ?? 'all';
 $statusGroups = [
@@ -252,10 +329,12 @@ if (isset($statusGroups[$filter])) {
 
 $stmt = $db->prepare(
   "SELECT o.*, p.payment_method, p.payment_status, p.gateway,
+          cr.status AS cancellation_request_status, cr.refund_reference,
           f.id AS feedback_id,
           (SELECT COALESCE(SUM(od.quantity),0) FROM order_details od WHERE od.order_id = o.id) AS item_count
    FROM orders o
    LEFT JOIN payments p ON o.id = p.order_id
+   LEFT JOIN order_cancellation_requests cr ON cr.order_id = o.id
    LEFT JOIN order_feedback f ON o.id = f.order_id
    WHERE o.{$fkColumn} = ? {$where}
    ORDER BY
@@ -439,6 +518,328 @@ function renderOrderTimeline(string $status): string
     .order-actions {
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .order-cancel-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .order-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--surface-raised, var(--surface-color));
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .order-note i {
+      margin-top: 2px;
+      flex: 0 0 auto;
+    }
+
+    .order-note.warning {
+      border-color: rgba(190, 115, 20, .28);
+      background: rgba(255, 184, 77, .1);
+      color: #875313;
+    }
+
+    .order-note.success {
+      border-color: rgba(36, 125, 70, .25);
+      background: rgba(55, 155, 91, .08);
+      color: #23653d;
+    }
+
+    .cancel-modal-copy {
+      margin: 12px 0 0;
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .cancel-request-modal {
+      width: min(100%, 520px);
+      max-height: min(90vh, 760px);
+      padding: 24px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .cancel-request-heading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-right: 26px;
+    }
+
+    .cancel-request-icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      color: var(--primary-color);
+      background: var(--primary-subtle);
+      border-radius: 12px;
+      font-size: 17px;
+    }
+
+    .cancel-request-title {
+      margin: 0;
+      color: var(--text-color);
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .cancel-modal-order {
+      margin-top: 4px;
+    }
+
+    .cancel-request-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .cancel-request-form .field-label {
+      display: block;
+      margin: 0 0 6px;
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .cancel-request-form .form-control {
+      box-sizing: border-box;
+      width: 100%;
+      height: 46px;
+      min-width: 0;
+      padding: 0 12px;
+      color: var(--text-color);
+      background: var(--surface-color);
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .cancel-request-form .form-control::placeholder {
+      color: var(--text-placeholder);
+    }
+
+    .cancel-request-form .form-control:hover {
+      border-color: var(--border-strong);
+    }
+
+    .cancel-request-form .form-control:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px var(--primary-subtle);
+      outline: none;
+    }
+
+    .cancel-input-wrap {
+      position: relative;
+    }
+
+    .cancel-input-wrap > i {
+      position: absolute;
+      top: 50%;
+      left: 12px;
+      z-index: 1;
+      color: var(--text-muted);
+      font-size: 13px;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .cancel-input-wrap .form-control {
+      padding-left: 36px;
+    }
+
+    #cancelRequestReason {
+      height: auto !important;
+      min-height: 96px;
+      padding: 11px 12px !important;
+      line-height: 1.5;
+      resize: vertical;
+    }
+
+    .cancel-refund-fields {
+      display: grid;
+      gap: 10px;
+      margin-top: 0;
+      padding: 14px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+    }
+
+    .cancel-refund-fields[hidden] {
+      display: none;
+    }
+
+    .cancel-refund-fields-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-color);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .cancel-refund-fields > p {
+      margin: -5px 0 2px;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .cancel-refund-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .cancel-refund-field {
+      min-width: 0;
+    }
+
+    .cancel-refund-upload {
+      padding-top: 10px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .cancel-refund-help {
+      display: block;
+      margin-top: 6px;
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .cancel-refund-file-picker {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 58px;
+      padding: 9px 11px;
+      overflow: hidden;
+      color: var(--text-secondary);
+      background: var(--surface-color);
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .cancel-refund-file-picker:hover {
+      background: var(--surface-raised);
+      border-color: var(--primary-color);
+    }
+
+    .cancel-refund-file-picker:focus-within {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px var(--primary-subtle);
+    }
+
+    .cancel-refund-file-icon {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      flex: 0 0 auto;
+      color: var(--primary-color);
+      background: var(--primary-subtle);
+      border-radius: 10px;
+    }
+
+    .cancel-refund-file-copy {
+      display: grid;
+      min-width: 0;
+      gap: 2px;
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    .cancel-refund-file-copy strong,
+    .cancel-refund-file-copy small {
+      overflow-wrap: anywhere;
+    }
+
+    .cancel-refund-file-copy small {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+    }
+
+    .cancel-refund-file-browse {
+      margin-left: auto;
+      padding: 6px 9px;
+      color: var(--primary-color);
+      background: var(--primary-subtle);
+      border-radius: 7px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .cancel-refund-file {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .cancel-request-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .cancel-request-actions .btn {
+      width: 100%;
+      min-height: 44px;
+      white-space: normal;
+    }
+
+    @media (max-width: 520px) {
+      .cancel-request-modal {
+        padding: 18px 16px;
+      }
+
+      .cancel-refund-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .cancel-request-actions {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .cancel-modal-order {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: var(--radius-full);
+      background: var(--primary-subtle);
+      color: var(--primary-color);
+      font-size: 12px;
+      font-weight: 800;
     }
 
     .btn-sm {
@@ -614,9 +1015,11 @@ function renderOrderTimeline(string $status): string
         grid-column: 1 / -1;
         display: flex;
         flex-wrap: wrap;
+        justify-content: flex-start;
       }
 
       .order-actions .btn {
+        flex: 1 1 auto;
         min-height: 40px;
       }
 
@@ -708,7 +1111,7 @@ function renderOrderTimeline(string $status): string
               && $o['status'] === STATUS_PENDING;
             $payUrl = APP_URL . '/payment-return.php?order=' . urlencode($o['order_number']);
           ?>
-            <div class="order-row" data-order-id="<?= $o['id'] ?>" data-order-number="<?= e($o['order_number']) ?>" data-status="<?= e($o['status']) ?>">
+            <div class="order-row" data-order-id="<?= $o['id'] ?>" data-order-number="<?= e($o['order_number']) ?>" data-status="<?= e($o['status']) ?>" data-cancellation-status="<?= e($o['cancellation_request_status'] ?? '') ?>" data-payment-gateway="<?= e($o['gateway'] ?? '') ?>" data-manual-gcash-refund="<?= strtolower(trim((string) ($o['payment_method'] ?? ''))) === 'gcash' && ($o['gateway'] ?? '') !== 'paymongo' ? '1' : '0' ?>">
               <div class="order-row-top">
                 <div class="order-icon"><i class="fa-solid fa-mug-hot"></i></div>
                 <div class="order-main">
@@ -718,6 +1121,17 @@ function renderOrderTimeline(string $status): string
                     <div class="order-date" data-pay-note style="color:var(--warn, #a45a24);font-weight:600">
                       Awaiting payment &middot; released after <?= (int) PAYMONGO_UNPAID_ORDER_MINUTES ?> min if unpaid
                     </div>
+                  <?php endif; ?>
+                  <?php if (($o['cancellation_request_status'] ?? '') === 'pending'): ?>
+                    <div class="order-note warning"><i class="fa-solid fa-hourglass-half"></i><span>Cancellation request sent. The cashier will check the payment before cancelling.</span></div>
+                  <?php elseif (($o['cancellation_request_status'] ?? '') === 'refund_required'): ?>
+                    <div class="order-note warning"><i class="fa-solid fa-rotate-left"></i><span>Cancellation is awaiting refund processing by the shop.</span></div>
+                  <?php elseif (($o['cancellation_request_status'] ?? '') === 'rejected'): ?>
+                    <div class="order-note"><i class="fa-solid fa-circle-info"></i><span>Cancellation request declined. You can contact the shop if you need help.</span></div>
+                  <?php elseif (($o['cancellation_request_status'] ?? '') === 'cancelled_unpaid'): ?>
+                    <div class="order-note"><i class="fa-solid fa-circle-info"></i><span>Cancelled after the cashier confirmed no payment was received.</span></div>
+                  <?php elseif (($o['cancellation_request_status'] ?? '') === 'refunded'): ?>
+                    <div class="order-note success"><i class="fa-solid fa-circle-check"></i><span>Refund recorded<?= !empty($o['refund_reference']) ? ' · Ref ' . e($o['refund_reference']) : '' ?></span></div>
                   <?php endif; ?>
                   <div class="order-date">
                     <?php if (!empty($o['pickup_date'])): ?>
@@ -742,6 +1156,11 @@ function renderOrderTimeline(string $status): string
                       </a>
                       <a class="btn btn-sm btn-outline" data-pay-actions href="<?= e($payUrl) ?>&amp;cancelled=1">Cancel</a>
                     <?php endif; ?>
+                    <?php if ($o['status'] === STATUS_PENDING && in_array($o['order_type'], [ORDER_PREORDER, 'pre-order'], true) && !$awaitingPayment && !in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required', 'cancelled_unpaid', 'refunded'], true)): ?>
+                      <button type="button" class="btn btn-sm btn-outline order-cancel-trigger" data-cancel-action onclick="openCancelRequestModal(<?= (int) $o['id'] ?>, '<?= e($o['order_number']) ?>')">
+                        <i class="fa-solid fa-ban"></i> Request cancellation
+                      </button>
+                    <?php endif; ?>
                     <?php if ($group === 'completed' && empty($o['feedback_id'])): ?>
                       <button class="btn btn-sm btn-outline" data-rate-btn onclick="openRateModal(<?= $o['id'] ?>)">Rate Order</button>
                     <?php endif; ?>
@@ -758,6 +1177,57 @@ function renderOrderTimeline(string $status): string
       </div>
     </div>
   </main>
+
+  <div class="modal-overlay" id="cancelRequestModal" hidden>
+    <div class="modal-box cancel-request-modal" role="dialog" aria-modal="true" aria-labelledby="cancelRequestTitle">
+      <button type="button" class="modal-close" onclick="closeCancelRequestModal()" aria-label="Close">&times;</button>
+      <div class="cancel-request-heading">
+        <div class="cancel-request-icon"><i class="fa-solid fa-ban"></i></div>
+        <div>
+          <h2 class="cancel-request-title" id="cancelRequestTitle">Request cancellation</h2>
+          <div class="cancel-modal-order" id="cancelRequestOrder"></div>
+        </div>
+      </div>
+      <p class="cancel-modal-copy" id="cancelRequestCopy">The cashier will review your request before preparation. Refunds are not automatic.</p>
+      <form method="POST" id="cancelRequestForm" class="cancel-request-form" enctype="multipart/form-data">
+        <?= csrfField() ?>
+        <input type="hidden" name="request_order_cancellation" value="1">
+        <input type="hidden" name="order_id" id="cancelRequestOrderId">
+        <div class="cancel-refund-field">
+          <label class="field-label" for="cancelRequestReason">Reason for cancellation</label>
+          <textarea class="form-control" id="cancelRequestReason" name="cancel_reason" maxlength="500" required rows="3" placeholder="Tell the shop why you need to cancel"></textarea>
+        </div>
+        <section class="cancel-refund-fields" id="cancelRefundFields" hidden>
+          <div class="cancel-refund-fields-title"><i class="fa-solid fa-wallet"></i> GCash refund destination</div>
+          <p>Enter the account that sent the payment. The shop will confirm the payment before sending any refund.</p>
+          <div class="cancel-refund-grid">
+            <div class="cancel-refund-field">
+              <label class="field-label" for="cancelRefundGcashName">Name on GCash account</label>
+              <div class="cancel-input-wrap"><i class="fa-regular fa-user" aria-hidden="true"></i><input class="form-control" id="cancelRefundGcashName" name="refund_gcash_name" type="text" maxlength="100" autocomplete="name" placeholder="Account holder's name"></div>
+            </div>
+            <div class="cancel-refund-field">
+              <label class="field-label" for="cancelRefundGcashNumber">GCash number</label>
+              <div class="cancel-input-wrap"><i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i><input class="form-control" id="cancelRefundGcashNumber" name="refund_gcash_number" type="tel" inputmode="numeric" pattern="09[0-9]{9}" maxlength="11" autocomplete="tel-national" placeholder="09XXXXXXXXX"></div>
+            </div>
+          </div>
+          <div class="cancel-refund-upload">
+            <label class="field-label" for="cancelRefundQr">GCash QR code <span class="text-muted" style="font-weight:400;text-transform:none">Optional</span></label>
+            <label class="cancel-refund-file-picker" for="cancelRefundQr">
+              <span class="cancel-refund-file-icon"><i class="fa-solid fa-qrcode" aria-hidden="true"></i></span>
+              <span class="cancel-refund-file-copy"><strong id="cancelRefundQrName" aria-live="polite">Choose a QR image</strong><small>JPG, PNG, or WebP · up to 2 MB</small></span>
+              <span class="cancel-refund-file-browse">Browse</span>
+              <input class="cancel-refund-file" id="cancelRefundQr" name="refund_qr" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose an optional GCash QR code image">
+            </label>
+            <small class="cancel-refund-help">The QR code is visible only to authorized admins.</small>
+          </div>
+        </section>
+        <div class="cancel-request-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeCancelRequestModal()">Keep order</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Send request</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Rate Order modal -->
   <div class="modal-overlay" id="rateModal" hidden>
@@ -815,6 +1285,51 @@ function renderOrderTimeline(string $status): string
     function toggleUserMenu() {
       document.getElementById('userMenuDropdown').classList.toggle('open');
     }
+
+    function openCancelRequestModal(orderId, orderNumber) {
+      const orderRow = document.querySelector(`.order-row[data-order-id="${orderId}"]`);
+      const refundFields = document.getElementById('cancelRefundFields');
+      const needsRefundDetails = orderRow?.dataset.manualGcashRefund === '1';
+      const isPayMongo = orderRow?.dataset.paymentGateway === 'paymongo';
+      refundFields.hidden = !needsRefundDetails;
+      document.getElementById('cancelRequestCopy').textContent = needsRefundDetails
+        ? 'The cashier will review your request before preparation. If a refund is due for this manual GCash payment, the shop will use the details below. Refunds are not automatic.'
+        : isPayMongo
+          ? 'The cashier will review your request before preparation. Any eligible refund will be handled through PayMongo; no GCash destination details are needed here.'
+          : 'The cashier will review your request before preparation. If a refund is due, the shop will contact you about the next steps.';
+      document.getElementById('cancelRefundGcashName').required = needsRefundDetails;
+      document.getElementById('cancelRefundGcashNumber').required = needsRefundDetails;
+      document.getElementById('cancelRefundGcashName').value = '';
+      document.getElementById('cancelRefundGcashNumber').value = '';
+      document.getElementById('cancelRefundQr').value = '';
+      document.getElementById('cancelRefundQrName').textContent = 'Choose a QR image';
+      document.getElementById('cancelRequestOrderId').value = orderId;
+      document.getElementById('cancelRequestOrder').textContent = `Order ${orderNumber}`;
+      document.getElementById('cancelRequestReason').value = '';
+      document.getElementById('cancelRequestModal').hidden = false;
+      document.getElementById('cancelRequestReason').focus();
+    }
+
+    document.getElementById('cancelRefundGcashNumber').addEventListener('input', event => {
+      event.target.value = event.target.value.replace(/\D/g, '').slice(0, 11);
+    });
+
+    document.getElementById('cancelRefundQr').addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      document.getElementById('cancelRefundQrName').textContent = file?.name || 'Choose a QR image';
+    });
+
+    function closeCancelRequestModal() {
+      document.getElementById('cancelRequestModal').hidden = true;
+    }
+
+    document.getElementById('cancelRequestModal').addEventListener('click', event => {
+      if (event.target.id === 'cancelRequestModal') closeCancelRequestModal();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !document.getElementById('cancelRequestModal').hidden) closeCancelRequestModal();
+    });
+
     window.addEventListener('click', e => {
       if (!e.target.closest('.user-menu')) document.getElementById('userMenuDropdown')?.classList.remove('open');
     });
@@ -1015,6 +1530,21 @@ function renderOrderTimeline(string $status): string
                   showToast('success', `Payment received for ${row.dataset.orderNumber}.`, 6000);
                 }
               }
+              if (o.status === 'pending' && !['pending', 'refund_required', 'cancelled_unpaid', 'refunded'].includes(row.dataset.cancellationStatus)) {
+                const actions = row.querySelector('[data-order-actions]');
+                if (actions && !actions.querySelector('[data-cancel-action]')) {
+                  const cancelButton = document.createElement('button');
+                  cancelButton.type = 'button';
+                  cancelButton.className = 'btn btn-sm btn-outline order-cancel-trigger';
+                  cancelButton.setAttribute('data-cancel-action', '');
+                  cancelButton.innerHTML = '<i class="fa-solid fa-ban"></i> Request cancellation';
+                  cancelButton.onclick = () => openCancelRequestModal(o.id, row.dataset.orderNumber);
+                  actions.appendChild(cancelButton);
+                }
+              }
+            }
+            if (o.status !== 'pending') {
+              row.querySelectorAll('[data-cancel-action]').forEach(el => el.remove());
             }
             if (row.dataset.status === o.status) return;
 

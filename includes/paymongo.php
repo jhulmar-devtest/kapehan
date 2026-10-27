@@ -12,8 +12,8 @@
 //      paymongoHandlePaidEvent() marks the payment paid.
 //   4. payment-return.php is where the customer lands afterwards.
 //
-// If PAYMONGO_SECRET_KEY is empty, paymongoEnabled() is false and the shop
-// keeps using the manual GCash-reference flow.
+// If PAYMONGO_SECRET_KEY is empty or the admin pauses PayMongo in Settings,
+// paymongoEnabled() is false and new checkouts use manual GCash.
 //
 // paymongoEnabled() itself lives in includes/functions.php.
 // ============================================================

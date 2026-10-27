@@ -558,10 +558,12 @@ function gcashPaymentNumber(): string
  * gcashRefInUse()      - true if another pending/paid GCash payment already
  *                        used this reference (failed/refunded ones don't count).
  */
-/** True when online GCash via PayMongo is configured (secret key present). */
+/** True when PayMongo is configured and enabled for new checkouts. */
 function paymongoEnabled(): bool
 {
-  return defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== '';
+  return defined('PAYMONGO_SECRET_KEY')
+    && trim((string) PAYMONGO_SECRET_KEY) !== ''
+    && getSetting('paymongo_enabled', '1') === '1';
 }
 
 function normalizeGcashRef(string $raw): string
@@ -577,6 +579,14 @@ function gcashRefError(string $normalized): ?string
   return null;
 }
 
+function gcashRefInputError(string $raw): ?string
+{
+  if (preg_match('/\D/', $raw)) {
+    return 'GCash reference numbers can contain digits only.';
+  }
+  return gcashRefError($raw);
+}
+
 function gcashRefInUse(PDO $db, string $normalized): bool
 {
   $stmt = $db->prepare(
@@ -588,6 +598,26 @@ function gcashRefInUse(PDO $db, string $normalized): bool
   );
   $stmt->execute([PAY_STATUS_PENDING, PAY_STATUS_PAID, $normalized]);
   return (bool) $stmt->fetchColumn();
+}
+
+/** Serialize reference-number checks through the payment insert/commit. */
+function gcashRefLock(PDO $db, string $normalized): ?string
+{
+  $lockName = 'gcash-ref-' . substr(hash('sha256', $normalized), 0, 48);
+  $stmt = $db->prepare('SELECT GET_LOCK(?, 5)');
+  $stmt->execute([$lockName]);
+  return (int) $stmt->fetchColumn() === 1 ? $lockName : null;
+}
+
+function gcashRefUnlock(PDO $db, ?string $lockName): void
+{
+  if ($lockName === null) return;
+  try {
+    $stmt = $db->prepare('SELECT RELEASE_LOCK(?)');
+    $stmt->execute([$lockName]);
+  } catch (Throwable $e) {
+    error_log('Could not release GCash reference lock: ' . $e->getMessage());
+  }
 }
 
 /**
