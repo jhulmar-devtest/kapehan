@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
   $loyaltyIdentifier = sanitizeString($_POST['loyalty_customer_identifier'] ?? '', 30);
   $redeemPoints = ($_POST['redeem_points'] ?? '') === '1';
   $redeemProductId = max(0, (int) ($_POST['loyalty_reward_product_id'] ?? 0));
+  $redeemGeneralPoints = max(0, (int) ($_POST['redeem_general_points'] ?? 0));
   if ($loyaltyType !== '' && !in_array($loyaltyType, [ROLE_STUDENT, ROLE_FACULTY], true)) $loyaltyType = '';
   if ($loyaltyIdentifier === '') $loyaltyType = '';
   if ($redeemPoints && $loyaltyType === '') {
@@ -109,7 +110,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $redemption = ['points' => 0, 'discount' => 0.0];
       if ($redeemPoints) {
         $customerBalance = loyaltyPointsBalance($db, $loyaltyType, $customerId);
-        $redemption = loyaltyRedemptionForProduct($db, $customerBalance, $redeemProductId, $details, $total);
+        if ($redeemGeneralPoints > 0 && $redeemProductId > 0) throw new RuntimeException('Choose either a drink reward or a points discount for this order.');
+        $redemption = $redeemGeneralPoints > 0
+          ? loyaltyRedemptionForGeneralDiscount($db, $customerBalance, $redeemGeneralPoints, $total)
+          : loyaltyRedemptionForProduct($db, $customerBalance, $redeemProductId, $details, $total);
         if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
       }
       $total = round($total - $redemption['discount'], 2);
@@ -153,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $paymentId = (int)$db->lastInsertId();
 
       if ($customer) {
-        loyaltyRedeemForOrder($db, $loyaltyType, $customerId, $orderId, $total + $redemption['discount'], $redeemPoints, ROLE_CASHIER, (int) currentUserId(), $redeemProductId, $details);
+        loyaltyRedeemForOrder($db, $loyaltyType, $customerId, $orderId, $total + $redemption['discount'], $redeemPoints, ROLE_CASHIER, (int) currentUserId(), $redeemProductId, $details, $redeemGeneralPoints);
         loyaltyAwardOrder($db, $orderId, ROLE_CASHIER, (int) currentUserId());
       }
 
@@ -1628,6 +1632,7 @@ layoutHeader('Walk-in POS', '');
   <input type="hidden" name="loyalty_customer_identifier" id="loyalty-identifier-data">
   <input type="hidden" name="redeem_points" id="redeem-points-data" value="0">
   <input type="hidden" name="loyalty_reward_product_id" id="loyalty-reward-product-data" value="0">
+  <input type="hidden" name="redeem_general_points" id="redeem-general-points-data" value="0">
 </form>
 
 <div class="pos-wrap">
@@ -1808,6 +1813,10 @@ layoutHeader('Walk-in POS', '');
         </div>
         <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
+          <input type="checkbox" id="pos-redeem-general" disabled> Use points for general discount
+        </label>
+        <small id="pos-general-redemption-hint" style="display:block;color:var(--text-muted);margin:4px 0">Look up a customer to see available points.</small>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
           <input type="checkbox" id="pos-redeem-points" disabled> Redeem points for one drink reward
         </label>
         <label for="pos-loyalty-reward-product" style="display:block;margin-top:8px;font-size:12px;color:var(--text-muted)">Reward drink in this order</label>
@@ -1925,6 +1934,7 @@ layoutHeader('Walk-in POS', '');
                             ?>;
   const cashDrawerOpen = <?= $drawerReady ? 'true' : 'false' ?>;
   const POS_LOYALTY_PRODUCT_REWARDS = <?= json_encode($loyaltyProductRewards, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const POS_LOYALTY_REDEMPTION_RULES = <?= json_encode(['points_step' => (int) loyaltyRules($db)['redemption_points_step'], 'discount_amount' => (float) loyaltyRules($db)['redemption_discount_amount']]) ?>;
 </script>
 
 <script>
@@ -1971,12 +1981,19 @@ layoutHeader('Walk-in POS', '');
     const discount = _discountType !== 'none' ? Math.round(vatExcl * 0.20 * 100) / 100 : 0;
     const afterPrivilege = Math.round((subtotal - discount) * 100) / 100;
     const redeemBox = document.getElementById('pos-redeem-points');
+    const generalBox = document.getElementById('pos-redeem-general');
     const rewardProductId = Number(document.getElementById('pos-loyalty-reward-product')?.value || 0);
     const reward = POS_LOYALTY_PRODUCT_REWARDS.find(item => Number(item.product_id) === rewardProductId);
     const rewardInCart = Object.values(cart).some(item => Number(item.productId) === rewardProductId && Number(item.price) >= Number(reward?.discount_amount || 0));
-    const eligible = !!reward && rewardInCart && (_loyaltyCustomer?.balance || 0) >= Number(reward.points_required) && afterPrivilege >= Number(reward.discount_amount);
-    const loyaltyPoints = redeemBox?.checked && eligible ? Number(reward.points_required) : 0;
-    const loyaltyDiscount = loyaltyPoints ? Number(reward.discount_amount) : 0;
+    const pointsStep = Number(POS_LOYALTY_REDEMPTION_RULES.points_step);
+    const discountStep = Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount);
+    const generalBlocks = Math.min(Math.floor(Number(_loyaltyCustomer?.balance || 0) / pointsStep), Math.floor((afterPrivilege + 0.001) / discountStep));
+    const generalEligible = generalBlocks > 0;
+    const eligible = !generalBox?.checked && !!reward && rewardInCart && (_loyaltyCustomer?.balance || 0) >= Number(reward.points_required) && afterPrivilege >= Number(reward.discount_amount);
+    const generalPoints = generalBox?.checked && generalEligible ? generalBlocks * pointsStep : 0;
+    const generalDiscount = generalPoints ? generalBlocks * discountStep : 0;
+    const loyaltyPoints = generalPoints || (redeemBox?.checked && eligible ? Number(reward.points_required) : 0);
+    const loyaltyDiscount = generalDiscount || (loyaltyPoints ? Number(reward.discount_amount) : 0);
     const total = Math.round((afterPrivilege - loyaltyDiscount) * 100) / 100;
     return {
       subtotal,
@@ -1984,8 +2001,9 @@ layoutHeader('Walk-in POS', '');
       discount,
       loyaltyPoints,
       loyaltyDiscount,
-      loyaltyRewardName: loyaltyPoints ? reward.name : '',
-      loyaltyRewardProductId: loyaltyPoints ? rewardProductId : 0,
+      loyaltyRewardName: generalPoints ? 'General points discount' : (loyaltyPoints ? reward.name : ''),
+      loyaltyRewardProductId: loyaltyPoints && !generalPoints ? rewardProductId : 0,
+      loyaltyGeneralPoints: generalPoints,
       total
     };
   }
@@ -1996,6 +2014,7 @@ layoutHeader('Walk-in POS', '');
     const identifier = document.getElementById('loyalty-customer-identifier').value.trim();
     const result = document.getElementById('loyalty-customer-result');
     const redeem = document.getElementById('pos-redeem-points');
+    const redeemGeneral = document.getElementById('pos-redeem-general');
     if (!identifier) {
       result.textContent = 'Enter a student or faculty ID first.';
       return;
@@ -2005,6 +2024,8 @@ layoutHeader('Walk-in POS', '');
     _loyaltyCustomer = null;
     redeem.checked = false;
     redeem.disabled = true;
+    redeemGeneral.checked = false;
+    redeemGeneral.disabled = true;
     renderCart();
     try {
       const response = await fetch(`${POS_APP_URL}/api/loyalty-customer-lookup.php`, {
@@ -2024,6 +2045,8 @@ layoutHeader('Walk-in POS', '');
       result.textContent = `${data.account.name} · ${data.account.balance} points available`;
       redeem.disabled = data.account.balance < Math.min(...POS_LOYALTY_PRODUCT_REWARDS.map(item => Number(item.points_required)), Infinity);
       redeem.title = redeem.disabled ? 'This account does not have enough points for an active drink reward.' : '';
+      redeemGeneral.disabled = data.account.balance < Number(POS_LOYALTY_REDEMPTION_RULES.points_step);
+      document.getElementById('pos-general-redemption-hint').textContent = `${POS_LOYALTY_REDEMPTION_RULES.discount_amount} off per ${POS_LOYALTY_REDEMPTION_RULES.points_step} points; use up to your balance and order total.`;
     } catch (error) {
       result.textContent = error.message;
     } finally {
@@ -2036,23 +2059,32 @@ layoutHeader('Walk-in POS', '');
   document.getElementById('loyalty-customer-identifier').addEventListener('input', () => {
     _loyaltyCustomer = null;
     const redeem = document.getElementById('pos-redeem-points');
+    const redeemGeneral = document.getElementById('pos-redeem-general');
     redeem.checked = false;
     redeem.disabled = true;
+    redeemGeneral.checked = false;
+    redeemGeneral.disabled = true;
     document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its ID.';
     renderCart();
   });
   document.getElementById('loyalty-customer-type').addEventListener('change', () => {
     _loyaltyCustomer = null;
     const redeem = document.getElementById('pos-redeem-points');
+    const redeemGeneral = document.getElementById('pos-redeem-general');
     redeem.checked = false;
     redeem.disabled = true;
+    redeemGeneral.checked = false;
+    redeemGeneral.disabled = true;
     document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its type.';
     renderCart();
   });
   document.getElementById('pos-redeem-points').addEventListener('change', () => {
+    if (document.getElementById('pos-redeem-points').checked) {
+      document.getElementById('pos-redeem-general').checked = false;
+    }
     if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < 1) {
       document.getElementById('pos-redeem-points').checked = false;
-      document.getElementById('loyalty-customer-result').textContent = 'Choose a configured reward drink that is in this order.';
+      document.getElementById('loyalty-customer-result').textContent = 'Choose an eligible drink reward in this order.';
     }
     renderCart();
     if (_payMethod === 'cash') calcChange();
@@ -2061,6 +2093,16 @@ layoutHeader('Walk-in POS', '');
   document.getElementById('pos-loyalty-reward-product').addEventListener('change', () => {
     const rewardId = Number(document.getElementById('pos-loyalty-reward-product').value || 0);
     document.getElementById('pos-redeem-points').checked = rewardId > 0;
+    if (rewardId > 0) document.getElementById('pos-redeem-general').checked = false;
+    renderCart();
+    if (_payMethod === 'cash') calcChange();
+    else onGcashRefInput();
+  });
+  document.getElementById('pos-redeem-general').addEventListener('change', () => {
+    if (document.getElementById('pos-redeem-general').checked) {
+      document.getElementById('pos-redeem-points').checked = false;
+      document.getElementById('pos-loyalty-reward-product').value = '';
+    }
     renderCart();
     if (_payMethod === 'cash') calcChange();
     else onGcashRefInput();
@@ -2203,6 +2245,20 @@ layoutHeader('Walk-in POS', '');
     if (!rewardSelect.value) rewardCheckbox.checked = false;
 
     let fin = getFinancials(getSubtotal());
+    const generalCheckbox = document.getElementById('pos-redeem-general');
+    const generalHint = document.getElementById('pos-general-redemption-hint');
+    const beforePoints = Math.round((fin.subtotal - fin.discount) * 100) / 100;
+    const generalBlocks = Math.min(Math.floor(Number(_loyaltyCustomer?.balance || 0) / Number(POS_LOYALTY_REDEMPTION_RULES.points_step)), Math.floor((beforePoints + 0.001) / Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount)));
+    generalCheckbox.disabled = !_loyaltyCustomer || generalBlocks < 1;
+    if (generalCheckbox.checked && generalBlocks < 1) {
+      generalCheckbox.checked = false;
+      fin = getFinancials(getSubtotal());
+    }
+    if (_loyaltyCustomer && generalHint) {
+      generalHint.textContent = generalBlocks > 0
+        ? `Available now: ${generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts for ₱${(generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount)).toFixed(2)} off.`
+        : `₱${Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount).toFixed(2)} off per ${Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts; points and order total limit redemption.`;
+    }
     const redeemControl = document.getElementById('pos-redeem-points');
     if (redeemControl.checked && fin.loyaltyPoints < 1) {
       redeemControl.checked = false;
@@ -2222,7 +2278,7 @@ layoutHeader('Walk-in POS', '');
     }
     const loyaltyRow = document.getElementById('tot-loyalty-row');
     loyaltyRow.style.display = fin.loyaltyDiscount > 0 ? '' : 'none';
-    document.getElementById('tot-loyalty-lbl').textContent = `Reward: ${fin.loyaltyRewardName} (${fin.loyaltyPoints} points)`;
+    document.getElementById('tot-loyalty-lbl').textContent = `${fin.loyaltyRewardName || 'Loyalty discount'} (${fin.loyaltyPoints} points)`;
     document.getElementById('tot-loyalty').textContent = '−₱' + fin.loyaltyDiscount.toFixed(2);
     document.getElementById('pos-total').textContent = '₱' + fin.total.toFixed(2);
     document.getElementById('pos-process-btn').disabled = !cashDrawerOpen;
@@ -2449,8 +2505,9 @@ layoutHeader('Walk-in POS', '');
     document.getElementById('discount-type-data').value = _discountType;
     document.getElementById('loyalty-type-data').value = _loyaltyCustomer?.type || '';
     document.getElementById('loyalty-identifier-data').value = _loyaltyCustomer?.identifier || '';
-    document.getElementById('redeem-points-data').value = document.getElementById('pos-redeem-points').checked ? '1' : '0';
+    document.getElementById('redeem-points-data').value = (document.getElementById('pos-redeem-points').checked || document.getElementById('pos-redeem-general').checked) ? '1' : '0';
     document.getElementById('loyalty-reward-product-data').value = fin.loyaltyRewardProductId;
+    document.getElementById('redeem-general-points-data').value = fin.loyaltyGeneralPoints;
 
     closeCashModal();
     document.getElementById('order-form').submit();

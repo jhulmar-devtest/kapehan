@@ -1842,9 +1842,10 @@ $storeClose = getSetting('store_close_time', '20:00');
             <span class="loyalty-cart-balance" id="loyaltyCartBalance"><?= number_format($loyaltyBalance) ?> pts</span>
           </div>
           <div class="loyalty-reward-list" id="loyaltyRewardList"></div>
-          <p class="cart-hint" id="loyaltyCartHint"><?= $loyaltyReady ? 'Add a reward drink to your cart to use your points.' : 'Points will be available after the loyalty database migration is applied.' ?></p>
+          <p class="cart-hint" id="loyaltyCartHint"><?= $loyaltyReady ? 'Use points for a general order discount or choose a reward drink.' : 'Points will be available after the loyalty database migration is applied.' ?></p>
           <!-- State holders for the cart script; the reward buttons above drive them. -->
           <input type="checkbox" id="redeemLoyaltyCheckbox" hidden tabindex="-1" aria-hidden="true">
+          <input type="checkbox" id="redeemLoyaltyGeneralCheckbox" hidden tabindex="-1" aria-hidden="true">
           <select id="loyaltyRewardProduct" hidden tabindex="-1" aria-hidden="true"><option value=""></option></select>
         </div>
         <div class="cart-total-row loyalty-subtotal-row" id="cartSubtotalRow" style="margin-top:12px">
@@ -2009,6 +2010,7 @@ $storeClose = getSetting('store_close_time', '20:00');
     window.GCASH_REF_DIGITS = <?= (int) GCASH_REF_DIGITS ?>;
     window.PAYMONGO_ENABLED = <?= paymongoEnabled() ? 'true' : 'false' ?>;
     window.LOYALTY_PRODUCT_REWARDS = <?= json_encode($loyaltyProductRewards, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    window.LOYALTY_REDEMPTION_RULES = <?= json_encode(['points_step' => (int) $loyaltyRules['redemption_points_step'], 'discount_amount' => (float) $loyaltyRules['redemption_discount_amount']]) ?>;
     window.LOYALTY_READY = <?= $loyaltyReady ? 'true' : 'false' ?>;
     if (!IS_LOGGED_IN) {
       sessionStorage.removeItem('shop_cart');

@@ -43,6 +43,8 @@ function loyaltyRules(PDO $db): array
   }
   return [
     'spend_per_point' => $spendPerPoint,
+    'redemption_points_step' => max(1, (int) getSetting('loyalty_redemption_points_step', '100')),
+    'redemption_discount_amount' => max(0.01, (float) getSetting('loyalty_redemption_discount_amount', '10.00')),
   ];
 }
 
@@ -122,6 +124,26 @@ function loyaltyRedemptionForProduct(PDO $db, int $balance, int $productId, arra
   ];
 }
 
+/** Validate the standard points-to-peso redemption against the priced order. */
+function loyaltyRedemptionForGeneralDiscount(PDO $db, int $balance, int $points, float $availableTotal): array
+{
+  $rules = loyaltyRules($db);
+  $step = (int) $rules['redemption_points_step'];
+  $discountPerStepCents = (int) round((float) $rules['redemption_discount_amount'] * 100);
+  $discountCents = intdiv(max(0, $points), $step) * $discountPerStepCents;
+  $availableCents = max(0, (int) round($availableTotal * 100));
+  if ($points < $step || $points % $step !== 0) {
+    return ['points' => 0, 'discount' => 0.0, 'product_id' => null, 'product_name' => null, 'message' => "Redeem points in blocks of {$step}."];
+  }
+  if ($points > $balance) {
+    return ['points' => 0, 'discount' => 0.0, 'product_id' => null, 'product_name' => null, 'message' => 'This account no longer has enough points.'];
+  }
+  if ($discountCents < 1 || $discountCents > $availableCents) {
+    return ['points' => 0, 'discount' => 0.0, 'product_id' => null, 'product_name' => null, 'message' => 'The points discount cannot exceed the order total.'];
+  }
+  return ['points' => $points, 'discount' => $discountCents / 100, 'product_id' => null, 'product_name' => null, 'message' => null];
+}
+
 function loyaltyPointsBalance(PDO $db, string $customerType, int $customerId): int
 {
   $config = loyaltyAccountConfig($customerType);
@@ -160,7 +182,8 @@ function loyaltyRedeemForOrder(
   string $actorType,
   ?int $actorId,
   ?int $rewardProductId = null,
-  array $details = []
+  array $details = [],
+  int $generalPoints = 0
 ): array {
   if (!$db->inTransaction()) throw new LogicException('Loyalty redemption must run inside the order transaction.');
   if (!$requested) return ['points' => 0, 'discount' => 0.0, 'balance' => loyaltyPointsBalance($db, $customerType, $customerId), 'product_id' => null, 'product_name' => null];
@@ -173,7 +196,12 @@ function loyaltyRedeemForOrder(
   if (!$lock->fetchColumn()) throw new RuntimeException('That loyalty account is no longer active.');
 
   $balance = loyaltyPointsBalance($db, $customerType, $customerId);
-  $redemption = loyaltyRedemptionForProduct($db, $balance, (int) $rewardProductId, $details, $amount);
+  if ($generalPoints > 0 && (int) $rewardProductId > 0) {
+    throw new RuntimeException('Choose either a drink reward or a points discount for this order.');
+  }
+  $redemption = $generalPoints > 0
+    ? loyaltyRedemptionForGeneralDiscount($db, $balance, $generalPoints, $amount)
+    : loyaltyRedemptionForProduct($db, $balance, (int) $rewardProductId, $details, $amount);
   if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
 
   $db->prepare(
@@ -188,7 +216,9 @@ function loyaltyRedeemForOrder(
     $redemption['discount'],
     $actorType,
     $actorId,
-    'Redeemed for ' . $redemption['product_name'] . ' (product #' . $redemption['product_id'] . ')',
+    $generalPoints > 0
+      ? 'Redeemed for general order discount'
+      : 'Redeemed for ' . $redemption['product_name'] . ' (product #' . $redemption['product_id'] . ')',
   ]);
 
   return [

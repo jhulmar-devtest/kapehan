@@ -24,6 +24,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(APP_URL . '/admin/loyalty.php#earn-rate');
     }
 
+    if ($action === 'save_redemption_rate') {
+      $pointsStep = filter_var($_POST['redemption_points_step'] ?? null, FILTER_VALIDATE_INT);
+      $discount = filter_var($_POST['redemption_discount_amount'] ?? null, FILTER_VALIDATE_FLOAT);
+      if ($pointsStep === false || $pointsStep < 1 || $pointsStep > 100000 || $discount === false || $discount <= 0 || $discount > 100000) {
+        throw new RuntimeException('Enter 1–100,000 points and a discount from ₱0.01 to ₱100,000.00.');
+      }
+      setSetting('loyalty_redemption_points_step', (string) $pointsStep);
+      setSetting('loyalty_redemption_discount_amount', number_format(round($discount, 2), 2, '.', ''));
+      auditLog(ROLE_ADMIN, (int) currentUserId(), 'update_loyalty_redemption_rate');
+      flash('global', 'General points redemption rate updated.', 'success');
+      redirect(APP_URL . '/admin/loyalty.php#redemption-rate');
+    }
+
     if ($action === 'adjust_points') {
       $type = sanitizeString($_POST['customer_type'] ?? '');
       $customerId = (int) ($_POST['customer_id'] ?? 0);
@@ -103,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Unable to save the loyalty change.', 'error');
     $suffix = $action === 'adjust_points'
       ? '?customer_type=' . urlencode((string) ($_POST['customer_type'] ?? '')) . '&customer_id=' . (int) ($_POST['customer_id'] ?? 0) . '#customer-ledger'
-      : ($action === 'save_earn_rate' ? '#earn-rate' : '#drink-rewards');
+      : ($action === 'save_earn_rate' ? '#earn-rate' : ($action === 'save_redemption_rate' ? '#redemption-rate' : '#drink-rewards'));
     redirect(APP_URL . '/admin/loyalty.php' . $suffix);
   }
 }
@@ -130,8 +143,14 @@ $accountStmt = $db->prepare($accountsSql);
 $accountStmt->execute($params);
 $customers = $accountStmt->fetchAll(PDO::FETCH_ASSOC);
 $totalCustomers = (int) $db->query('SELECT (SELECT COUNT(*) FROM students) + (SELECT COUNT(*) FROM faculty)')->fetchColumn();
-$activeRewardCount = (int) $db->query('SELECT COUNT(*) FROM loyalty_product_rewards WHERE is_active = 1')->fetchColumn();
+$activeRewardCount = (int) $db->query(
+  "SELECT COUNT(*) FROM loyalty_product_rewards r
+     JOIN products p ON p.id = r.product_id
+     JOIN categories c ON c.id = p.category_id
+    WHERE r.is_active = 1 AND p.is_available = 1 AND p.archived_at IS NULL AND c.archived_at IS NULL AND c.name != 'Add-ons'"
+)->fetchColumn();
 $spendPerPoint = loyaltyRules($db)['spend_per_point'];
+$redemptionRules = loyaltyRules($db);
 $products = $db->query(
   "SELECT p.id, p.name, p.price, p.is_available, r.points_required, r.discount_amount, r.is_active
      FROM products p JOIN categories c ON c.id = p.category_id
@@ -187,9 +206,15 @@ layoutHeader('Loyalty');
     flex-wrap: wrap
   }
 
+  .loyalty-page-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px
+  }
+
   .loyalty-summary {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px
   }
 
@@ -197,8 +222,8 @@ layoutHeader('Loyalty');
     display: flex;
     align-items: center;
     gap: 14px;
-    min-height: 94px;
-    padding: 17px 20px;
+    min-height: 98px;
+    padding: 16px 18px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -229,6 +254,11 @@ layoutHeader('Loyalty');
     letter-spacing: -.03em
   }
 
+  .loyalty-stat .stat-value-text {
+    font-size: 19px;
+    letter-spacing: -.02em
+  }
+
   .loyalty-stat>div>span {
     display: block;
     margin-top: 5px;
@@ -236,22 +266,42 @@ layoutHeader('Loyalty');
     font-size: 12px
   }
 
-  .earn-rate-layout {
+  .loyalty-rule-grid {
     display: grid;
-    grid-template-columns: minmax(220px, .8fr) minmax(280px, 1.2fr);
-    align-items: center;
-    gap: 20px
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px
+  }
+
+  .loyalty-rule-panel {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised)
+  }
+
+  .loyalty-rule-panel h3 {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4
+  }
+
+  .loyalty-rule-panel .rule-description {
+    margin: 5px 0 14px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5
   }
 
   .earn-rate-form {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: end;
-    gap: 10px;
-    flex-wrap: wrap
+    gap: 12px
   }
 
   .earn-rate-form .loyalty-field {
-    width: min(100%, 240px)
+    width: 100%
   }
 
   .earn-rate-form .btn {
@@ -262,7 +312,7 @@ layoutHeader('Loyalty');
     display: flex;
     align-items: flex-start;
     gap: 11px;
-    padding: 14px 16px;
+    padding: 11px 12px;
     border: 1px solid var(--status-preparing-border);
     border-radius: var(--radius-md);
     background: var(--status-preparing-bg);
@@ -286,6 +336,11 @@ layoutHeader('Loyalty');
   }
 
   .loyalty-card[id] {
+    scroll-margin-top: 84px
+  }
+
+  #redemption-rate,
+  #customer-points {
     scroll-margin-top: 84px
   }
 
@@ -335,6 +390,10 @@ layoutHeader('Loyalty');
     padding: 18px 22px 22px
   }
 
+  .loyalty-card-head .btn {
+    flex: 0 0 auto
+  }
+
   .loyalty-search {
     display: flex;
     align-items: center;
@@ -369,6 +428,10 @@ layoutHeader('Loyalty');
     color: var(--text-muted);
     font-size: 11px;
     white-space: nowrap
+  }
+
+  .loyalty-table tbody tr {
+    transition: background-color .15s ease
   }
 
   .loyalty-table-wrap {
@@ -609,7 +672,7 @@ layoutHeader('Loyalty');
   }
 
   .reward-cell {
-    min-width: 480px
+    min-width: 500px
   }
 
   .reward-edit-form {
@@ -645,6 +708,97 @@ layoutHeader('Loyalty');
     font-variant-numeric: tabular-nums
   }
 
+  .reward-config-state {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 3px 7px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700
+  }
+
+  .reward-config-state.active {
+    border-color: var(--status-ready-border);
+    background: var(--status-ready-bg);
+    color: var(--status-ready)
+  }
+
+  .reward-config-state.paused {
+    border-color: var(--status-preparing-border);
+    background: var(--status-preparing-bg);
+    color: var(--status-preparing)
+  }
+
+  .reward-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 14px
+  }
+
+  .reward-toolbar .loyalty-search-field {
+    max-width: 380px
+  }
+
+  .reward-toolbar .form-control {
+    min-height: 40px
+  }
+
+  .reward-filter-count {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap
+  }
+
+  .loyalty-audit {
+    overflow: hidden
+  }
+
+  .loyalty-audit summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 19px 22px;
+    cursor: pointer;
+    list-style: none
+  }
+
+  .loyalty-audit summary::-webkit-details-marker {
+    display: none
+  }
+
+  .loyalty-audit summary:focus-visible {
+    outline: 3px solid var(--primary-subtle);
+    outline-offset: -4px
+  }
+
+  .loyalty-audit summary .sub {
+    display: block
+  }
+
+  .loyalty-audit summary::after {
+    color: var(--text-muted);
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    content: "\f078";
+    transition: transform .18s ease
+  }
+
+  .loyalty-audit[open] summary::after {
+    transform: rotate(180deg)
+  }
+
+  .loyalty-audit-content {
+    padding: 0 22px 22px;
+    border-top: 1px solid var(--border-color)
+  }
+
   .reward-drink {
     min-width: 175px
   }
@@ -659,6 +813,10 @@ layoutHeader('Loyalty');
   }
 
   @media(max-width:1100px) {
+    .loyalty-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr))
+    }
+
     .loyalty-ledger-grid {
       grid-template-columns: 1fr
     }
@@ -669,7 +827,7 @@ layoutHeader('Loyalty');
   }
 
   @media(max-width:900px) {
-    .earn-rate-layout {
+    .loyalty-rule-grid {
       grid-template-columns: 1fr
     }
   }
@@ -717,6 +875,20 @@ layoutHeader('Loyalty');
     }
 
     .loyalty-result-count {
+      width: 100%;
+      margin: 0
+    }
+
+    .reward-toolbar {
+      flex-wrap: wrap
+    }
+
+    .reward-toolbar .loyalty-search-field {
+      flex-basis: 100%;
+      max-width: none
+    }
+
+    .reward-filter-count {
       width: 100%;
       margin: 0
     }
@@ -794,6 +966,18 @@ layoutHeader('Loyalty');
     .loyalty-page-actions .btn {
       flex: 1
     }
+
+    .loyalty-rule-panel {
+      padding: 14px
+    }
+
+    .loyalty-audit summary {
+      padding: 16px
+    }
+
+    .loyalty-audit-content {
+      padding: 0 16px 16px
+    }
   }
 </style>
 
@@ -801,14 +985,20 @@ layoutHeader('Loyalty');
   <div class="page-header">
     <div>
       <div class="page-header-title">Loyalty</div>
-      <div class="page-header-sub">Manage point earning, customer balances, and drink rewards.</div>
+      <div class="page-header-sub">Configure earning and redemption, review customer balances, and manage drink rewards.</div>
     </div>
-    <div class="loyalty-page-actions"><a class="btn btn-secondary" href="#earn-rate"><i class="fa-solid fa-coins"></i> Earn rate</a><a class="btn btn-outline" href="#drink-rewards"><i class="fa-solid fa-mug-hot"></i> Manage rewards</a></div>
+    <div class="loyalty-page-actions"><a class="btn btn-secondary" href="#earn-rate"><i class="fa-solid fa-sliders"></i> Program rules</a><a class="btn btn-outline" href="#customer-points"><i class="fa-solid fa-users"></i> Customers</a><a class="btn btn-outline" href="#drink-rewards"><i class="fa-solid fa-mug-hot"></i> Drink rewards</a></div>
   </div>
   <?php showFlash('global'); ?>
   <div class="loyalty-summary">
     <div class="loyalty-stat"><span class="loyalty-stat-icon"><i class="fa-solid fa-users"></i></span>
       <div><strong><?= number_format($totalCustomers) ?></strong><span>Student and faculty accounts</span></div>
+    </div>
+    <div class="loyalty-stat"><span class="loyalty-stat-icon"><i class="fa-solid fa-arrow-trend-up"></i></span>
+      <div><strong class="stat-value-text"><?= $spendPerPoint > 0 ? '₱' . number_format($spendPerPoint, 2) : 'Off' ?></strong><span>Spend to earn 1 point</span></div>
+    </div>
+    <div class="loyalty-stat"><span class="loyalty-stat-icon"><i class="fa-solid fa-tag"></i></span>
+      <div><strong class="stat-value-text">₱<?= number_format((float) $redemptionRules['redemption_discount_amount'], 2) ?></strong><span>Per <?= number_format((int) $redemptionRules['redemption_points_step']) ?> points</span></div>
     </div>
     <div class="loyalty-stat"><span class="loyalty-stat-icon"><i class="fa-solid fa-mug-hot"></i></span>
       <div><strong><?= number_format($activeRewardCount) ?></strong><span>Active drink rewards</span></div>
@@ -819,22 +1009,36 @@ layoutHeader('Loyalty');
     <div class="loyalty-card-head">
       <div class="loyalty-card-head-copy"><span class="loyalty-section-icon"><i class="fa-solid fa-coins"></i></span>
         <div>
-          <h2>Points earning rate</h2>
-          <p class="sub">Choose how much a customer needs to spend to earn one point.</p>
+          <h2>Loyalty rules</h2>
+          <p class="sub">Set how customers earn points and convert them into discounts.</p>
         </div>
       </div>
     </div>
     <div class="loyalty-card-body">
-      <div class="earn-rate-layout">
-        <form method="POST" class="earn-rate-form"><?= csrfField() ?><input type="hidden" name="action" value="save_earn_rate">
-          <div class="loyalty-field"><label for="spend-per-point">Spend required for 1 point</label><input class="form-control" id="spend-per-point" type="number" name="spend_per_point" min="0" max="100000" step="0.01" required value="<?= number_format($spendPerPoint, 2, '.', '') ?>"><small>Enter an amount in Philippine pesos. Use ₱0.00 to turn earning off.</small></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save rate</button>
-        </form>
-        <div class="earn-rate-example"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Points are awarded after a paid order is claimed. For example, a rate of <strong>₱10.00</strong> gives 1 point per ₱10 spent; ₱30 spent earns 3 points.</span></div>
+      <div class="loyalty-rule-grid">
+        <div class="loyalty-rule-panel">
+          <h3>Points earning rate</h3>
+          <p class="rule-description">Set how much a customer spends to earn one point. Points post after a paid order is claimed.</p>
+          <form method="POST" class="earn-rate-form"><?= csrfField() ?><input type="hidden" name="action" value="save_earn_rate">
+            <div class="loyalty-field"><label for="spend-per-point">Spend required for 1 point</label><input class="form-control" id="spend-per-point" type="number" name="spend_per_point" min="0" max="100000" step="0.01" required value="<?= number_format($spendPerPoint, 2, '.', '') ?>"><small>Enter an amount in pesos. Set to ₱0.00 to pause earning.</small></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save earning rate</button>
+          </form>
+          <div class="earn-rate-example" style="margin-top:14px"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span><?= $spendPerPoint > 0 ? 'At ₱' . number_format($spendPerPoint, 2) . ' per point, a ₱30 order earns ' . number_format((int) floor(30 / $spendPerPoint)) . ' points.' : 'Point earning is paused. Customers can still redeem existing points.' ?></span></div>
+        </div>
+        <div class="loyalty-rule-panel" id="redemption-rate">
+          <h3>General points redemption</h3>
+          <p class="rule-description">Give customers a simple discount they can use on any order. Drink rewards remain optional alternatives.</p>
+          <form method="POST" class="earn-rate-form"><?= csrfField() ?><input type="hidden" name="action" value="save_redemption_rate">
+            <div class="loyalty-field"><label for="redemption-points-step">Points per block</label><input class="form-control" id="redemption-points-step" type="number" name="redemption_points_step" min="1" max="100000" step="1" required value="<?= (int) $redemptionRules['redemption_points_step'] ?>"></div>
+            <div class="loyalty-field"><label for="redemption-discount-amount">Discount per block (₱)</label><input class="form-control" id="redemption-discount-amount" type="number" name="redemption_discount_amount" min="0.01" max="100000" step="0.01" required value="<?= number_format((float) $redemptionRules['redemption_discount_amount'], 2, '.', '') ?>"></div>
+            <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save redemption rate</button>
+          </form>
+          <div class="earn-rate-example" style="margin-top:14px"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Customers redeem full blocks, up to their balance and order total. Only one redemption type can be used per order.</span></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="loyalty-card">
+  <section class="loyalty-card" id="customer-points">
     <div class="loyalty-card-head">
       <div class="loyalty-card-head-copy"><span class="loyalty-section-icon"><i class="fa-solid fa-users"></i></span>
         <div>
@@ -906,13 +1110,13 @@ layoutHeader('Loyalty');
             </div><span class="loyalty-balance-value"><?= number_format($selectedCustomer['balance']) ?> pts</span>
           </div>
           <form method="POST" class="loyalty-adjust-form"><?= csrfField() ?><input type="hidden" name="action" value="adjust_points"><input type="hidden" name="customer_type" value="<?= e($selectedType) ?>"><input type="hidden" name="customer_id" value="<?= (int) $selectedCustomer['id'] ?>">
-            <div class="loyalty-field"><label for="points-delta">Points</label><input class="form-control" id="points-delta" type="number" name="points_delta" min="-100000" max="100000" step="1" required placeholder="e.g. 50"></div>
-            <div class="loyalty-field"><label for="points-note">Reason</label><input class="form-control" id="points-note" type="text" name="note" maxlength="255" minlength="5" required placeholder="Why are you adjusting the balance?"></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-plus-minus"></i> Post adjustment</button>
+            <div class="loyalty-field"><label for="points-delta">Points to add or remove</label><input class="form-control" id="points-delta" type="number" name="points_delta" min="-100000" max="100000" step="1" required placeholder="e.g. 50 or -20"><small>Use a positive value to add, negative to remove.</small></div>
+            <div class="loyalty-field"><label for="points-note">Reason for adjustment</label><input class="form-control" id="points-note" type="text" name="note" maxlength="255" minlength="5" required placeholder="e.g. Corrected missed order points"></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-plus-minus"></i> Post adjustment</button>
           </form>
         </div>
         <aside class="loyalty-ledger-help"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
           <div><strong>How points move</strong>
-            <p>Earns post after paid pickup. Redemptions are deducted at checkout and linked to the reward drink. Cancellations create reversal entries.</p>
+            <p>Points post after paid pickup. Redemptions are deducted at checkout; cancellations add reversal entries. Manual changes are recorded with your reason and admin account.</p>
           </div>
         </aside>
       </div>
@@ -960,18 +1164,28 @@ layoutHeader('Loyalty');
       </div>
     </div>
     <div class="loyalty-card-body">
+      <div class="reward-toolbar">
+        <div class="loyalty-search-field"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input class="form-control" id="rewardSearch" type="search" placeholder="Search drinks" aria-label="Search drink rewards"></div>
+        <select class="form-control" id="rewardStatusFilter" aria-label="Filter drink rewards" style="width:auto;min-width:150px">
+          <option value="all">All drinks</option>
+          <option value="active">Active rewards</option>
+          <option value="paused">Paused rewards</option>
+          <option value="unset">No reward set</option>
+        </select>
+        <span class="reward-filter-count" id="rewardFilterCount"><?= number_format(count($products)) ?> drinks</span>
+      </div>
       <div class="loyalty-table-wrap">
         <table class="loyalty-table">
           <thead>
             <tr>
               <th>Drink</th>
               <th>Base price</th>
-              <th>Reward rule</th>
+              <th>Reward setup</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($products as $product): ?><tr>
-                <td class="reward-drink"><strong><?= e($product['name']) ?></strong><?php if (!(int) $product['is_available']): ?><small>Not currently available for sale</small><?php endif; ?></td>
+            <?php foreach ($products as $product): $rewardStatus = $product['points_required'] === null ? 'unset' : ((int) ($product['is_active'] ?? 0) ? 'active' : 'paused'); ?><tr class="reward-row" data-name="<?= e(strtolower($product['name'])) ?>" data-status="<?= e($rewardStatus) ?>">
+                <td class="reward-drink"><strong><?= e($product['name']) ?></strong><span class="reward-config-state <?= e($rewardStatus) ?>"><?= $rewardStatus === 'unset' ? 'Not configured' : ($rewardStatus === 'active' ? 'Active reward' : 'Paused') ?></span><?php if (!(int) $product['is_available']): ?><small>Not currently available for sale</small><?php endif; ?></td>
                 <td class="reward-price">₱<?= number_format((float) $product['price'], 2) ?></td>
                 <td class="reward-cell">
                   <form method="POST" class="reward-edit-form"><?= csrfField() ?><input type="hidden" name="action" value="save_drink_reward"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
@@ -980,22 +1194,20 @@ layoutHeader('Loyalty');
                   </form>
                 </td>
               </tr><?php endforeach; ?>
+            <tr id="rewardNoResults" hidden><td colspan="3" class="loyalty-empty">No drinks match those filters.</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </section>
 
-  <section class="loyalty-card">
-    <div class="loyalty-card-head">
-      <div class="loyalty-card-head-copy"><span class="loyalty-section-icon"><i class="fa-solid fa-list-check"></i></span>
-        <div>
-          <h2>Reward rule history</h2>
-          <p class="sub">The latest 100 changes, showing the previous and new terms and the admin who saved them.</p>
-        </div>
-      </div>
-    </div>
-    <div class="loyalty-card-body">
+  <details class="loyalty-card loyalty-audit">
+    <summary>
+      <span class="loyalty-card-head-copy"><span class="loyalty-section-icon"><i class="fa-solid fa-list-check"></i></span>
+        <span><span style="display:block;font-size:15px;font-weight:700">Reward rule history</span><span class="sub">Latest <?= number_format(count($rewardAudit)) ?> changes, with previous and new terms.</span></span>
+      </span>
+    </summary>
+    <div class="loyalty-audit-content">
       <div class="loyalty-table-wrap">
         <table class="loyalty-table reward-audit-table">
           <thead>
@@ -1024,6 +1236,33 @@ layoutHeader('Loyalty');
         </table>
       </div>
     </div>
-  </section>
+  </details>
 </div>
+<script>
+  (() => {
+    const search = document.getElementById('rewardSearch');
+    const status = document.getElementById('rewardStatusFilter');
+    const count = document.getElementById('rewardFilterCount');
+    const empty = document.getElementById('rewardNoResults');
+    const rows = Array.from(document.querySelectorAll('.reward-row'));
+    if (!search || !status || !count || !empty) return;
+
+    const filterRewards = () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      const selectedStatus = status.value;
+      let visible = 0;
+      rows.forEach((row) => {
+        const matches = row.dataset.name.includes(query)
+          && (selectedStatus === 'all' || row.dataset.status === selectedStatus);
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      empty.hidden = visible > 0;
+      count.textContent = `${visible} of ${rows.length} drinks`;
+    };
+
+    search.addEventListener('input', filterRewards);
+    status.addEventListener('change', filterRewards);
+  })();
+</script>
 <?php layoutFooter(); ?>

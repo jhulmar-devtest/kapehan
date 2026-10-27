@@ -280,7 +280,7 @@ function renderCartSidebar(refreshSlots = true) {
   const discountRow = document.getElementById("cartLoyaltyDiscountRow");
   if (discountRow) {
     discountRow.hidden = redemption.discount <= 0;
-    if (discountRow.firstElementChild) discountRow.firstElementChild.textContent = redemption.productName ? `Reward · ${redemption.productName}` : "Drink reward";
+    if (discountRow.firstElementChild) discountRow.firstElementChild.textContent = redemption.productId ? `Reward · ${redemption.productName}` : "Points discount";
   }
   const discountEl = document.getElementById("cartLoyaltyDiscount");
   if (discountEl)
@@ -302,6 +302,11 @@ function updateLoyaltyRewardChoices(cart) {
   if (!select || !checkbox) return;
   const balance = Number(window.LOYALTY_BALANCE || 0);
   const previous = select.value;
+  const generalCheckbox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+  const rules = window.LOYALTY_REDEMPTION_RULES || { points_step: 100, discount_amount: 10 };
+  const orderValue = cart.reduce((sum, item) => sum + Number(item.unit_price ?? item.price ?? 0) * Number(item.qty || 1), 0);
+  const generalBlocks = Math.min(Math.floor(balance / Number(rules.points_step)), Math.floor((orderValue + 0.001) / Number(rules.discount_amount)));
+  if (generalCheckbox?.checked && generalBlocks < 1) generalCheckbox.checked = false;
   const allRewards = window.LOYALTY_PRODUCT_REWARDS || [];
   // Rewards whose drink is in the cart (at a price the discount fits within).
   const inCartRewards = allRewards.filter((reward) =>
@@ -339,7 +344,7 @@ function updateLoyaltyRewardChoices(cart) {
     if (!window.LOYALTY_READY) {
       hint.textContent = "Points are not available yet.";
     } else if (inCartRewards.length) {
-      hint.textContent = "Tap a reward to use your points. One reward per order.";
+      hint.textContent = "Choose a general discount or one drink reward per order.";
     } else {
       const affordable = allRewards.filter((r) => balance >= Number(r.points_required));
       if (affordable.length) {
@@ -351,7 +356,7 @@ function updateLoyaltyRewardChoices(cart) {
         );
         hint.textContent = `${Number(next.points_required) - balance} more points to unlock ${next.name}.`;
       } else {
-        hint.textContent = "There are no drink rewards right now.";
+        hint.textContent = "The general order discount is available when you have enough points. There are no drink rewards right now.";
       }
     }
   }
@@ -363,6 +368,42 @@ function renderLoyaltyRewardList(rewards, balance, selectedId) {
   const list = document.getElementById("loyaltyRewardList");
   if (!list) return;
   list.replaceChildren();
+  const generalCheckbox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+  const rules = window.LOYALTY_REDEMPTION_RULES || { points_step: 100, discount_amount: 10 };
+  const orderValue = getCart().reduce((sum, item) => sum + Number(item.unit_price ?? item.price ?? 0) * Number(item.qty || 1), 0);
+  const blocks = Math.min(Math.floor(balance / Number(rules.points_step)), Math.floor((orderValue + 0.001) / Number(rules.discount_amount)));
+  const general = document.createElement("button");
+  general.type = "button";
+  general.className = "loyalty-reward-btn" + (generalCheckbox?.checked ? " is-selected" : "") + (blocks ? "" : " is-locked");
+  general.disabled = blocks < 1;
+  general.setAttribute("aria-pressed", String(!!generalCheckbox?.checked));
+  const generalMain = document.createElement("span");
+  generalMain.className = "loyalty-reward-main";
+  const generalName = document.createElement("span");
+  generalName.className = "loyalty-reward-name";
+  generalName.textContent = "General order discount";
+  const generalSub = document.createElement("span");
+  generalSub.className = "loyalty-reward-sub";
+  generalSub.textContent = blocks
+    ? `${formatPeso(blocks * Number(rules.discount_amount))} off · ${blocks * Number(rules.points_step)} pts`
+    : balance < Number(rules.points_step)
+      ? `₱${Number(rules.discount_amount).toFixed(2)} off needs ${Number(rules.points_step)} pts`
+      : `Add ${formatPeso(Number(rules.discount_amount) - orderValue)} to use points`;
+  generalMain.append(generalName, generalSub);
+  const generalState = document.createElement("span");
+  generalState.className = "loyalty-reward-state";
+  generalState.textContent = generalCheckbox?.checked ? "Applied ✓" : blocks ? "Use points" : `${Math.max(0, Number(rules.points_step) - balance)} more pts`;
+  general.append(generalMain, generalState);
+  general.addEventListener("click", () => {
+    const productCheckbox = document.getElementById("redeemLoyaltyCheckbox");
+    const productSelect = document.getElementById("loyaltyRewardProduct");
+    const wasSelected = !!generalCheckbox?.checked;
+    if (generalCheckbox) generalCheckbox.checked = !wasSelected;
+    if (productCheckbox) productCheckbox.checked = false;
+    if (productSelect) productSelect.value = "";
+    renderCartSidebar(false);
+  });
+  list.appendChild(general);
   rewards.forEach((reward) => {
     const points = Number(reward.points_required);
     const affordable = balance >= points;
@@ -412,12 +453,22 @@ function selectLoyaltyReward(productId, alreadySelected) {
   } else {
     select.value = String(productId);
     checkbox.checked = true;
+    const generalCheckbox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+    if (generalCheckbox) generalCheckbox.checked = false;
   }
   renderCartSidebar(false);
 }
 
 function getCartLoyaltyRedemption(cart = getCart()) {
   const checkbox = document.getElementById("redeemLoyaltyCheckbox");
+  const generalCheckbox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+  if (generalCheckbox?.checked) {
+    const rules = window.LOYALTY_REDEMPTION_RULES || { points_step: 100, discount_amount: 10 };
+    const balance = Number(window.LOYALTY_BALANCE || 0);
+    const total = cart.reduce((sum, item) => sum + Number(item.unit_price ?? item.price ?? 0) * Number(item.qty || 1), 0);
+    const blocks = Math.min(Math.floor(balance / Number(rules.points_step)), Math.floor((total + 0.001) / Number(rules.discount_amount)));
+    return { points: blocks * Number(rules.points_step), discount: blocks * Number(rules.discount_amount), productId: 0, productName: "General order discount" };
+  }
   const productId = Number(document.getElementById("loyaltyRewardProduct")?.value || 0);
   if (!checkbox?.checked || !productId) return { points: 0, discount: 0, productId: 0 };
   const reward = (window.LOYALTY_PRODUCT_REWARDS || []).find(
@@ -848,8 +899,9 @@ function submitOrder() {
       document.getElementById("deliveryLocation")?.value.trim() || "",
     pickup_date: pickupDate,
     pickup_time: pickupTimeEl.value,
-    redeem_points: !!document.getElementById("redeemLoyaltyCheckbox")?.checked,
+    redeem_points: !!document.getElementById("redeemLoyaltyCheckbox")?.checked || !!document.getElementById("redeemLoyaltyGeneralCheckbox")?.checked,
     redeem_product_id: getCartLoyaltyRedemption(cart).productId,
+    redeem_general_points: document.getElementById("redeemLoyaltyGeneralCheckbox")?.checked ? getCartLoyaltyRedemption(cart).points : 0,
   };
   placeBtn.disabled = true;
   placeBtn.textContent = "Submitting…";
@@ -872,6 +924,8 @@ function submitOrder() {
         saveCart([]);
         const redeemBox = document.getElementById("redeemLoyaltyCheckbox");
         if (redeemBox) redeemBox.checked = false;
+        const generalBox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+        if (generalBox) generalBox.checked = false;
         const rewardPick = document.getElementById("loyaltyRewardProduct");
         if (rewardPick) rewardPick.value = "";
         window.location.href = res.redirect_url;
@@ -881,13 +935,15 @@ function submitOrder() {
         saveCart([]);
         const redeemCheckbox = document.getElementById("redeemLoyaltyCheckbox");
         if (redeemCheckbox) redeemCheckbox.checked = false;
+        const generalCheckbox = document.getElementById("redeemLoyaltyGeneralCheckbox");
+        if (generalCheckbox) generalCheckbox.checked = false;
         const rewardSelect = document.getElementById("loyaltyRewardProduct");
         if (rewardSelect) rewardSelect.value = "";
         if (Number.isFinite(Number(res.loyalty_balance)))
           window.LOYALTY_BALANCE = Number(res.loyalty_balance);
         const loyaltyHint = document.getElementById("loyaltyCartHint");
         if (loyaltyHint)
-          loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · choose a reward drink in your cart`;
+          loyaltyHint.textContent = `${window.LOYALTY_BALANCE || 0} points available · choose a discount or drink reward`;
         closePaymentModal();
         closeCart();
         openConfirmModal(res, { pickupLabel, pickupDate });
@@ -1010,6 +1066,9 @@ document.addEventListener("DOMContentLoaded", () => {
     ?.addEventListener("input", updateProceedButton);
   document
     .getElementById("redeemLoyaltyCheckbox")
+    ?.addEventListener("change", () => renderCartSidebar(false));
+  document
+    .getElementById("redeemLoyaltyGeneralCheckbox")
     ?.addEventListener("change", () => renderCartSidebar(false));
   document
     .getElementById("loyaltyRewardProduct")

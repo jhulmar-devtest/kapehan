@@ -52,6 +52,8 @@ $pickupTime  = sanitizeString($data['pickup_time'] ?? '', 10);
 $redeemPoints = filter_var($data['redeem_points'] ?? false, FILTER_VALIDATE_BOOLEAN);
 $redeemProductId = filter_var($data['redeem_product_id'] ?? 0, FILTER_VALIDATE_INT);
 $redeemProductId = $redeemProductId === false ? 0 : max(0, (int) $redeemProductId);
+$redeemGeneralPoints = filter_var($data['redeem_general_points'] ?? 0, FILTER_VALIDATE_INT);
+$redeemGeneralPoints = $redeemGeneralPoints === false ? 0 : max(0, (int) $redeemGeneralPoints);
 
 // Pickup is same-day only. Validate the chosen slot itself rather than
 // rejecting orders just because the current time is outside store hours.
@@ -134,7 +136,7 @@ $manualPaymentError = function () use (&$ref, $db): ?array {
 
 // A customer redeeming a reward may end up with a free order, which has no
 // payment at all. Defer the payment checks for them until the total is known.
-$mayBeFree = $redeemPoints && $redeemProductId > 0;
+$mayBeFree = $redeemPoints && ($redeemProductId > 0 || $redeemGeneralPoints > 0);
 if (!$viaGateway && !$mayBeFree && ($paymentError = $manualPaymentError())) {
   http_response_code($paymentError[0]);
   echo json_encode(['ok' => false, 'message' => $paymentError[1]]);
@@ -218,7 +220,10 @@ try {
     $accountLock = $db->prepare('SELECT id FROM ' . $accountConfig['table'] . ' WHERE id = ? AND is_active = 1 FOR UPDATE');
     $accountLock->execute([$customerId]);
     if (!$accountLock->fetchColumn()) throw new RuntimeException('Your account cannot redeem points right now.');
-    $redemption = loyaltyRedemptionForProduct($db, loyaltyPointsBalance($db, $role, $customerId), $redeemProductId, $details, $total);
+    if ($redeemGeneralPoints > 0 && $redeemProductId > 0) throw new RuntimeException('Choose either a drink reward or a points discount for this order.');
+    $redemption = $redeemGeneralPoints > 0
+      ? loyaltyRedemptionForGeneralDiscount($db, loyaltyPointsBalance($db, $role, $customerId), $redeemGeneralPoints, $total)
+      : loyaltyRedemptionForProduct($db, loyaltyPointsBalance($db, $role, $customerId), $redeemProductId, $details, $total);
     if ($redemption['points'] < 1) throw new RuntimeException($redemption['message'] ?? 'That drink reward is no longer available.');
   }
   $total = round($total - $redemption['discount'], 2);
@@ -294,7 +299,7 @@ try {
     )->execute([$orderId, $method, $total, $payStatus, $ref ?: null, gcashPaymentName(), gcashPaymentNumber(), $paidAt]);
   }
 
-  $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId, $redeemProductId, $details);
+  $redemptionResult = loyaltyRedeemForOrder($db, $role, $customerId, $orderId, array_sum(array_column($details, 'sub')), $redeemPoints, $role, $customerId, $redeemProductId, $details, $redeemGeneralPoints);
 
   $db->commit();
   gcashRefUnlock($db, $gcashRefLockName);
