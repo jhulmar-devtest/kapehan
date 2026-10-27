@@ -743,7 +743,7 @@ function renderOrderTimeline(string $status): string
                       <a class="btn btn-sm btn-outline" data-pay-actions href="<?= e($payUrl) ?>&amp;cancelled=1">Cancel</a>
                     <?php endif; ?>
                     <?php if ($group === 'completed' && empty($o['feedback_id'])): ?>
-                      <button class="btn btn-sm btn-outline" onclick="openRateModal(<?= $o['id'] ?>)">Rate Order</button>
+                      <button class="btn btn-sm btn-outline" data-rate-btn onclick="openRateModal(<?= $o['id'] ?>)">Rate Order</button>
                     <?php endif; ?>
                     <button class="btn btn-sm btn-primary" onclick="reorder(<?= $o['id'] ?>)">Reorder</button>
                   </div>
@@ -964,10 +964,9 @@ function renderOrderTimeline(string $status): string
       }
     });
 
-    /* ── Live order-status polling (item: "what happens next") ──
+    /* ── Live order-status polling ──
        Ongoing orders (pending/preparing/ready) are re-checked every
-       20s so a customer sees "Ready for pickup" the moment the
-       cashier updates it, without needing to refresh the page. */
+       20s so status and available actions stay current without a reload. */
     const STEP_ORDER = ['pending', 'preparing', 'ready', 'claimed'];
     const STEP_LABELS = {
       pending: 'Pending',
@@ -1042,6 +1041,21 @@ function renderOrderTimeline(string $status): string
                 btn.onclick = () => openQrModal(o.id, row.dataset.orderNumber);
                 actions.prepend(btn);
               }
+            } else if (o.status === 'claimed') {
+              const actions = row.querySelector('[data-order-actions]');
+              actions?.querySelectorAll('[data-qr-btn]').forEach(btn => btn.remove());
+
+              if (qrCurrentOrderId === Number(o.id)) closeQrModal();
+
+              if (actions && !o.has_feedback && !actions.querySelector('[data-rate-btn]')) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-sm btn-outline';
+                btn.setAttribute('data-rate-btn', '');
+                btn.textContent = 'Rate Order';
+                btn.onclick = () => openRateModal(o.id);
+                actions.insertBefore(btn, actions.querySelector('button[onclick^="reorder"]') || null);
+              }
+              showToast('success', `Order ${row.dataset.orderNumber} has been claimed.`, 6000);
             } else if (o.status === 'cancelled' || o.status === 'no_show') {
               showToast('warning', `Order ${row.dataset.orderNumber} was cancelled.`, 8000);
             }

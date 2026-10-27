@@ -5,7 +5,7 @@
 // manual page refresh. Mirrors the XHR-gated pattern used by
 // api/preorder-badge.php for the cashier sidebar.
 //
-// Returns JSON: { orders: [ { id, status, awaiting_payment }, ... ] }
+// Returns JSON: { orders: [ { id, status, awaiting_payment, has_feedback }, ... ] }
 // awaiting_payment is true while an online (PayMongo) order is still unpaid.
 
 require_once __DIR__ . '/../../config/init.php';
@@ -34,8 +34,10 @@ if (empty($ids)) {
 $db = Database::getInstance();
 $placeholders = implode(',', array_fill(0, count($ids), '?'));
 $sql = "SELECT o.id, o.status,
-               (p.gateway = 'paymongo' AND p.payment_status = 'pending' AND o.status = 'pending') AS awaiting_payment
+               (p.gateway = 'paymongo' AND p.payment_status = 'pending' AND o.status = 'pending') AS awaiting_payment,
+               (f.id IS NOT NULL) AS has_feedback
           FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+          LEFT JOIN order_feedback f ON f.order_id = o.id
          WHERE o.{$fkColumn} = ? AND o.id IN ({$placeholders})";
 $stmt = $db->prepare($sql);
 $stmt->execute(array_merge([$userId], $ids));
@@ -52,6 +54,7 @@ foreach ($rows as &$row) {
     }
   }
   $row['awaiting_payment'] = (int) $row['awaiting_payment'] === 1;
+  $row['has_feedback'] = (int) $row['has_feedback'] === 1;
 }
 unset($row);
 
