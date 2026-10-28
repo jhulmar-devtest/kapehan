@@ -89,8 +89,8 @@ try {
 
   if ($qty > 0) {
     $db->prepare(
-      "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, actor_role, actor_id) VALUES (?, ?, 'restock', ?, ?)"
-    )->execute([$newId, $qty, ROLE_ADMIN, currentUserId()]);
+      "INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, actor_role, actor_id) VALUES (?, ?, ?, 'restock', ?, ?)"
+    )->execute([$newId, $qty, $cost, ROLE_ADMIN, currentUserId()]);
   }
 
   auditLog(ROLE_ADMIN, currentUserId(), 'add_inventory_item', 'inventory_items', $newId);

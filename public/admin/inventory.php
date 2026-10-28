@@ -22,23 +22,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['adjust_item'])) {
   $id     = (int) ($_POST['item_id'] ?? 0);
   $reason = in_array($_POST['reason'] ?? '', ['restock', 'waste', 'correction'], true) ? $_POST['reason'] : 'correction';
   $amount = round((float) ($_POST['amount'] ?? 0), 3);
+  $restockCostRaw = trim((string) ($_POST['restock_cost_per_unit'] ?? ''));
   // Supplier only makes sense for a restock — ignored for waste/correction either way.
   $supplier = $reason === 'restock' ? sanitizeString($_POST['supplier'] ?? '', 150) : null;
   if ($supplier === '') $supplier = null;
   // Waste always subtracts, restock always adds, correction uses the sign the admin typed
   $change = $reason === 'waste' ? -abs($amount) : ($reason === 'restock' ? abs($amount) : $amount);
 
+  if ($reason === 'restock' && ($restockCostRaw === '' || !is_numeric($restockCostRaw) || (float) $restockCostRaw < 0)) {
+    flash('global', 'Enter the purchase cost per unit for this restock.', 'error');
+    redirect(APP_URL . '/admin/inventory.php');
+  }
+
   if ($id && $amount != 0) {
-    $db->prepare("UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ? WHERE id = ? AND archived_at IS NULL")->execute([$change, $id]);
+    $costStmt = $db->prepare('SELECT cost_per_unit FROM inventory_items WHERE id = ? AND archived_at IS NULL');
+    $costStmt->execute([$id]);
+    $currentCost = $costStmt->fetchColumn();
+    if ($currentCost === false) {
+      flash('global', 'Inventory item not found.', 'error');
+      redirect(APP_URL . '/admin/inventory.php');
+    }
+    $costSnapshot = $reason === 'restock' ? round((float) $restockCostRaw, 2) : (float) $currentCost;
+    if ($reason === 'restock') {
+      $db->prepare("UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ?, cost_per_unit = ? WHERE id = ? AND archived_at IS NULL")
+        ->execute([$change, $costSnapshot, $id]);
+    } else {
+      $db->prepare("UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ? WHERE id = ? AND archived_at IS NULL")->execute([$change, $id]);
+    }
     try {
       $db->prepare(
-        "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, supplier, actor_role, actor_id) VALUES (?, ?, ?, ?, ?, ?)"
-      )->execute([$id, $change, $reason, $supplier, ROLE_ADMIN, currentUserId()]);
+        "INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, supplier, actor_role, actor_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )->execute([$id, $change, $costSnapshot, $reason, $supplier, ROLE_ADMIN, currentUserId()]);
     } catch (\Throwable $e) {
       // supplier column migration not run yet — log without it rather than failing the whole adjustment
       $db->prepare(
-        "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, actor_role, actor_id) VALUES (?, ?, ?, ?, ?)"
-      )->execute([$id, $change, $reason, ROLE_ADMIN, currentUserId()]);
+        "INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, actor_role, actor_id) VALUES (?, ?, ?, ?, ?, ?)"
+      )->execute([$id, $change, $costSnapshot, $reason, ROLE_ADMIN, currentUserId()]);
     }
     auditLog(ROLE_ADMIN, currentUserId(), 'adjust_inventory', 'inventory_items', $id);
     flash('global', 'Stock updated.', 'success');
@@ -72,8 +91,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_item'])) {
 
     try {
       $db->beginTransaction();
+      $oldCostStmt = $db->prepare('SELECT cost_per_unit FROM inventory_items WHERE id = ? AND archived_at IS NULL FOR UPDATE');
+      $oldCostStmt->execute([$id]);
+      $oldCost = $oldCostStmt->fetchColumn();
+      if ($oldCost === false) throw new RuntimeException('Inventory item not found.');
       $db->prepare("UPDATE inventory_items SET name=?, category=?, unit=?, reorder_level=?, cost_per_unit=? WHERE id=? AND archived_at IS NULL")
         ->execute([$name, $category, $unit, $reorder, $cost, $id]);
+      if (abs((float) $oldCost - $cost) >= 0.005) {
+        $db->prepare(
+          "INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, actor_role, actor_id) VALUES (?, 0, ?, 'cost_update', ?, ?)"
+        )->execute([$id, $cost, ROLE_ADMIN, currentUserId()]);
+      }
 
       $existing = $db->prepare("SELECT a.id FROM addons a JOIN addon_ingredients ai ON ai.addon_id = a.id WHERE ai.inventory_item_id = ? ORDER BY a.id LIMIT 1");
       $existing->execute([$id]);
@@ -165,6 +193,7 @@ $activityMeta = [
   'restock'    => ['label' => 'Restock',    'icon' => 'fa-box-open'],
   'waste'      => ['label' => 'Waste',      'icon' => 'fa-trash-can'],
   'correction' => ['label' => 'Correction', 'icon' => 'fa-sliders'],
+  'cost_update' => ['label' => 'Cost updated', 'icon' => 'fa-money-bill-wave'],
   'order'      => ['label' => 'Order',      'icon' => 'fa-receipt'],
 ];
 
@@ -208,28 +237,86 @@ foreach ($recentLog as $log) {
   }
 }
 
-// Restock history per item, for the "View Details" popup (item 4). Grouped
-// in PHP from one query rather than one query per item on the page.
+// Full item movement history with the per-unit cost snapshot recorded at
+// the time of each movement. Older entries remain without a cost snapshot.
 try {
-  $restockRows = $db->query(
-    "SELECT inventory_item_id, change_amount, supplier, created_at
-     FROM inventory_log WHERE reason = 'restock' ORDER BY created_at DESC"
-  )->fetchAll();
-} catch (\Throwable $e) {
-  // supplier column migration not run yet — same history, just without supplier names
-  $restockRows = $db->query(
-    "SELECT inventory_item_id, change_amount, NULL AS supplier, created_at
-     FROM inventory_log WHERE reason = 'restock' ORDER BY created_at DESC"
-  )->fetchAll();
+  $historyRows = $db->query(
+    "SELECT l.inventory_item_id, l.change_amount, l.unit_cost_snapshot, l.reason,
+            l.supplier, l.created_at, o.order_number
+       FROM inventory_log l
+       LEFT JOIN orders o ON o.id = l.order_id
+      ORDER BY l.created_at DESC, l.id DESC"
+  )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+  // The supplier field is optional on older installations; cost snapshots are
+  // added by the required migration and must remain available after upgrade.
+  $historyRows = $db->query(
+    "SELECT l.inventory_item_id, l.change_amount, l.unit_cost_snapshot, l.reason,
+            NULL AS supplier, l.created_at, o.order_number
+       FROM inventory_log l
+       LEFT JOIN orders o ON o.id = l.order_id
+      ORDER BY l.created_at DESC, l.id DESC"
+  )->fetchAll(PDO::FETCH_ASSOC);
 }
-$restockByItem = [];
-foreach ($restockRows as $r) {
-  $restockByItem[(int) $r['inventory_item_id']][] = [
-    'date'     => date('M j, Y', strtotime($r['created_at'])),
-    'supplier' => $r['supplier'] ?: '—',
-    'qty'      => number_format((float) $r['change_amount'], 3),
+$historyByItem = [];
+$dailyDeductions = [];
+foreach ($historyRows as $row) {
+  $itemId = (int) $row['inventory_item_id'];
+  $timestamp = strtotime($row['created_at']);
+  $reason = (string) $row['reason'];
+  $change = (float) $row['change_amount'];
+
+  if ($reason === 'sale') {
+    $dateKey = date('Y-m-d', $timestamp);
+    $key = $itemId . '|' . $dateKey;
+    if (!isset($dailyDeductions[$key])) {
+      $dailyDeductions[$key] = [
+        'item_id' => $itemId,
+        'date' => date('M j, Y', $timestamp),
+        'reason' => 'sale_daily',
+        'supplier' => '',
+        'change' => 0.0,
+        'cost' => null,
+        'weighted_cost_total' => 0.0,
+        'deducted_quantity' => 0.0,
+        'has_missing_cost' => false,
+        'sort_at' => strtotime($dateKey . ' 23:59:59'),
+      ];
+    }
+    $quantity = abs($change);
+    $dailyDeductions[$key]['change'] += $change;
+    $dailyDeductions[$key]['deducted_quantity'] += $quantity;
+    if ($row['unit_cost_snapshot'] === null) {
+      $dailyDeductions[$key]['has_missing_cost'] = true;
+    } else {
+      $dailyDeductions[$key]['weighted_cost_total'] += $quantity * (float) $row['unit_cost_snapshot'];
+    }
+    continue;
+  }
+
+  $historyByItem[$itemId][] = [
+    'date' => date('M j, Y g:i A', $timestamp),
+    'reason' => $reason,
+    'supplier' => $row['supplier'] ?: '',
+    'change' => $change,
+    'cost' => $row['unit_cost_snapshot'] === null ? null : (float) $row['unit_cost_snapshot'],
+    'sort_at' => $timestamp,
   ];
 }
+foreach ($dailyDeductions as $daily) {
+  if (!$daily['has_missing_cost'] && $daily['deducted_quantity'] > 0) {
+    $daily['cost'] = $daily['weighted_cost_total'] / $daily['deducted_quantity'];
+  }
+  $itemId = (int) $daily['item_id'];
+  unset($daily['item_id'], $daily['weighted_cost_total'], $daily['deducted_quantity'], $daily['has_missing_cost']);
+  $historyByItem[$itemId][] = $daily;
+}
+foreach ($historyByItem as &$itemHistory) {
+  usort($itemHistory, static fn($a, $b) => $b['sort_at'] <=> $a['sort_at']);
+  foreach ($itemHistory as &$entry) unset($entry['sort_at']);
+  unset($entry);
+}
+unset($itemHistory);
 
 layoutHeader('Inventory');
 ?>
@@ -359,6 +446,11 @@ layoutHeader('Inventory');
   .log-type-order .log-icon {
     background: #e8f0fe;
     color: #1a56c4;
+  }
+
+  .log-type-cost_update .log-icon {
+    background: #f1eafe;
+    color: #6941c6;
   }
 
   .log-main {
@@ -545,6 +637,7 @@ layoutHeader('Inventory');
   <div class="low-stock-banner">
     <i class="fa-solid fa-triangle-exclamation"></i>
     <?= $lowStockCount ?> item<?= $lowStockCount !== 1 ? 's are' : ' is' ?> at or below its reorder level.
+    <button type="button" class="btn btn-sm btn-outline" id="low-stock-view-button" onclick="toggleLowStockView()" aria-pressed="false">View low-stock items</button>
   </div>
 <?php endif; ?>
 
@@ -589,9 +682,9 @@ layoutHeader('Inventory');
             <?php else: foreach ($items as $it):
               $low = (float) $it['available_quantity'] <= (float) $it['reorder_level'];
             ?>
-              <tr data-inventory-row data-inventory-name="<?= e(mb_strtolower($it['name'] . ' ' . ($it['category'] ?? 'Other') . ' ' . $it['unit'])) ?>" data-inventory-category="<?= e(mb_strtolower($it['category'] ?? 'Other')) ?>" style="<?= $low ? 'background:#fdecea' : '' ?>">
+              <tr data-inventory-row data-inventory-low="<?= $low ? '1' : '0' ?>" data-inventory-name="<?= e(mb_strtolower($it['name'] . ' ' . ($it['category'] ?? 'Other') . ' ' . $it['unit'])) ?>" data-inventory-category="<?= e(mb_strtolower($it['category'] ?? 'Other')) ?>" style="<?= $low ? 'background:#fdecea' : '' ?>">
                 <td>
-                  <button type="button" class="inv-item-link" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'>
+                  <button type="button" class="inv-item-link" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($historyByItem[$it['id']] ?? []) ?>)'>
                     <?= e($it['name']) ?>
                   </button>
                   <?php if (!empty($it['addon'])): ?><span class="badge <?= $it['addon']['addon_status'] === 'active' ? 'badge-ready' : 'badge-cancelled' ?>" style="margin-left:6px"><?= $it['addon']['addon_status'] === 'active' ? 'Add-on' : 'Add-on paused' ?>: <?= e($it['addon']['addon_name']) ?></span><?php endif; ?>
@@ -608,7 +701,7 @@ layoutHeader('Inventory');
                 <td><?= number_format((float) $it['reorder_level'], 3) ?> <?= e($it['unit']) ?></td>
                 <td><?= peso($it['cost_per_unit']) ?></td>
                 <td style="white-space:nowrap">
-                  <button class="btn btn-sm btn-outline" title="View Details" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($restockByItem[$it['id']] ?? []) ?>)'><i class="fa-solid fa-eye"></i></button>
+                  <button class="btn btn-sm btn-outline" title="View Details" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($historyByItem[$it['id']] ?? []) ?>)'><i class="fa-solid fa-eye"></i></button>
                   <button class="btn btn-sm btn-outline" title="Adjust Stock" onclick='openAdjustModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-arrows-rotate"></i> Adjust</button>
                   <button class="btn btn-sm btn-outline" title="Edit Item" onclick='openEditItemModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-pen"></i></button>
                   <form method="POST" style="display:inline" onsubmit="return confirm('Archive this inventory item? Products using it and its add-ons will be hidden to protect stock accuracy. You can restore them later.')">
@@ -642,6 +735,7 @@ layoutHeader('Inventory');
       <button type="button" class="activity-chip" data-log-filter="restock">Restock</button>
       <button type="button" class="activity-chip" data-log-filter="waste">Waste</button>
       <button type="button" class="activity-chip" data-log-filter="correction">Correction</button>
+      <button type="button" class="activity-chip" data-log-filter="cost_update">Cost changes</button>
       <button type="button" class="activity-chip" data-log-filter="order">Orders</button>
     </div>
 
@@ -680,7 +774,7 @@ layoutHeader('Inventory');
 
                 <?php else:
                   $log = $entry['log'];
-                  $type = in_array($log['reason'], ['restock', 'waste', 'correction'], true) ? $log['reason'] : 'order';
+                  $type = in_array($log['reason'], ['restock', 'waste', 'correction', 'cost_update'], true) ? $log['reason'] : 'order';
                   $meta = $activityMeta[$type];
                   $detail = $meta['label'];
                   if ($type === 'restock' && !empty($log['supplier'])) $detail .= ' · ' . $log['supplier'];
@@ -693,7 +787,11 @@ layoutHeader('Inventory');
                       <div class="log-name"><?= e($log['item_name']) ?></div>
                       <div class="log-meta"><?= e($detail) ?> · <?= date('g:i A', strtotime($log['created_at'])) ?></div>
                     </div>
-                    <?= logQtyHtml($log) ?>
+                    <?php if ($type === 'cost_update'): ?>
+                      <div class="log-qty" style="white-space:nowrap">₱<?= number_format((float) ($log['unit_cost_snapshot'] ?? 0), 2) ?> / unit</div>
+                    <?php else: ?>
+                      <?= logQtyHtml($log) ?>
+                    <?php endif; ?>
                   </div>
                 <?php endif; ?>
               <?php endforeach; ?>
@@ -764,13 +862,18 @@ layoutHeader('Inventory');
       <div class="modal-body">
         <div class="form-group">
           <label class="form-label">Reason</label>
-          <select name="reason" id="adjust-reason" class="form-control" onchange="document.getElementById('adjust-supplier-wrap').style.display = this.value === 'restock' ? 'block' : 'none'">
+          <select name="reason" id="adjust-reason" class="form-control" onchange="updateAdjustReasonFields()">
             <option value="restock">Restock (add)</option>
             <option value="waste">Waste / Spoilage (subtract)</option>
             <option value="correction">Correction (+/-)</option>
           </select>
         </div>
         <div class="form-group"><label class="form-label">Quantity</label><input type="number" step="0.001" name="amount" class="form-control" required></div>
+        <div class="form-group" id="adjust-cost-wrap">
+          <label class="form-label" for="adjust-restock-cost">Purchase cost per unit (₱)</label>
+          <input type="number" min="0" step="0.01" name="restock_cost_per_unit" id="adjust-restock-cost" class="form-control" required>
+          <small class="form-hint">This restock’s cost is saved in history and becomes the item’s current unit cost.</small>
+        </div>
         <div class="form-group" id="adjust-supplier-wrap">
           <label class="form-label">Supplier <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
           <input type="text" name="supplier" class="form-control" placeholder="e.g. Supplier A">
@@ -843,17 +946,19 @@ layoutHeader('Inventory');
           <div class="details-summary-value" id="details-cost">—</div>
         </div>
       </div>
-      <div style="font-weight:700;margin-bottom:10px">Restock History</div>
+      <div style="font-weight:700;margin-bottom:4px">Stock and Cost History</div>
+      <div class="text-muted" style="font-size:12px;margin-bottom:10px">Sales deductions are totaled by date. Their unit cost is a quantity-weighted daily average.</div>
       <div style="overflow-x:auto">
-        <table class="data-table" id="details-restock-table">
+        <table class="data-table" id="details-history-table">
           <thead>
             <tr>
-              <th>Restock Date</th>
-              <th>Supplier</th>
-              <th class="num">Qty Restocked</th>
+              <th>Date</th>
+              <th>Activity</th>
+              <th class="num">Quantity Change</th>
+              <th class="num">Cost / Unit</th>
             </tr>
           </thead>
-          <tbody id="details-restock-body"></tbody>
+          <tbody id="details-history-body"></tbody>
         </table>
       </div>
     </div>
@@ -871,6 +976,7 @@ layoutHeader('Inventory');
   const inventoryRows = Array.from(document.querySelectorAll('[data-inventory-row]'));
   const inventorySearchEmpty = document.getElementById('inventory-search-empty');
   const inventoryResultCount = document.getElementById('inventory-result-count');
+  let onlyLowStock = false;
 
   function filterInventoryRows() {
     const query = inventorySearch.value.trim().toLocaleLowerCase();
@@ -878,14 +984,30 @@ layoutHeader('Inventory');
     let visible = 0;
     inventoryRows.forEach(row => {
       const matches = row.dataset.inventoryName.includes(query) &&
-        (!category || row.dataset.inventoryCategory === category);
+        (!category || row.dataset.inventoryCategory === category) &&
+        (!onlyLowStock || row.dataset.inventoryLow === '1');
       row.hidden = !matches;
       if (matches) visible++;
     });
-    if (inventorySearchEmpty) inventorySearchEmpty.hidden = query === '' && category === '' || visible > 0;
-    if (inventoryResultCount) inventoryResultCount.textContent = query || category ?
+    if (inventorySearchEmpty) inventorySearchEmpty.hidden = query === '' && category === '' && !onlyLowStock || visible > 0;
+    if (inventoryResultCount) inventoryResultCount.textContent = query || category || onlyLowStock ?
       `${visible} of ${inventoryRows.length} items match` :
       `${inventoryRows.length} item${inventoryRows.length === 1 ? '' : 's'}`;
+  }
+
+  function toggleLowStockView() {
+    onlyLowStock = !onlyLowStock;
+    const button = document.getElementById('low-stock-view-button');
+    if (button) {
+      button.textContent = onlyLowStock ? 'Show all items' : 'View low-stock items';
+      button.setAttribute('aria-pressed', String(onlyLowStock));
+    }
+    if (onlyLowStock) {
+      inventorySearch.value = '';
+      inventoryCategoryFilter.value = '';
+      document.querySelector('[data-inventory-row][data-inventory-low="1"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    filterInventoryRows();
   }
 
   inventorySearch.addEventListener('input', filterInventoryRows);
@@ -1007,20 +1129,26 @@ layoutHeader('Inventory');
       });
   }
 
-  function openDetailsModal(item, restockHistory) {
+  function openDetailsModal(item, itemHistory) {
     document.getElementById('details-modal-title').textContent = item.name;
     document.getElementById('details-stock').textContent = parseFloat(item.quantity_on_hand).toFixed(3) + ' ' + item.unit;
     document.getElementById('details-reorder').textContent = parseFloat(item.reorder_level).toFixed(3) + ' ' + item.unit;
     document.getElementById('details-cost').textContent = '₱' + parseFloat(item.cost_per_unit).toFixed(2);
 
-    const body = document.getElementById('details-restock-body');
+    const body = document.getElementById('details-history-body');
     body.innerHTML = '';
-    if (!restockHistory || restockHistory.length === 0) {
-      body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-muted)">No restock records yet.</td></tr>';
+    if (!itemHistory || itemHistory.length === 0) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">No stock or cost history yet.</td></tr>';
     } else {
-      restockHistory.forEach(r => {
+      itemHistory.forEach(entry => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.date}</td><td>${r.supplier}</td><td class="num">+${r.qty} ${item.unit}</td>`;
+        const labels = { restock: 'Restock', waste: 'Waste', correction: 'Correction', sale_daily: 'Total deductions', cost_update: 'Cost updated' };
+        const activity = labels[entry.reason] || entry.reason;
+        const qty = Number(entry.change);
+        const change = entry.reason === 'cost_update' ? '—' : `${qty > 0 ? '+' : ''}${qty.toFixed(3)} ${item.unit}`;
+        const cost = entry.cost === null ? 'Not recorded' : `₱${Number(entry.cost).toFixed(2)}`;
+        const supplier = entry.supplier ? ` · ${entry.supplier}` : '';
+        tr.innerHTML = `<td>${escapeHtml(entry.date)}</td><td>${escapeHtml(activity + supplier)}</td><td class="num">${escapeHtml(change)}</td><td class="num">${escapeHtml(cost)}</td>`;
         body.appendChild(tr);
       });
     }
@@ -1035,10 +1163,18 @@ layoutHeader('Inventory');
     document.getElementById('adjust-modal-title').textContent = 'Adjust: ' + item.name;
     document.getElementById('adjust-item-id').value = item.id;
     document.getElementById('adjust-reason').value = 'restock';
-    document.getElementById('adjust-supplier-wrap').style.display = 'block';
+    document.getElementById('adjust-restock-cost').value = Number(item.cost_per_unit || 0).toFixed(2);
     document.querySelector('#adjust-modal input[name="supplier"]').value = '';
     document.querySelector('#adjust-modal input[name="amount"]').value = '';
+    updateAdjustReasonFields();
     document.getElementById('adjust-modal').classList.remove('hidden');
+  }
+
+  function updateAdjustReasonFields() {
+    const isRestock = document.getElementById('adjust-reason').value === 'restock';
+    document.getElementById('adjust-supplier-wrap').style.display = isRestock ? 'block' : 'none';
+    document.getElementById('adjust-cost-wrap').style.display = isRestock ? 'block' : 'none';
+    document.getElementById('adjust-restock-cost').required = isRestock;
   }
 
   function closeAdjustModal() {

@@ -69,7 +69,6 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
     $nav .= navItem('fa-flask',        'Recipes',    $appUrl . '/admin/recipes.php',   $pageTitle);
     $nav .= navItem('fa-cash-register', 'Cash Drawer', $appUrl . '/admin/cash-drawer.php', $pageTitle);
     $nav .= navItem('fa-award',        'Loyalty',     $appUrl . '/admin/loyalty.php',   $pageTitle);
-    $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
     $nav .= navItem('fa-box-archive',  'Archive',    $appUrl . '/admin/archive.php',   $pageTitle);
     $nav .= '<div class="nav-section-label">System</div>';
     try {
@@ -78,6 +77,7 @@ function layoutHeader(string $pageTitle = '', string $extraHead = ''): void
       $conflictReportCount = 0;
     }
     $nav .= navItem('fa-id-card', 'ID Conflict Reports', $appUrl . '/admin/id-conflicts.php', $pageTitle, $conflictReportCount, $conflictReportCount > 0 ? 2 : 1);
+    $nav .= navItem('fa-gear',         'Settings',   $appUrl . '/admin/settings.php',  $pageTitle);
   } elseif ($role === ROLE_CASHIER) {
     $preorderCount   = pendingPreorderCount();
     $preorderUrgency = preorderUrgency();

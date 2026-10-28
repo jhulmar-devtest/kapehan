@@ -313,7 +313,7 @@ function inventoryStockSnapshot(PDO $db, ?array $itemIds = null, bool $forUpdate
     $where = ' WHERE id IN (' . implode(',', array_fill(0, count($itemIds), '?')) . ')';
     $params = $itemIds;
   }
-  $sql = 'SELECT id, name, unit, quantity_on_hand, reorder_level FROM inventory_items' . $where . ' ORDER BY id';
+  $sql = 'SELECT id, name, unit, quantity_on_hand, reorder_level, cost_per_unit FROM inventory_items' . $where . ' ORDER BY id';
   if ($forUpdate) $sql .= ' FOR UPDATE';
   $stmt = $db->prepare($sql);
   $stmt->execute($params);
@@ -327,6 +327,7 @@ function inventoryStockSnapshot(PDO $db, ?array $itemIds = null, bool $forUpdate
       'on_hand' => (float) $row['quantity_on_hand'],
       'reserved' => 0.0,
       'reorder_level' => (float) $row['reorder_level'],
+      'cost_per_unit' => (float) $row['cost_per_unit'],
     ];
   }
   if ($items && inventoryReservationSchemaAvailable($db)) {
@@ -493,15 +494,15 @@ function deductInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int 
     'UPDATE inventory_items SET quantity_on_hand = quantity_on_hand - ? WHERE id = ? AND quantity_on_hand + 0.000001 >= ?'
   );
   $insertLog = $db->prepare(
-    "INSERT INTO inventory_log (inventory_item_id, change_amount, reason, order_id, actor_role, actor_id)
-     VALUES (?, ?, 'sale', ?, ?, ?)"
+    "INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, order_id, actor_role, actor_id)
+     VALUES (?, ?, ?, 'sale', ?, ?, ?)"
   );
   foreach ($usage as $itemId => $amount) {
     $amount = round($amount, 3);
     if ($amount <= 0) continue;
     $updateStock->execute([$amount, $itemId, $amount]);
     if ($updateStock->rowCount() !== 1) throw new RuntimeException('Inventory changed while processing this order. Please retry.');
-    $insertLog->execute([$itemId, -$amount, $orderId, $actorRole, $actorId]);
+    $insertLog->execute([$itemId, -$amount, $stock[$itemId]['cost_per_unit'], $orderId, $actorRole, $actorId]);
   }
   $db->prepare('INSERT INTO inventory_order_deductions (order_id, actor_role, actor_id) VALUES (?, ?, ?)')
     ->execute([$orderId, $actorRole, $actorId]);
@@ -523,17 +524,17 @@ function restoreInventoryForCancelledOrder(PDO $db, int $orderId, string $actorR
     $restored = $db->prepare('SELECT 1 FROM inventory_order_restorations WHERE order_id = ?');
     $restored->execute([$orderId]);
     if (!$restored->fetchColumn()) {
-      $saleLog = $db->prepare("SELECT inventory_item_id, SUM(change_amount) AS change_amount FROM inventory_log WHERE order_id = ? AND reason = 'sale' GROUP BY inventory_item_id");
+      $saleLog = $db->prepare("SELECT inventory_item_id, SUM(change_amount) AS change_amount, MAX(unit_cost_snapshot) AS unit_cost_snapshot FROM inventory_log WHERE order_id = ? AND reason = 'sale' GROUP BY inventory_item_id");
       $saleLog->execute([$orderId]);
       $changes = $saleLog->fetchAll(PDO::FETCH_ASSOC);
       if ($changes) inventoryStockSnapshot($db, array_column($changes, 'inventory_item_id'), true);
       $update = $db->prepare('UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + ? WHERE id = ?');
-      $log = $db->prepare("INSERT INTO inventory_log (inventory_item_id, change_amount, reason, order_id, actor_role, actor_id) VALUES (?, ?, 'restock', ?, ?, ?)");
+      $log = $db->prepare("INSERT INTO inventory_log (inventory_item_id, change_amount, unit_cost_snapshot, reason, order_id, actor_role, actor_id) VALUES (?, ?, ?, 'restock', ?, ?, ?)");
       foreach ($changes as $row) {
         $amount = round(abs((float) $row['change_amount']), 3);
         if ($amount <= 0) continue;
         $update->execute([$amount, (int) $row['inventory_item_id']]);
-        $log->execute([(int) $row['inventory_item_id'], $amount, $orderId, $actorRole, $actorId]);
+        $log->execute([(int) $row['inventory_item_id'], $amount, $row['unit_cost_snapshot'], $orderId, $actorRole, $actorId]);
       }
       $db->prepare('INSERT INTO inventory_order_restorations (order_id, actor_role, actor_id) VALUES (?, ?, ?)')
         ->execute([$orderId, $actorRole, $actorId]);

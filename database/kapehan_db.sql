@@ -752,6 +752,7 @@ CREATE TABLE `inventory_log` (
   `id` int UNSIGNED NOT NULL,
   `inventory_item_id` int UNSIGNED NOT NULL,
   `change_amount` decimal(12,3) NOT NULL COMMENT 'negative = deduction, positive = restock',
+  `unit_cost_snapshot` decimal(10,2) DEFAULT NULL,
   `reason` varchar(30) NOT NULL COMMENT 'sale, restock, waste, correction',
   `order_id` int UNSIGNED DEFAULT NULL,
   `actor_role` varchar(20) DEFAULT NULL,
