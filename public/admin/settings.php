@@ -21,6 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     'store_close_time'             => $_POST['store_close_time'] ?? '20:00',
     'pickup_slot_interval_minutes' => (string) max(5, (int) ($_POST['pickup_slot_interval_minutes'] ?? 15)),
     'pickup_slot_capacity'         => (string) max(1, (int) ($_POST['pickup_slot_capacity'] ?? 6)),
+    'asap_order_quantity_limit'    => (string) max(1, min(99, (int) ($_POST['asap_order_quantity_limit'] ?? 10))),
+    'online_ordering_enabled'      => ($_POST['online_ordering_enabled'] ?? '0') === '1' ? '1' : '0',
   ];
   foreach ($fields as $key => $value) {
     setSetting($key, $value);
@@ -87,6 +89,8 @@ $storeOpen   = getSetting('store_open_time', '07:00');
 $storeClose  = getSetting('store_close_time', '20:00');
 $slotInterval = getSetting('pickup_slot_interval_minutes', '15');
 $slotCapacity = getSetting('pickup_slot_capacity', '6');
+$asapQuantityLimit = asapOrderQuantityLimit();
+$onlineOrderingOpen = onlineOrderingEnabled();
 $oldInput     = getOldInput();
 $gcashName    = $oldInput['gcash_payment_name']   ?? gcashPaymentName();
 $gcashNumber  = $oldInput['gcash_payment_number'] ?? gcashPaymentNumber();
@@ -359,7 +363,7 @@ layoutHeader('Settings');
     <div class="settings-section-head"><span class="settings-section-icon"><i class="fa-solid fa-clock"></i></span>
       <div>
         <h2>Store and ordering rules</h2>
-        <p class="sub">Set the hours shown to customers and control pickup slot timing and capacity.</p>
+        <p class="sub">Set store hours and pickup capacity, control ASAP order size, and pause online ordering when needed.</p>
       </div>
     </div>
     <div class="settings-section-body">
@@ -382,6 +386,17 @@ layoutHeader('Settings');
             <label class="form-label" for="pickup-slot-capacity">Orders per pickup slot</label>
             <input id="pickup-slot-capacity" type="number" name="pickup_slot_capacity" class="form-control" min="1" value="<?= e($slotCapacity) ?>"><small class="form-hint">Maximum scheduled orders in each window</small>
           </div>
+          <div class="form-group">
+            <label class="form-label" for="asap-order-quantity-limit">Maximum items for ASAP</label>
+            <input id="asap-order-quantity-limit" type="number" name="asap_order_quantity_limit" class="form-control" min="1" max="99" value="<?= e($asapQuantityLimit) ?>"><small class="form-hint">Larger orders must choose a scheduled pickup time. Default: 10 items.</small>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <input type="hidden" name="online_ordering_enabled" value="0">
+          <label style="display:flex;align-items:flex-start;gap:10px;max-width:680px">
+            <input type="checkbox" name="online_ordering_enabled" value="1" <?= $onlineOrderingOpen ? 'checked' : '' ?> style="margin-top:3px">
+            <span><strong>Accept online orders</strong><br><small class="form-hint">Turn this off to prevent new student and faculty orders. Cashier walk-ins remain available.</small></span>
+          </label>
         </div>
         <div class="settings-form-actions"><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save store rules</button></div>
       </form>

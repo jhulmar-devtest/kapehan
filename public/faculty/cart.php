@@ -6,6 +6,10 @@ $db = Database::getInstance();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   verifyCsrf();
+  if (!onlineOrderingEnabled()) {
+    flash('global', 'Online ordering is temporarily paused. Please try again later.', 'error');
+    redirect(APP_URL . '/faculty/cart.php');
+  }
   date_default_timezone_set('Asia/Manila');
   $currentHour = (int)date('G');
   if ($currentHour < 7 || $currentHour >= 20) {
@@ -33,6 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   }
   if (empty($pickupTime)) {
     flash('global', 'Please select a pickup time before placing your order.', 'error');
+    redirect(APP_URL . '/faculty/cart.php');
+  }
+  $totalQuantity = submittedOrderQuantityTotal($items);
+  if ($totalQuantity === null) {
+    flash('global', 'Please check the quantities in your cart and try again.', 'error');
+    redirect(APP_URL . '/faculty/cart.php');
+  }
+  if (strtoupper($pickupTime) === 'ASAP' && $totalQuantity > asapOrderQuantityLimit()) {
+    flash('global', 'ASAP pickup is available for orders of up to ' . asapOrderQuantityLimit() . ' items. Please choose a scheduled pickup time.', 'error');
     redirect(APP_URL . '/faculty/cart.php');
   }
   if ($deliveryLocation === '') {
@@ -637,6 +650,7 @@ layoutHeader('My Cart', '');
         date_default_timezone_set('Asia/Manila');
         $currentHour = (int)date('G');
         $storeIsOpen = $currentHour >= 7 && $currentHour < 20;
+        $orderingAllowed = onlineOrderingEnabled();
         ?>
         <?php if (!$storeIsOpen): ?>
           <div style="text-align:center;padding:var(--space-6) var(--space-4)">
@@ -652,6 +666,12 @@ layoutHeader('My Cart', '');
               <i class="fa-solid fa-triangle-exclamation" style="color:#f57f17"></i>
               &nbsp;<strong>Do not send any GCash payment right now.</strong> The store is closed and your payment will not be accepted — you'll just lose your money with nothing to show for it. Wait until the store opens before paying and placing your order.
             </div>
+          </div>
+        <?php elseif (!$orderingAllowed): ?>
+          <div style="text-align:center;padding:var(--space-6) var(--space-4)">
+            <div style="font-size:36px;margin-bottom:var(--space-4)"><i class="fa-solid fa-store"></i></div>
+            <div style="font-size:0.95rem;font-weight:700;color:var(--text-color);margin-bottom:var(--space-3)">Online Ordering Is Paused</div>
+            <div style="font-size:0.80rem;color:var(--text-muted);line-height:1.6">The shop is temporarily not accepting online orders. Please try again later.</div>
           </div>
         <?php else: ?>
           <form id="checkout-form" method="POST">

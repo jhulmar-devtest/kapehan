@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_STUDENT);
 $db = Database::getInstance();
+$onlineOrderingOpen = onlineOrderingEnabled();
 // Load products — exclude Add-ons (category name = 'Add-ons') from main grid
 $products = $db->query(
   "SELECT p.*, c.name AS cat_name, c.id AS cat_id, c.parent_id AS cat_parent,
@@ -735,6 +736,10 @@ layoutHeader('Order Now', '');
       </a>
     </div>
   </div>
+
+  <?php if (!$onlineOrderingOpen): ?>
+    <div class="alert alert-warning" role="status"><i class="fa-solid fa-store"></i><div><strong>Online ordering is paused.</strong> You can browse the menu, but new orders are temporarily unavailable.</div></div>
+  <?php endif; ?>
 
   <!-- Sticky navigation bar -->
   <div class="menu-controls">

@@ -32,6 +32,12 @@ date_default_timezone_set('Asia/Manila');
 $db   = Database::getInstance();
 $role = currentRole();
 
+if (!onlineOrderingEnabled()) {
+  http_response_code(503);
+  echo json_encode(['ok' => false, 'reason' => 'ordering_paused', 'message' => 'Online ordering is temporarily paused. Please try again later.']);
+  exit;
+}
+
 require_once __DIR__ . '/../../includes/paymongo.php';
 // Free up pickup slots / ingredients held by online orders that were never paid.
 try {
@@ -65,6 +71,12 @@ if (empty($items)) {
   echo json_encode(['ok' => false, 'message' => 'Your cart is empty.']);
   exit;
 }
+$totalQuantity = submittedOrderQuantityTotal($items);
+if ($totalQuantity === null) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'message' => 'Please check the quantities in your cart and try again.']);
+  exit;
+}
 if ($role === ROLE_FACULTY && $deliveryLocation === '') {
   http_response_code(422);
   echo json_encode(['ok' => false, 'message' => 'Please enter where your order should be delivered.']);
@@ -80,6 +92,15 @@ if ($pickupDate !== date('Y-m-d') || empty($pickupTime)) {
 // cashier can get to it. The cashier screens already sort and flag it as urgent.
 $isAsap = strtoupper($pickupTime) === 'ASAP';
 if ($isAsap) $pickupTime = 'ASAP';
+if ($isAsap && $totalQuantity > asapOrderQuantityLimit()) {
+  http_response_code(422);
+  echo json_encode([
+    'ok' => false,
+    'reason' => 'asap_quantity_limit',
+    'message' => 'ASAP pickup is available for orders of up to ' . asapOrderQuantityLimit() . ' items. Please choose a scheduled pickup time for this order.',
+  ]);
+  exit;
+}
 
 $openTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $openTime);
 $closeTimestamp = DateTime::createFromFormat('!Y-m-d H:i', $pickupDate . ' ' . $closeTime);
@@ -273,7 +294,7 @@ try {
     saveOrderLineAddonSnapshots($db, (int) $db->lastInsertId(), $d['addons']);
   }
 
-  reserveInventoryForOrder($db, $orderId, $role, (int) currentUserId());
+  reserveInventoryForOrder($db, $orderId, (string) $role, (int) currentUserId(), false);
 
   // The submitted reference is customer-provided and must be verified by
   // cashier staff before it is recorded as paid.

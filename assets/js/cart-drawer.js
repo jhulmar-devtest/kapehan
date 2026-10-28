@@ -595,6 +595,7 @@ function todayInManila() {
 /* What (if anything) is stopping the customer from continuing? */
 function getCheckoutBlocker() {
   if (getCart().length === 0) return "Add an item to continue.";
+  if (window.ONLINE_ORDERING_ENABLED === false) return "Online ordering is temporarily paused.";
   const timeEl = document.getElementById("pickupTime");
   if (!timeEl?.value || timeEl.options[timeEl.selectedIndex]?.disabled) {
     return "Choose a pickup time to continue.";
@@ -626,7 +627,16 @@ function loadPickupSlots() {
   const timeEl = document.getElementById("pickupTime");
   const messageEl = document.getElementById("pickupSlotMessage");
   if (!timeEl) return;
+  if (window.ONLINE_ORDERING_ENABLED === false) {
+    timeEl.innerHTML = '<option value="">Online ordering is paused</option>';
+    if (messageEl) messageEl.textContent = "The shop is temporarily not accepting online orders.";
+    pickupSlotsLoading = false;
+    updateProceedButton();
+    return;
+  }
   const previousValue = timeEl.value;
+  const cartQuantity = getCart().reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  const asapAllowed = cartQuantity <= (Number(window.ASAP_ORDER_QUANTITY_LIMIT) || 10);
   // Until the customer picks something themselves, keep defaulting to ASAP
   // (or the first open time when ASAP is not offered).
   const useDefaultChoice = !pickupTimeManuallySelected;
@@ -635,9 +645,10 @@ function loadPickupSlots() {
   fetch(`${APP_URL}/api/pickup-slots.php?date=${todayInManila()}`)
     .then((r) => r.json())
     .then((slots) => {
-      const available = slots.filter((slot) => !slot.full);
+      const offeredSlots = slots.filter((slot) => asapAllowed || !slot.asap);
+      const available = offeredSlots.filter((slot) => !slot.full);
       timeEl.innerHTML =
-        slots
+        offeredSlots
           .map(
             (slot) =>
               `<option value="${slot.value}" data-asap="${slot.asap ? "true" : "false"}" ${slot.full ? "disabled" : ""}>${slot.label}${slot.full ? " (full)" : ""}</option>`,
@@ -664,9 +675,11 @@ function loadPickupSlots() {
       } else {
         timeEl.value = "";
         if (messageEl)
-          messageEl.textContent = previousValue
-            ? "Your selected time has passed or filled up. Please choose another."
-            : "Pickup is available today only.";
+          messageEl.textContent = !asapAllowed
+            ? `ASAP is unavailable for orders over ${Number(window.ASAP_ORDER_QUANTITY_LIMIT) || 10} items. Choose a scheduled pickup time.`
+            : previousValue
+              ? "Your selected time has passed or filled up. Please choose another."
+              : "Pickup is available today only.";
       }
       pickupSlotsLoading = false;
       updateProceedButton();

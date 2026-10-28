@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_PO
         STATUS_PREPARING => [STATUS_PENDING],
         STATUS_READY     => [STATUS_PREPARING],
         STATUS_CLAIMED   => [STATUS_READY],
-        STATUS_CANCELLED => [STATUS_PENDING, STATUS_PREPARING, STATUS_READY],
+        STATUS_CANCELLED => [STATUS_PENDING, STATUS_READY],
       ];
       if ($currentStatus === $status) {
         throw new RuntimeException("This order is already {$status}.");
@@ -1216,7 +1216,7 @@ layoutHeader('Pre-orders', '');
             <?php endif; ?>
 
 
-            <?php if (!in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required'], true)): ?>
+            <?php if ($o['status'] !== STATUS_PREPARING && !in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required'], true)): ?>
               <button type="button" class="btn btn-danger btn-sm" onclick="handleCancelOrder(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', <?= ($o['pay_status'] ?? '') === PAY_STATUS_PAID ? 'true' : 'false' ?>)" title="Cancel order">
                 <i class="fa-solid fa-xmark"></i>
               </button>

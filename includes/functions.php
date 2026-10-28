@@ -528,6 +528,33 @@ function setSetting(string $key, string $value): void
   )->execute([$key, $value]);
 }
 
+/** Whether students and faculty may submit new online orders right now. */
+function onlineOrderingEnabled(): bool
+{
+  return getSetting('online_ordering_enabled', '1') === '1';
+}
+
+/** Maximum total drink quantity eligible for ASAP pickup. */
+function asapOrderQuantityLimit(): int
+{
+  return max(1, (int) getSetting('asap_order_quantity_limit', '10'));
+}
+
+/** Return the total ordered quantity, or null for malformed/out-of-range lines. */
+function submittedOrderQuantityTotal(mixed $items): ?int
+{
+  if (!is_array($items) || !$items) return null;
+  $total = 0;
+  foreach ($items as $item) {
+    if (!is_array($item)) return null;
+    $rawQuantity = $item['qty'] ?? null;
+    $quantity = filter_var($rawQuantity, FILTER_VALIDATE_INT);
+    if ($quantity === false || $quantity < 1 || $quantity > 99) return null;
+    $total += $quantity;
+  }
+  return $total;
+}
+
 /**
  * gcashPaymentName() / gcashPaymentNumber()
  *

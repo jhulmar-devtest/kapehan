@@ -125,6 +125,8 @@ unset($_SESSION['register_old']);
 
 $storeOpen  = getSetting('store_open_time', '07:00');
 $storeClose = getSetting('store_close_time', '20:00');
+$onlineOrderingOpen = onlineOrderingEnabled();
+$asapQuantityLimit = asapOrderQuantityLimit();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1688,6 +1690,9 @@ $storeClose = getSetting('store_close_time', '20:00');
       </div>
       <div class="menu-hours-note"><i class="fa-regular fa-clock"></i> Today’s shop hours <?= e(date('g:i A', strtotime($storeOpen))) ?>–<?= e(date('g:i A', strtotime($storeClose))) ?></div>
     </section>
+    <?php if (!$onlineOrderingOpen): ?>
+      <div class="alert alert-warning" role="status" style="margin:0 0 16px"><i class="fa-solid fa-store"></i><div><strong>Online ordering is paused.</strong> You can browse the menu, but new orders are temporarily unavailable.</div></div>
+    <?php endif; ?>
 
     <?php if (!empty($spotlightProducts)): ?>
       <div class="spotlight-section">
@@ -2005,6 +2010,8 @@ $storeClose = getSetting('store_close_time', '20:00');
 
   <script>
     const APP_URL = '<?= APP_URL ?>';
+    window.ONLINE_ORDERING_ENABLED = <?= $onlineOrderingOpen ? 'true' : 'false' ?>;
+    window.ASAP_ORDER_QUANTITY_LIMIT = <?= (int) $asapQuantityLimit ?>;
     const IS_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.LOYALTY_BALANCE = <?= (int) $loyaltyBalance ?>;
     window.GCASH_REF_DIGITS = <?= (int) GCASH_REF_DIGITS ?>;
@@ -2250,15 +2257,15 @@ $storeClose = getSetting('store_close_time', '20:00');
           if (result.max_quantity < 1) {
             box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
             box.style.color = 'var(--status-cancelled, #b42318)';
-            box.textContent = 'Unavailable — estimated quantity: 0';
+            box.textContent = 'This item is currently unavailable.';
           } else if (result.low_stock) {
             box.style.background = 'var(--status-warning-bg, #fff4d6)';
             box.style.color = 'var(--status-warning, #8a5a00)';
-            box.textContent = `Low stock — estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_cm.maxToAdd} more can be added` : ''}`;
+            box.textContent = 'Quantity is limited by current availability.';
           } else {
             box.style.background = 'var(--surface-raised)';
             box.style.color = 'var(--text-muted)';
-            box.textContent = `Estimated quantity available: ${result.max_quantity}${currentQty ? ` total; ${_cm.maxToAdd} more can be added` : ''}`;
+            box.textContent = 'Quantity is limited by current availability.';
           }
         }
         _cm.qty = Math.max(1, Math.min(_cm.qty, _cm.maxToAdd === null ? 99 : Math.max(1, _cm.maxToAdd)));
@@ -2303,7 +2310,7 @@ $storeClose = getSetting('store_close_time', '20:00');
         return;
       }
       if (_cm.stockLoading || _cm.maxToAdd === 0 || (_cm.maxToAdd !== null && _cm.qty > _cm.maxToAdd)) {
-        showToast('warning', 'The selected product quantity exceeds the estimated stock available.');
+        showToast('warning', 'The selected quantity exceeds what is currently available.');
         return;
       }
       const cart = getCart();

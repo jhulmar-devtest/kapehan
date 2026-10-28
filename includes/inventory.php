@@ -415,7 +415,7 @@ function inventoryOrderRequirements(PDO $db, int $orderId): array
 }
 
 /** Reserve ingredients for an online order within its checkout transaction. */
-function reserveInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int $actorId): void
+function reserveInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int $actorId, bool $includeAvailabilityDetails = true): void
 {
   if (!$db->inTransaction()) throw new LogicException('Inventory reservations must run inside the order transaction.');
   $db->prepare('SELECT id FROM orders WHERE id = ? FOR UPDATE')->execute([$orderId]);
@@ -433,6 +433,9 @@ function reserveInventoryForOrder(PDO $db, int $orderId, string $actorRole, ?int
     if (!isset($stock[$itemId])) throw new RuntimeException('A recipe ingredient no longer exists. Please contact the cashier.');
     $available = $stock[$itemId]['on_hand'] - $stock[$itemId]['reserved'];
     if ($available + 0.000001 < $required) {
+      if (!$includeAvailabilityDetails) {
+        throw new RuntimeException('One or more items are no longer available in the requested quantity. Please reduce the quantity or choose another item.');
+      }
       throw new RuntimeException(sprintf(
         'Not enough %s for this order. Available: %s %s; required: %s %s.',
         $stock[$itemId]['name'],
