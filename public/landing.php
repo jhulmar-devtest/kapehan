@@ -1078,7 +1078,7 @@ if (isLoggedIn()) redirectByRole();
           <div class="step-number">03</div>
           <div class="step-icon"><i class="fa-solid fa-id-card"></i></div>
           <div class="step-title">Track and collect</div>
-          <div class="step-desc">Check your order status. When it’s ready, show your claim QR and school ID at the counter.</div>
+          <div class="step-desc">Check your order status. When it’s ready, show your order QR at the counter to claim it.</div>
         </div>
       </div>
     </div>
@@ -1110,7 +1110,7 @@ if (isLoggedIn()) redirectByRole();
             <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
             <div>
               <div class="feature-title">Clear pickup verification</div>
-              <div class="feature-desc">Your claim QR helps staff find the right order, and your school ID helps confirm pickup.</div>
+              <div class="feature-desc">The cashier scans your order QR to confirm the handover.</div>
             </div>
           </div>
           <div class="feature-item reveal">

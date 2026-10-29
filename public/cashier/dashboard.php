@@ -20,6 +20,9 @@ $pending = (int)$stmt->fetchColumn();
 $stmt = $db->query("SELECT COUNT(*) FROM orders WHERE order_type='pre-order' AND status='ready'");
 $ready = (int)$stmt->fetchColumn();
 
+$stmt = $db->query("SELECT COUNT(*) FROM orders WHERE order_type='walk-in' AND status='claimed' AND walkin_prep_status='preparing'");
+$walkinPreparing = (int)$stmt->fetchColumn();
+
 $stmt = $db->prepare("SELECT o.order_number,o.total_amount,o.created_at FROM orders o WHERE o.cashier_id=? AND DATE(o.created_at)=CURDATE() AND o.status!='cancelled' ORDER BY o.created_at DESC LIMIT 5");
 $stmt->execute([$cid]);
 $recent = $stmt->fetchAll();
@@ -65,7 +68,15 @@ layoutHeader('Dashboard');
     <div class="stat-content">
       <div class="stat-label">Ready to Claim</div>
       <div class="stat-value"><?= $ready ?></div>
-      <div class="stat-sub"><?= $ready > 0 ? '<a href="' . APP_URL . '/cashier/preorders.php" style="color:var(--status-ready);font-weight:600">Verify IDs →</a>' : 'None waiting' ?></div>
+      <div class="stat-sub"><?= $ready > 0 ? '<a href="' . APP_URL . '/cashier/preorders.php" style="color:var(--status-ready);font-weight:600">Scan pickup QR →</a>' : 'None waiting' ?></div>
+    </div>
+  </div>
+  <div class="stat-card <?= $walkinPreparing > 0 ? 'stat-gold' : '' ?>">
+    <div class="stat-icon <?= $walkinPreparing > 0 ? 'gold' : 'brown' ?>"><i class="fa-solid fa-mug-hot"></i></div>
+    <div class="stat-content">
+      <div class="stat-label">Walk-ins in Prep</div>
+      <div class="stat-value"><?= $walkinPreparing ?></div>
+      <div class="stat-sub"><?= $walkinPreparing > 0 ? '<a href="' . APP_URL . '/cashier/walkin.php" style="color:var(--primary-color);font-weight:600">View prep queue →</a>' : 'No active tickets' ?></div>
     </div>
   </div>
 </div>
@@ -121,7 +132,7 @@ layoutHeader('Dashboard');
 
 <div class="alert alert-info mt-4" style="margin-bottom:0">
   <i class="fa-solid fa-circle-info"></i>
-  <div>Always verify the student's <strong>physical school ID</strong> before marking any pre-order as <strong>Claimed</strong>.</div>
+  <div>Scan the customer's <strong>order QR</strong> and confirm the matched order before completing handover.</div>
 </div>
 <script>
   (() => {

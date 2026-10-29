@@ -691,7 +691,7 @@ $stepIcons = [
         </dl>
         <ol class="next-steps">
           <li><span class="num">1</span><span><strong>We prepare your order.</strong> You can follow its status under My Orders.</span></li>
-          <li><span class="num">2</span><span><strong>Pick it up at your chosen time.</strong> Show your school ID when you claim it.</span></li>
+          <li><span class="num">2</span><span><strong>Pick it up at your chosen time.</strong> Show your order QR at the counter to claim it.</span></li>
         </ol>
         <div class="actions row">
           <a class="btn primary" href="<?= e(APP_URL) ?>/orders.php">Track my order</a>

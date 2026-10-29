@@ -231,6 +231,12 @@ try {
       ? 'ASAP orders are full right now. Please choose a pickup time instead.'
       : 'That pickup time just filled up. Please choose another time.');
   }
+  if ($isAsap) {
+    lockAsapPreparationWorkload($db, $pickupDate);
+    if (asapPreparationWorkload($db) + $totalQuantity > asapPreparationWorkloadLimit()) {
+      throw new RuntimeException('ASAP pickup is temporarily full because the preparation queue is busy. Please choose a scheduled pickup time.');
+    }
+  }
 
   $studentId = $role === ROLE_STUDENT ? currentUserId() : null;
   $facultyId = $role === ROLE_FACULTY ? currentUserId() : null;
@@ -369,7 +375,7 @@ try {
     'loyalty_balance' => $redemptionResult['balance'],
     'points_expected_after_pickup' => loyaltyPointsFromSpend($db, $total),
     'free_order'   => $isFree,
-    'message'      => "Order {$orderNo} placed! Show your school ID when claiming.",
+    'message'      => "Order {$orderNo} placed! Show your order QR at the counter to claim it.",
   ]);
 } catch (\Throwable $e) {
   // Something can throw after the commit (audit log, response building); a

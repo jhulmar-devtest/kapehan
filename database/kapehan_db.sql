@@ -90,6 +90,7 @@ INSERT INTO `app_settings` (`setting_key`, `setting_value`) VALUES
 ('loyalty_redeem_points', '100'),
 ('max_cash_preorder_amount', '150'),
 ('no_show_strike_limit', '3'),
+('asap_preparation_workload_limit', '8'),
 ('pickup_slot_capacity', '6'),
 ('pickup_slot_interval_minutes', '15'),
 ('store_close_time', '19:00'),
@@ -852,6 +853,8 @@ CREATE TABLE `orders` (
   `order_number` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Human-readable e.g. ORD-20240101-0001',
   `order_type` enum('walk-in','pre-order') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `status` enum('pending','preparing','ready','claimed','cancelled','no_show') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `walkin_prep_status` enum('preparing','completed') DEFAULT NULL,
+  `walkin_completed_at` datetime DEFAULT NULL,
   `student_id` int UNSIGNED DEFAULT NULL COMMENT 'NULL for walk-in, can also reference faculty',
   `faculty_id` int UNSIGNED DEFAULT NULL,
   `cashier_id` int UNSIGNED DEFAULT NULL COMMENT 'NULL until cashier processes',
@@ -895,6 +898,11 @@ INSERT INTO `orders` (`id`, `order_number`, `order_type`, `status`, `student_id`
 (19, 'ORD-20260924-0001', 'walk-in', 'claimed', NULL, NULL, 3, 395.00, NULL, '2026-09-24 09:20:54', '2026-09-24 09:20:54', NULL, NULL, NULL, NULL, NULL, NULL),
 (20, 'ORD-20260924-0002', 'pre-order', 'claimed', 1, NULL, 3, 105.00, '', '2026-09-24 09:22:39', '2026-09-24 09:32:04', NULL, NULL, NULL, '09:30', '2026-09-24', NULL),
 (21, 'ORD-20260924-0003', 'pre-order', 'claimed', 1, NULL, 3, 395.00, '', '2026-09-24 12:50:55', '2026-09-24 12:59:21', NULL, NULL, NULL, '13:00', '2026-09-24', NULL);
+
+UPDATE `orders`
+   SET `walkin_prep_status` = 'completed',
+       `walkin_completed_at` = COALESCE(`updated_at`, `created_at`)
+ WHERE `order_type` = 'walk-in';
 
 -- --------------------------------------------------------
 
@@ -1665,7 +1673,10 @@ INSERT INTO `schema_migrations` (`version`, `checksum`, `applied_at`) VALUES
 ('2026_10_23_add_paymongo_gateway.sql', '13c81db5e1b7724d046b3aff6c16de26256935a92879f06afeab28add3c6fb04', '2026-10-23 00:00:00'),
 ('2026_10_23_high_priority_improvements.sql', '9bec7b5030fd5a6884f4d76afbf7aff4e0cffb87291d21cd623e10245eae8aaa', '2026-10-23 00:00:00'),
 ('2026_10_23_manage_inventory_categories.sql', 'e34297a738c6edbfe47e77c0c1a1adabef1f898c8cb264ad726129219c5d987d', '2026-10-23 00:00:00'),
-('2026_10_25_add_registration_conflict_recovery.sql', 'aeed1239f0f35606a0e065c5f62b2e885a1f96b6fd729882b42b5bd9f665d1d2', '2026-10-25 00:00:00');
+('2026_10_25_add_registration_conflict_recovery.sql', 'aeed1239f0f35606a0e065c5f62b2e885a1f96b6fd729882b42b5bd9f665d1d2', '2026-10-25 00:00:00'),
+('2026_10_28_add_inventory_cost_snapshots.sql', 'DC3F65F3CB8B7B2D169DA31B9283AD603B15B5F03CC5601B37352A9C987F5ED6', '2026-10-28 00:00:00'),
+('2026_10_28_add_walkin_preparation_tracking.sql', '476E2CCAAF6FC1D671F29F4484744693B8C176E120004C56B9A079032868BD8C', '2026-10-28 00:00:00'),
+('2026_10_28_add_asap_preparation_workload_limit.sql', 'B3B6C33C3928D1451877B7510E24B31B4FF1DA0BD767E82FF24E49A64F18F9C0', '2026-10-28 00:00:00');
 
 CREATE TABLE `registration_conflict_reports` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1890,6 +1901,7 @@ ALTER TABLE `orders`
   ADD KEY `fk_order_cashier` (`cashier_id`),
   ADD KEY `idx_orders_status` (`status`),
   ADD KEY `idx_orders_type` (`order_type`),
+  ADD KEY `idx_orders_walkin_prep_queue` (`order_type`,`walkin_prep_status`,`created_at`),
   ADD KEY `idx_orders_created_at` (`created_at`),
   ADD KEY `idx_orders_student` (`student_id`),
   ADD KEY `idx_orders_locked` (`locked_by`,`locked_at`),

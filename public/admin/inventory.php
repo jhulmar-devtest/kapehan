@@ -625,6 +625,7 @@ layoutHeader('Inventory');
     <div class="page-header-sub"><?= count($items) ?> item<?= count($items) !== 1 ? 's' : '' ?> tracked</div>
   </div>
   <div class="page-header-actions">
+    <a href="<?= APP_URL ?>/admin/inventory-report.php" class="btn btn-ghost"><i class="fa-solid fa-file-invoice"></i> Inventory Report</a>
     <a href="<?= APP_URL ?>/admin/archive.php?type=inventory_items" class="btn btn-ghost"><i class="fa-solid fa-box-archive"></i> Archive</a>
     <a href="<?= APP_URL ?>/admin/inventory-categories.php" class="btn btn-ghost"><i class="fa-solid fa-tags"></i> Manage Categories</a>
     <a href="<?= APP_URL ?>/admin/recipes.php" class="btn btn-ghost"><i class="fa-solid fa-flask"></i> Product Recipes</a>

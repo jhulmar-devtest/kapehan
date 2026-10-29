@@ -1957,6 +1957,7 @@ $asapQuantityLimit = asapOrderQuantityLimit();
       <div id="cmImg" style="height:168px;border-radius:14px;background:var(--surface-raised);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px"></div>
       <h3 id="cmName" style="font-size:21px;margin-bottom:6px"></h3>
       <div id="cmPrice" style="color:var(--primary-color);font-weight:700;margin-bottom:16px"></div>
+      <div class="alert alert-info" style="margin:0 0 14px;padding:10px 12px;font-size:12px;line-height:1.45"><i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i><div><strong>Online orders are paid by GCash only.</strong> Cash is available for walk-in orders at the counter.</div></div>
       <div id="cmStockInfo" role="status" aria-live="polite" hidden style="padding:10px 12px;margin-bottom:14px;border-radius:10px;font-size:13px;font-weight:600"></div>
 
       <div id="cmSizeBlock" hidden>
@@ -1969,6 +1970,7 @@ $asapQuantityLimit = asapOrderQuantityLimit();
       </div>
       <div id="cmAddonBlock" hidden>
         <div class="field-label">Add-ons</div>
+        <div style="font-size:11px;color:var(--text-muted);margin:-5px 0 8px">Add-on prices apply to each item. The selected add-on price is multiplied by your quantity.</div>
         <div id="cmAddons"></div>
       </div>
 
@@ -1992,7 +1994,7 @@ $asapQuantityLimit = asapOrderQuantityLimit();
       <button class="modal-close" onclick="closeConfirmModal()" aria-label="Close">&times;</button>
       <div class="confirm-icon"><i class="fa-solid fa-check"></i></div>
       <div class="confirm-heading" id="confirmHeading">Order placed!</div>
-      <div class="confirm-subheading">Show your school ID when claiming.</div>
+      <div class="confirm-subheading">Show your order QR at the counter to claim it.</div>
       <div class="confirm-details">
         <div class="confirm-row"><span>Order number</span><span id="confOrderNo"></span></div>
         <div class="confirm-row"><span>Pickup</span><span id="confPickup"></span></div>
@@ -2148,9 +2150,10 @@ $asapQuantityLimit = asapOrderQuantityLimit();
             if (!_cm.selectedAddons.length && _cm.existingAddonNames.length) {
               _cm.selectedAddons = list.filter(addon => _cm.existingAddonNames.includes(addon.name)).map(addon => Number(addon.id));
             }
-            document.getElementById('cmAddons').innerHTML = list.map(a =>
-              `<label style="display:flex;align-items:center;gap:8px;padding:6px 0"><input type="checkbox" ${_cm.selectedAddons.includes(Number(a.id)) ? 'checked' : ''} onchange="cmToggleAddon(${a.id})"> ${a.name} (+\u20b1${a.price})</label>`
-            ).join('');
+            document.getElementById('cmAddons').innerHTML = list.map(a => {
+              const safeName = String(a.name).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+              return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0"><input type="checkbox" ${_cm.selectedAddons.includes(Number(a.id)) ? 'checked' : ''} onchange="cmToggleAddon(${Number(a.id)})"> <span>${safeName} <span style="color:var(--text-muted)">(+\u20b1${Number(a.price).toFixed(2)} per item)</span></span></label>`;
+            }).join('');
             cmUpdateStockEstimate();
           });
       }

@@ -11,16 +11,40 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 verifyCsrfAjax();
 $data = json_decode(file_get_contents('php://input'), true) ?? [];
+$db = Database::getInstance();
+$qrData = trim((string) ($data['qr_data'] ?? ''));
 $type = sanitizeString($data['customer_type'] ?? '');
 $identifier = sanitizeString($data['identifier'] ?? '', 30);
-if (!loyaltyAccountConfig($type) || $identifier === '') {
-  http_response_code(422);
-  echo json_encode(['ok' => false, 'message' => 'Choose a student or faculty account and enter its ID.']);
-  exit;
+$account = null;
+
+if ($qrData !== '') {
+  $parts = explode('|', $qrData);
+  if (count($parts) !== 4 || $parts[0] !== 'KAPEHAN-LOYALTY' || !in_array($parts[1], [ROLE_STUDENT, ROLE_FACULTY], true) || !ctype_digit($parts[2]) || (int) $parts[2] < 1 || !defined('APP_KEY')) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'This is not a valid Kapehan loyalty QR.']);
+    exit;
+  }
+  [, $type, $rawId, $receivedHmac] = $parts;
+  $accountId = (int) $rawId;
+  $expectedHmac = hash_hmac('sha256', 'loyalty|' . $type . '|' . $accountId, APP_KEY);
+  if (!hash_equals($expectedHmac, $receivedHmac)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'This loyalty QR could not be verified. Ask the customer to open it again from their account.']);
+    exit;
+  }
+  $config = loyaltyAccountConfig($type);
+  $stmt = $db->prepare('SELECT id, full_name, ' . $config['identifier'] . ' AS account_identifier FROM ' . $config['table'] . ' WHERE id = ? AND is_active = 1 LIMIT 1');
+  $stmt->execute([$accountId]);
+  $account = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} else {
+  if (!loyaltyAccountConfig($type) || $identifier === '') {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'Choose a student or faculty account and enter its ID.']);
+    exit;
+  }
+  $account = loyaltyFindAccount($db, $type, $identifier);
 }
 
-$db = Database::getInstance();
-$account = loyaltyFindAccount($db, $type, $identifier);
 if (!$account) {
   http_response_code(404);
   echo json_encode(['ok' => false, 'message' => 'No active account matched that ID.']);

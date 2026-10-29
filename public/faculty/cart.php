@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../config/init.php';
 require_once __DIR__ . '/../../includes/inventory.php';
 requireRole(ROLE_FACULTY);
 $db = Database::getInstance();
+$asapRemainingDrinks = max(0, asapPreparationWorkloadLimit() - asapPreparationWorkload($db));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   verifyCsrf();
@@ -102,6 +103,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
   if ($ok) {
     $db->beginTransaction();
     try {
+      if (strtoupper($pickupTime) === 'ASAP') {
+        lockAsapPreparationWorkload($db, date('Y-m-d'));
+        if (asapPreparationWorkload($db) + $totalQuantity > asapPreparationWorkloadLimit()) {
+          throw new RuntimeException('ASAP pickup is temporarily full because the preparation queue is busy. Please choose a scheduled pickup time.');
+        }
+      }
       $orderNo = generateOrderNumber();
       $db->prepare("INSERT INTO orders (order_number,order_type,status,faculty_id,total_amount,notes,delivery_location,pickup_time) VALUES (?,?,?,?,?,?,?,?)")
         ->execute([$orderNo, ORDER_PREORDER, STATUS_PENDING, currentUserId(), $total, $notes, $deliveryLocation, $pickupTime]);
@@ -116,12 +123,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         ->execute([$orderId, $method, $total, PAY_STATUS_PAID, $ref]);
       $db->commit();
       auditLog(ROLE_FACULTY, currentUserId(), 'place_preorder', 'orders', $orderId);
-      flash('global', "Order {$orderNo} placed! Show your faculty ID when claiming.", 'success');
+      flash('global', "Order {$orderNo} placed! Show your order QR at the counter to claim it.", 'success');
       redirect(APP_URL . '/faculty/dashboard.php');
     } catch (\Throwable $e) {
       $db->rollBack();
       error_log($e->getMessage());
-      flash('global', 'Order failed. Please try again.', 'error');
+      flash('global', $e instanceof RuntimeException ? $e->getMessage() : 'Order failed. Please try again.', 'error');
       redirect(APP_URL . '/faculty/cart.php');
     }
   } else {
@@ -699,7 +706,7 @@ layoutHeader('My Cart', '');
 
                 // ASAP = first slot (always available)
                 $asapLabel = 'ASAP (earliest available)';
-                echo '<option value="ASAP">' . $asapLabel . '</option>';
+                echo '<option value="ASAP"' . ($asapRemainingDrinks <= 0 ? ' disabled' : '') . '>' . $asapLabel . '</option>';
 
                 while ($slotTs <= $closeTs) {
                   $slotStr   = date('H:i', $slotTs);       // e.g. "09:30"
@@ -718,6 +725,7 @@ layoutHeader('My Cart', '');
                 }
                 ?>
               </select>
+              <small id="asap-availability-note" class="form-hint">ASAP is limited to <?= (int) asapOrderQuantityLimit() ?> items per order and pauses while the preparation queue is full. Choose a scheduled pickup time when unavailable.</small>
 
               <div class="pickup-warning" id="pickup-warning" style="display:none">
                 <i class="fa-solid fa-triangle-exclamation"></i>
@@ -765,7 +773,7 @@ layoutHeader('My Cart', '');
 
             <div class="id-reminder">
               <i class="fa-solid fa-id-card"></i>
-              <div>Bring your <strong>faculty ID</strong> when claiming your order at the counter.</div>
+              <div>Show your <strong>order QR code</strong> at the counter to claim your order.</div>
             </div>
 
           </form>
@@ -827,8 +835,41 @@ layoutHeader('My Cart', '');
   /* ── Pickup time ──────────────────────────────── */
   const pickupSel = document.getElementById('pickup-time');
   const pickupWarning = document.getElementById('pickup-warning');
+  const asapAvailabilityUrl = <?= json_encode(APP_URL . '/api/pickup-slots.php?date=' . date('Y-m-d')) ?>;
+  const asapOption = pickupSel ? pickupSel.querySelector('option[value="ASAP"]') : null;
+  let asapRemainingDrinks = <?= (int) $asapRemainingDrinks ?>;
+  const asapOrderQuantityLimit = <?= (int) asapOrderQuantityLimit() ?>;
+
+  function applyAsapAvailability() {
+    if (!asapOption) return;
+    const requested = Object.values(getCart()).reduce((sum, item) => sum + (parseInt(item.qty, 10) || 0), 0);
+    const tooManyItems = requested > asapOrderQuantityLimit;
+    const unavailable = tooManyItems || requested > asapRemainingDrinks;
+    asapOption.disabled = unavailable;
+    asapOption.textContent = tooManyItems ? 'ASAP — order is over the item limit' : (unavailable ? 'ASAP — busy, choose scheduled pickup' : 'ASAP (earliest available)');
+    if (unavailable && pickupSel.value === 'ASAP') {
+      pickupSel.value = '';
+      pickupSel.classList.remove('selected');
+      if (pickupWarning) pickupWarning.style.display = 'none';
+    }
+  }
+
+  async function refreshAsapAvailability() {
+    try {
+      const response = await fetch(asapAvailabilityUrl, { cache: 'no-store', credentials: 'same-origin' });
+      const slots = await response.json();
+      const asap = Array.isArray(slots) ? slots.find(slot => slot.value === 'ASAP') : null;
+      if (asap) asapRemainingDrinks = asap.full ? Math.min(0, parseInt(asap.remaining_drinks ?? 0, 10)) : Math.max(0, parseInt(asap.remaining_drinks ?? 0, 10));
+      else asapRemainingDrinks = 0;
+      applyAsapAvailability();
+      updatePlaceBtn();
+    } catch (_) {
+      // The checkout endpoint remains authoritative if this availability refresh fails.
+    }
+  }
 
   function updatePlaceBtn() {
+    applyAsapAvailability();
     const cart = getCart();
     const hasItems = Object.keys(cart).length > 0;
     const hasPickup = pickupSel && pickupSel.value !== '';
@@ -955,6 +996,8 @@ layoutHeader('My Cart', '');
   });
 
   renderCart();
+  refreshAsapAvailability();
+  window.setInterval(refreshAsapAvailability, 20000);
   // initial button state after pickup listener is set
   updatePlaceBtn();
 </script>

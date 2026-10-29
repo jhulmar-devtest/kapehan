@@ -540,6 +540,39 @@ function asapOrderQuantityLimit(): int
   return max(1, (int) getSetting('asap_order_quantity_limit', '10'));
 }
 
+/** Maximum number of drink units that may be in the active preparation queue before ASAP pauses. */
+function asapPreparationWorkloadLimit(): int
+{
+  return max(1, (int) getSetting('asap_preparation_workload_limit', '8'));
+}
+
+/** Current drink units in walk-in preparation and active ASAP/started online orders. */
+function asapPreparationWorkload(PDO $db): int
+{
+  $stmt = $db->query(
+    "SELECT COALESCE(SUM(od.quantity), 0)
+       FROM orders o
+       JOIN order_details od ON od.order_id = o.id
+      WHERE (o.order_type = 'walk-in' AND o.status = 'claimed' AND o.walkin_prep_status = 'preparing')
+         OR (o.order_type = 'pre-order' AND o.status IN ('pending','preparing')
+             AND (o.pickup_time = 'ASAP' OR o.status = 'preparing'))"
+  );
+  return max(0, (int) $stmt->fetchColumn());
+}
+
+/** Serialize ASAP checkouts and walk-in ticket creation against one shared daily lock. */
+function lockAsapPreparationWorkload(PDO $db, string $date): void
+{
+  // This sentinel is shared with ASAP's pickup-slot lock and is not a valid pickup slot.
+  $db->prepare(
+    'INSERT INTO pickup_slot_locks (pickup_date, pickup_time) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP'
+  )->execute([$date, '00:00:01']);
+  $lock = $db->prepare('SELECT pickup_date FROM pickup_slot_locks WHERE pickup_date = ? AND pickup_time = ? FOR UPDATE');
+  $lock->execute([$date, '00:00:01']);
+  $lock->fetchColumn();
+}
+
 /** Return the total ordered quantity, or null for malformed/out-of-range lines. */
 function submittedOrderQuantityTotal(mixed $items): ?int
 {

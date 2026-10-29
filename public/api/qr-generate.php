@@ -25,8 +25,7 @@ $db = Database::getInstance();
 // Fetch order — must belong to this user and be in 'ready' status
 $stmt = $db->prepare(
   "SELECT o.id, o.order_number, o.status, o.total_amount,
-            COALESCE(s.full_name, f.full_name) AS customer_name,
-            COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id_no
+            COALESCE(s.full_name, f.full_name) AS customer_name
      FROM orders o
      LEFT JOIN students  s ON o.student_id  = s.id
      LEFT JOIN faculty   f ON o.faculty_id  = f.id

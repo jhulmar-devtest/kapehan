@@ -89,6 +89,13 @@ layoutHeader('Receipt', $receiptStyles);
   </div>
 </div>
 
+<?php if (($order['order_type'] ?? '') === ORDER_WALKIN && ($order['walkin_prep_status'] ?? '') === 'preparing'): ?>
+  <div class="alert alert-info no-print" style="margin-bottom:var(--space-5)">
+    <i class="fa-solid fa-mug-hot"></i>
+    <div>Payment is recorded and this ticket is <strong>in preparation</strong>. Mark it <strong>Complete &amp; serve</strong> from the Walk-in POS when you hand the order to the customer.</div>
+  </div>
+<?php endif; ?>
+
 <!-- Receipt paper — screen display only -->
 <div class="rcpt-print-root">
   <?php include __DIR__ . '/receipt_template.php'; ?>

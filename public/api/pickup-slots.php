@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/init.php';
 header('Content-Type: application/json');
+header('Cache-Control: no-store, private');
 
 if (!isLoggedIn()) {
   http_response_code(401);
@@ -20,6 +21,9 @@ $open     = getSetting('store_open_time', '07:00');
 $close    = getSetting('store_close_time', '20:00');
 $interval = (int) getSetting('pickup_slot_interval_minutes', '15');
 $capacity = (int) getSetting('pickup_slot_capacity', '6');
+$asapWorkloadLimit = asapPreparationWorkloadLimit();
+$asapWorkload = asapPreparationWorkload($db);
+$asapRemaining = max(0, $asapWorkloadLimit - $asapWorkload);
 
 // How many active orders already exist per slot on this date
 $stmt = $db->prepare(
@@ -61,7 +65,8 @@ if ($now >= strtotime($date . ' ' . $open) && $now < $end - (PICKUP_MIN_LEAD_MIN
   array_unshift($slots, [
     'value' => 'ASAP',
     'label' => 'ASAP',
-    'full'  => ($taken['ASAP'] ?? 0) >= $capacity,
+    'full'  => ($taken['ASAP'] ?? 0) >= $capacity || $asapRemaining <= 0,
+    'remaining_drinks' => $asapRemaining,
     'asap'  => true,
   ]);
 }

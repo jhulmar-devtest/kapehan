@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     'pickup_slot_interval_minutes' => (string) max(5, (int) ($_POST['pickup_slot_interval_minutes'] ?? 15)),
     'pickup_slot_capacity'         => (string) max(1, (int) ($_POST['pickup_slot_capacity'] ?? 6)),
     'asap_order_quantity_limit'    => (string) max(1, min(99, (int) ($_POST['asap_order_quantity_limit'] ?? 10))),
+    'asap_preparation_workload_limit' => (string) max(1, min(99, (int) ($_POST['asap_preparation_workload_limit'] ?? 8))),
     'online_ordering_enabled'      => ($_POST['online_ordering_enabled'] ?? '0') === '1' ? '1' : '0',
   ];
   foreach ($fields as $key => $value) {
@@ -90,6 +91,7 @@ $storeClose  = getSetting('store_close_time', '20:00');
 $slotInterval = getSetting('pickup_slot_interval_minutes', '15');
 $slotCapacity = getSetting('pickup_slot_capacity', '6');
 $asapQuantityLimit = asapOrderQuantityLimit();
+$asapWorkloadLimit = asapPreparationWorkloadLimit();
 $onlineOrderingOpen = onlineOrderingEnabled();
 $oldInput     = getOldInput();
 $gcashName    = $oldInput['gcash_payment_name']   ?? gcashPaymentName();
@@ -107,7 +109,7 @@ layoutHeader('Settings');
 <style>
   .admin-settings {
     display: grid;
-    gap: 18px
+    gap: 20px
   }
 
   .admin-settings .page-header {
@@ -120,7 +122,30 @@ layoutHeader('Settings');
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-xs);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
+
+  .settings-section:focus-within { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+
+  .settings-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 20px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(115deg, var(--surface-color), var(--surface-raised));
+  }
+  .settings-overview-copy { display:flex; align-items:center; gap:12px; }
+  .settings-overview-icon { display:grid; place-items:center; flex:0 0 42px; width:42px; height:42px; border-radius:13px; color:var(--primary-color); background:var(--primary-subtle); }
+  .settings-overview h2 { margin:0; font-size:14px; }
+  .settings-overview p { margin:3px 0 0; color:var(--text-muted); font-size:12px; }
+  .settings-status-list { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+  .settings-status { display:inline-flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--border-color); border-radius:999px; background:var(--surface-color); color:var(--text-secondary); font-size:11px; font-weight:700; white-space:nowrap; }
+  .settings-status::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--text-muted); }
+  .settings-status.is-on::before { background:var(--status-ready, #2f9e63); }
+  .settings-status.is-off::before { background:var(--primary-color); }
 
   .settings-section-head {
     display: flex;
@@ -161,8 +186,8 @@ layoutHeader('Settings');
 
   .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
   }
 
   .settings-grid .form-group {
@@ -180,6 +205,16 @@ layoutHeader('Settings');
   .settings-form-actions .btn {
     min-width: 140px
   }
+
+  .settings-toggle-card {
+    display:flex; align-items:flex-start; gap:12px; max-width:760px;
+    padding:14px 15px; border:1px solid var(--border-color); border-radius:var(--radius-md);
+    background:var(--surface-raised); cursor:pointer; transition:border-color var(--transition-fast), background var(--transition-fast);
+  }
+  .settings-toggle-card:hover { border-color:var(--border-strong); }
+  .settings-toggle-card input { flex:0 0 auto; width:17px; height:17px; margin:2px 0 0; accent-color:var(--primary-color); }
+  .settings-toggle-card strong { display:block; color:var(--text-primary); font-size:13px; }
+  .settings-toggle-card .form-hint { display:block; margin-top:3px; line-height:1.5; }
 
   .settings-confirm {
     max-width: 460px;
@@ -311,6 +346,8 @@ layoutHeader('Settings');
   }
 
   @media(max-width:640px) {
+    .settings-overview { grid-template-columns:1fr; }
+    .settings-status-list { justify-content:flex-start; }
     .settings-section-head {
       padding: 16px
     }
@@ -359,11 +396,23 @@ layoutHeader('Settings');
   </div>
   <?php showFlash('global'); ?>
 
+  <?php $paymongoConfigured = defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== ''; $paymongoEnabled = getSetting('paymongo_enabled', '1') === '1'; ?>
+  <div class="settings-overview" aria-label="Current store settings status">
+    <div class="settings-overview-copy">
+      <span class="settings-overview-icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i></span>
+      <div><h2>Current operating status</h2><p>Quick view of what customers can use right now.</p></div>
+    </div>
+    <div class="settings-status-list">
+      <span class="settings-status <?= $onlineOrderingOpen ? 'is-on' : 'is-off' ?>">Online orders <?= $onlineOrderingOpen ? 'open' : 'paused' ?></span>
+      <span class="settings-status <?= $paymongoConfigured && $paymongoEnabled ? 'is-on' : 'is-off' ?>">PayMongo <?= !$paymongoConfigured ? 'not configured' : ($paymongoEnabled ? 'available' : 'paused') ?></span>
+    </div>
+  </div>
+
   <div class="settings-section">
     <div class="settings-section-head"><span class="settings-section-icon"><i class="fa-solid fa-clock"></i></span>
       <div>
         <h2>Store and ordering rules</h2>
-        <p class="sub">Set store hours and pickup capacity, control ASAP order size, and pause online ordering when needed.</p>
+        <p class="sub">Set store hours and pickup capacity, control ASAP order size and preparation load, and pause online ordering when needed.</p>
       </div>
     </div>
     <div class="settings-section-body">
@@ -390,12 +439,16 @@ layoutHeader('Settings');
             <label class="form-label" for="asap-order-quantity-limit">Maximum items for ASAP</label>
             <input id="asap-order-quantity-limit" type="number" name="asap_order_quantity_limit" class="form-control" min="1" max="99" value="<?= e($asapQuantityLimit) ?>"><small class="form-hint">Larger orders must choose a scheduled pickup time. Default: 10 items.</small>
           </div>
+          <div class="form-group">
+            <label class="form-label" for="asap-preparation-workload-limit">ASAP preparation limit</label>
+            <input id="asap-preparation-workload-limit" type="number" name="asap_preparation_workload_limit" class="form-control" min="1" max="99" value="<?= e($asapWorkloadLimit) ?>"><small class="form-hint">Pause ASAP when this many drinks are in preparation. Counts walk-ins and active online orders. Default: 8 drinks.</small>
+          </div>
         </div>
-        <div style="margin-top:16px">
+        <div style="margin-top:18px">
           <input type="hidden" name="online_ordering_enabled" value="0">
-          <label style="display:flex;align-items:flex-start;gap:10px;max-width:680px">
-            <input type="checkbox" name="online_ordering_enabled" value="1" <?= $onlineOrderingOpen ? 'checked' : '' ?> style="margin-top:3px">
-            <span><strong>Accept online orders</strong><br><small class="form-hint">Turn this off to prevent new student and faculty orders. Cashier walk-ins remain available.</small></span>
+          <label class="settings-toggle-card">
+            <input type="checkbox" name="online_ordering_enabled" value="1" <?= $onlineOrderingOpen ? 'checked' : '' ?>>
+            <span><strong>Accept online orders</strong><small class="form-hint">Turn this off to prevent new student and faculty orders. Cashier walk-ins remain available.</small></span>
           </label>
         </div>
         <div class="settings-form-actions"><button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save store rules</button></div>
@@ -441,16 +494,15 @@ layoutHeader('Settings');
       </div>
     </div>
     <div class="settings-section-body">
-      <?php $paymongoConfigured = defined('PAYMONGO_SECRET_KEY') && trim((string) PAYMONGO_SECRET_KEY) !== ''; ?>
       <?php if (!$paymongoConfigured): ?>
         <div class="alert alert-info mb-3"><i class="fa-solid fa-circle-info"></i><div>PayMongo is not configured with a secret key. Manual GCash remains the checkout method.</div></div>
       <?php endif; ?>
       <form method="POST">
         <?= csrfField() ?><input type="hidden" name="save_payment_availability" value="1">
         <input type="hidden" name="paymongo_enabled" value="0">
-        <label style="display:flex;align-items:flex-start;gap:10px;max-width:680px">
-          <input type="checkbox" name="paymongo_enabled" value="1" <?= getSetting('paymongo_enabled', '1') === '1' ? 'checked' : '' ?> <?= !$paymongoConfigured ? 'disabled' : '' ?> style="margin-top:3px">
-          <span><strong>Accept new PayMongo checkouts</strong><br><small class="form-hint">When turned off, customers use the manual GCash flow. This does not change the status of orders already placed.</small></span>
+        <label class="settings-toggle-card">
+          <input type="checkbox" name="paymongo_enabled" value="1" <?= $paymongoEnabled ? 'checked' : '' ?> <?= !$paymongoConfigured ? 'disabled' : '' ?>>
+          <span><strong>Accept new PayMongo checkouts</strong><small class="form-hint">When turned off, customers use the manual GCash flow. This does not change the status of orders already placed.</small></span>
         </label>
         <div class="settings-form-actions"><button type="submit" class="btn btn-primary" <?= !$paymongoConfigured ? 'disabled' : '' ?>><i class="fa-solid fa-floppy-disk"></i> Save payment availability</button></div>
       </form>

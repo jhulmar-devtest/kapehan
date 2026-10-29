@@ -63,7 +63,6 @@ $db = Database::getInstance();
 $stmt = $db->prepare(
   "SELECT o.id, o.order_number, o.status, o.total_amount,
           COALESCE(s.full_name, f.full_name) AS customer_name,
-          COALESCE(s.student_id_no, f.faculty_id_no) AS customer_id_no,
           GROUP_CONCAT(
               CONCAT(od.quantity,'× ',pr.name,
                   IF(od.customization_note IS NOT NULL AND od.customization_note != '',
@@ -76,7 +75,7 @@ $stmt = $db->prepare(
    JOIN  order_details   od ON o.id = od.order_id
    JOIN  products        pr ON od.product_id = pr.id
    WHERE o.id = ?
-   GROUP BY o.id, o.order_number, o.status, o.total_amount, customer_name, customer_id_no"
+   GROUP BY o.id, o.order_number, o.status, o.total_amount, customer_name"
 );
 $stmt->execute([$orderId]);
 $order = $stmt->fetch(PDO::FETCH_ASSOC);

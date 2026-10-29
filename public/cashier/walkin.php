@@ -87,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
     $gcashRefLockName = null;
     $db->beginTransaction();
     try {
+      lockAsapPreparationWorkload($db, date('Y-m-d'));
       if ($payMethod === 'GCash') {
         $gcashRefLockName = gcashRefLock($db, $gcashRef);
         if ($gcashRefLockName === null) throw new RuntimeException('Another order is using this GCash reference. Please try again.');
@@ -136,8 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
         try {
           $studentId = $customer && $loyaltyType === ROLE_STUDENT ? $customerId : null;
           $facultyId = $customer && $loyaltyType === ROLE_FACULTY ? $customerId : null;
-          $db->prepare("INSERT INTO orders (order_number,order_type,status,cashier_id,student_id,faculty_id,total_amount) VALUES (?,?,?,?,?,?,?)")
-            ->execute([$orderNo, ORDER_WALKIN, STATUS_CLAIMED, currentUserId(), $studentId, $facultyId, $total]);
+          $db->prepare("INSERT INTO orders (order_number,order_type,status,walkin_prep_status,cashier_id,student_id,faculty_id,total_amount) VALUES (?,?,?,?,?,?,?,?)")
+            ->execute([$orderNo, ORDER_WALKIN, STATUS_CLAIMED, 'preparing', currentUserId(), $studentId, $facultyId, $total]);
           break; // success
         } catch (\PDOException $e) {
           if ($e->getCode() === '23000' && $attempt < $maxAttempts) {
@@ -161,8 +162,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
         loyaltyAwardOrder($db, $orderId, ROLE_CASHIER, (int) currentUserId());
       }
 
-      // Walk-in orders are paid and handed over immediately, so deduct their
-      // configured recipe quantities as part of the same transaction.
+      // A paid walk-in enters preparation immediately, so deduct its recipe
+      // quantities as part of the same transaction.
       deductInventoryForOrder($db, $orderId, ROLE_CASHIER, currentUserId());
 
       // Denominations only apply to cash payments
@@ -178,9 +179,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
       $_SESSION['last_order_id'] = $orderId;
 
       if ($payMethod === 'GCash') {
-        flash('global', "Order {$orderNo} processed via GCash! Ref: {$gcashRef}", 'success');
+        flash('global', "Order {$orderNo} processed via GCash and added to the preparation queue. Ref: {$gcashRef}", 'success');
       } else {
-        flash('global', "Order {$orderNo} processed! Change: " . peso($change), 'success');
+        flash('global', "Order {$orderNo} processed and added to the preparation queue. Change: " . peso($change), 'success');
       }
       redirect(APP_URL . '/cashier/receipt.php');
     } catch (\Throwable $e) {
@@ -1615,6 +1616,23 @@ layoutHeader('Walk-in POS', '');
     flex-shrink: 0;
     margin-top: 1px;
   }
+
+  .walkin-prep-panel { margin-bottom:16px; border:1px solid var(--border-color); border-radius:var(--radius-lg); background:var(--surface-color); box-shadow:var(--shadow-xs); overflow:hidden; }
+  .walkin-prep-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 16px; border-bottom:1px solid var(--border-color); }
+  .walkin-prep-title { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:800; }
+  .walkin-prep-title i { color:var(--primary-color); }
+  .walkin-prep-count { display:inline-flex; align-items:center; padding:4px 9px; border-radius:999px; color:var(--status-preparing); background:var(--status-preparing-bg); font-size:11px; font-weight:800; }
+  .walkin-prep-list { display:grid; gap:0; }
+  .walkin-prep-ticket { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:14px; padding:13px 16px; border-bottom:1px solid var(--border-color); }
+  .walkin-prep-ticket:last-child { border-bottom:0; }
+  .walkin-prep-ticket-main { min-width:0; }
+  .walkin-prep-ticket-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; font-weight:800; }
+  .walkin-prep-elapsed { color:var(--text-muted); font-size:11px; font-weight:600; }
+  .walkin-prep-items { margin-top:4px; color:var(--text-secondary); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+  .walkin-prep-ticket-total { margin-top:3px; color:var(--text-muted); font-size:11px; }
+  .walkin-prep-complete { white-space:nowrap; }
+  .walkin-prep-empty { padding:14px 16px; color:var(--text-muted); font-size:12px; }
+  @media(max-width:640px) { .walkin-prep-ticket { grid-template-columns:1fr; gap:10px; } .walkin-prep-complete { width:100%; } }
 </style>
 
 <?php showFlash('global'); ?>
@@ -1656,6 +1674,17 @@ layoutHeader('Walk-in POS', '');
       <div>Shared drawer is open · Expected cash: <strong><?= peso(cashDrawerExpectedAmount($db, (int)$openDrawer['id'], (float)$openDrawer['opening_amount'])) ?></strong> · <a href="<?= APP_URL ?>/cashier/cash-drawer.php" style="font-weight:800;text-decoration:underline">View drawer</a></div>
     </div>
   <?php endif; ?>
+
+  <section class="walkin-prep-panel" aria-labelledby="walkin-prep-title">
+    <div class="walkin-prep-head">
+      <div class="walkin-prep-title" id="walkin-prep-title"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i> Walk-in preparation</div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <span class="walkin-prep-count" id="walkin-prep-count" aria-live="polite">Loading…</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="walkin-prep-refresh" onclick="refreshWalkinPrepQueue(true)" aria-label="Refresh walk-in preparation queue"><i class="fa-solid fa-rotate-right"></i></button>
+      </div>
+    </div>
+    <div class="walkin-prep-list" id="walkin-prep-list"><div class="walkin-prep-empty">Checking active walk-in tickets…</div></div>
+  </section>
 
   <div class="pos-menu">
     <div class="pos-menu-head">
@@ -1811,6 +1840,7 @@ layoutHeader('Walk-in POS', '');
           <input id="loyalty-customer-identifier" class="form-control" placeholder="School ID" maxlength="30" style="min-width:0;flex:1">
           <button type="button" class="btn btn-secondary" id="loyalty-lookup-button" onclick="lookupLoyaltyCustomer()">Find</button>
         </div>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openLoyaltyQrScanner()"><i class="fa-solid fa-qrcode"></i> Scan loyalty QR</button>
         <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
           <input type="checkbox" id="pos-redeem-general" disabled> Use points for general discount
@@ -1921,6 +1951,29 @@ layoutHeader('Walk-in POS', '');
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="loyalty-qr-modal" style="z-index:410" role="dialog" aria-modal="true" aria-labelledby="loyaltyQrTitle">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" id="loyaltyQrTitle"><i class="fa-solid fa-qrcode"></i> Scan loyalty QR</div>
+      <button type="button" class="modal-close" onclick="closeLoyaltyQrScanner()" aria-label="Close scanner"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="text-muted" style="font-size:13px">Ask the customer to open their loyalty QR from Account, then hold it in front of the camera.</p>
+      <div style="position:relative;overflow:hidden;border-radius:12px;background:#111;min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div id="loyaltyQrPlaceholder" style="color:#ddd;text-align:center;padding:24px"><i class="fa-solid fa-camera" style="font-size:2rem;display:block;margin-bottom:9px"></i>Camera is off</div>
+        <video id="loyaltyQrVideo" autoplay playsinline muted style="display:none;width:100%;max-height:55vh;object-fit:cover"></video>
+        <canvas id="loyaltyQrCanvas" hidden></canvas>
+      </div>
+      <div id="loyaltyQrStatus" class="alert alert-info" role="status" style="margin-top:12px">Starting camera…</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button type="button" class="btn btn-primary flex-1" id="loyaltyQrStart" onclick="startLoyaltyQrCamera()"><i class="fa-solid fa-camera"></i> Start Camera</button>
+        <button type="button" class="btn btn-ghost flex-1" id="loyaltyQrStop" onclick="stopLoyaltyQrCamera()" hidden><i class="fa-solid fa-stop"></i> Stop Camera</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="<?= APP_URL ?>/../assets/js/jsQR.min.js"></script>
 <script>
   const POS_APP_URL = '<?= APP_URL ?>';
   const posProductImages = <?php
@@ -1945,10 +1998,123 @@ layoutHeader('Walk-in POS', '');
     return div.innerHTML;
   }
 
+  let walkinPrepQueueLoading = false;
+
+  function formatWalkinPrepElapsed(seconds) {
+    const totalMinutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60);
+    if (totalMinutes < 1) return 'Just started';
+    if (totalMinutes < 60) return `${totalMinutes} min in prep`;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes ? `${hours} hr ${minutes} min in prep` : `${hours} hr in prep`;
+  }
+
+  function renderWalkinPrepQueue(orders) {
+    const list = document.getElementById('walkin-prep-list');
+    const count = document.getElementById('walkin-prep-count');
+    if (!list || !count) return;
+    count.textContent = `${orders.length} in prep`;
+    list.replaceChildren();
+    if (!orders.length) {
+      const empty = document.createElement('div');
+      empty.className = 'walkin-prep-empty';
+      empty.textContent = 'No walk-in orders are being prepared.';
+      list.appendChild(empty);
+      return;
+    }
+    orders.forEach(order => {
+      const ticket = document.createElement('article');
+      ticket.className = 'walkin-prep-ticket';
+      const main = document.createElement('div');
+      main.className = 'walkin-prep-ticket-main';
+      const title = document.createElement('div');
+      title.className = 'walkin-prep-ticket-title';
+      const number = document.createElement('span');
+      number.textContent = order.order_number;
+      const elapsed = document.createElement('span');
+      elapsed.className = 'walkin-prep-elapsed';
+      elapsed.textContent = formatWalkinPrepElapsed(order.elapsed_seconds);
+      title.append(number, elapsed);
+      const items = document.createElement('div');
+      items.className = 'walkin-prep-items';
+      items.textContent = order.items || 'Items unavailable';
+      const total = document.createElement('div');
+      total.className = 'walkin-prep-ticket-total';
+      total.textContent = `Paid · ₱${Number(order.total_amount || 0).toFixed(2)}`;
+      main.append(title, items, total);
+      const complete = document.createElement('button');
+      complete.type = 'button';
+      complete.className = 'btn btn-success btn-sm walkin-prep-complete';
+      complete.innerHTML = '<i class="fa-solid fa-check"></i> Complete &amp; serve';
+      complete.addEventListener('click', () => completeWalkinPrepTicket(Number(order.id), complete));
+      ticket.append(main, complete);
+      list.appendChild(ticket);
+    });
+  }
+
+  async function refreshWalkinPrepQueue() {
+    if (walkinPrepQueueLoading) return;
+    const refresh = document.getElementById('walkin-prep-refresh');
+    walkinPrepQueueLoading = true;
+    if (refresh) refresh.disabled = true;
+    try {
+      const response = await fetch(`${POS_APP_URL}/api/walkin-prep-queue.php`, { headers: { 'Accept': 'application/json' } });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Could not load active walk-in tickets.');
+      renderWalkinPrepQueue(data.orders || []);
+    } catch (error) {
+      const count = document.getElementById('walkin-prep-count');
+      const list = document.getElementById('walkin-prep-list');
+      if (count) count.textContent = 'Unavailable';
+      if (list) list.textContent = error.message || 'Could not load the preparation queue.';
+    } finally {
+      walkinPrepQueueLoading = false;
+      if (refresh) refresh.disabled = false;
+    }
+  }
+
+  async function completeWalkinPrepTicket(orderId, button) {
+    if (!orderId || button.disabled) return;
+    const oldLabel = button.innerHTML;
+    button.disabled = true;
+    button.textContent = 'Completing…';
+    try {
+      const response = await fetch(`${POS_APP_URL}/api/walkin-prep-queue.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ order_id: orderId })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Could not complete this ticket.');
+      await refreshWalkinPrepQueue();
+    } catch (error) {
+      button.disabled = false;
+      button.innerHTML = oldLabel;
+      alertModal(error.message || 'Could not complete this ticket.', { title: 'Preparation ticket', icon: 'fa-circle-exclamation', iconColor: 'warning' });
+    }
+  }
+
+  refreshWalkinPrepQueue();
+  window.setInterval(() => {
+    if (document.visibilityState === 'visible') refreshWalkinPrepQueue();
+  }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshWalkinPrepQueue();
+  });
+
   let cart = {};
   let _discountType = 'none';
   let _payMethod = 'cash'; // 'cash' or 'GCash'
   let _loyaltyCustomer = null;
+  let loyaltyQrStream = null;
+  let loyaltyQrFrame = null;
+  let loyaltyQrBusy = false;
+  const loyaltyQrVideo = document.getElementById('loyaltyQrVideo');
+  const loyaltyQrCanvas = document.getElementById('loyaltyQrCanvas');
+  const loyaltyQrContext = loyaltyQrCanvas.getContext('2d', { willReadFrequently: true });
 
   function getSubtotal() {
     return Object.values(cart).reduce((s, i) => s + i.price * i.qty, 0);
@@ -2041,12 +2207,7 @@ layoutHeader('Walk-in POS', '');
       });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
-      _loyaltyCustomer = data.account;
-      result.textContent = `${data.account.name} · ${data.account.balance} points available`;
-      redeem.disabled = data.account.balance < Math.min(...POS_LOYALTY_PRODUCT_REWARDS.map(item => Number(item.points_required)), Infinity);
-      redeem.title = redeem.disabled ? 'This account does not have enough points for an active drink reward.' : '';
-      redeemGeneral.disabled = data.account.balance < Number(POS_LOYALTY_REDEMPTION_RULES.points_step);
-      document.getElementById('pos-general-redemption-hint').textContent = `${POS_LOYALTY_REDEMPTION_RULES.discount_amount} off per ${POS_LOYALTY_REDEMPTION_RULES.points_step} points; use up to your balance and order total.`;
+      applyLoyaltyCustomer(data.account);
     } catch (error) {
       result.textContent = error.message;
     } finally {
@@ -2055,6 +2216,132 @@ layoutHeader('Walk-in POS', '');
       renderCart();
     }
   }
+
+  function applyLoyaltyCustomer(account) {
+    _loyaltyCustomer = account;
+    document.getElementById('loyalty-customer-type').value = account.type;
+    document.getElementById('loyalty-customer-identifier').value = account.identifier;
+    document.getElementById('loyalty-customer-result').textContent = `${account.name} · ${account.balance} points available`;
+    const redeem = document.getElementById('pos-redeem-points');
+    const redeemGeneral = document.getElementById('pos-redeem-general');
+    redeem.checked = false;
+    redeemGeneral.checked = false;
+    redeem.disabled = account.balance < Math.min(...POS_LOYALTY_PRODUCT_REWARDS.map(item => Number(item.points_required)), Infinity);
+    redeem.title = redeem.disabled ? 'This account does not have enough points for an active drink reward.' : '';
+    redeemGeneral.disabled = account.balance < Number(POS_LOYALTY_REDEMPTION_RULES.points_step);
+    document.getElementById('pos-general-redemption-hint').textContent = `${POS_LOYALTY_REDEMPTION_RULES.discount_amount} off per ${POS_LOYALTY_REDEMPTION_RULES.points_step} points; use up to your balance and order total.`;
+    renderCart();
+  }
+
+  function setLoyaltyQrStatus(message, type = 'info') {
+    const status = document.getElementById('loyaltyQrStatus');
+    status.className = `alert alert-${type}`;
+    status.textContent = message;
+  }
+
+  function openLoyaltyQrScanner() {
+    document.getElementById('loyalty-qr-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    setLoyaltyQrStatus('Starting camera…');
+    startLoyaltyQrCamera();
+  }
+
+  function closeLoyaltyQrScanner() {
+    stopLoyaltyQrCamera();
+    loyaltyQrBusy = false;
+    document.getElementById('loyalty-qr-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('loyalty-qr-modal').addEventListener('click', event => {
+    if (event.target.id === 'loyalty-qr-modal') closeLoyaltyQrScanner();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !document.getElementById('loyalty-qr-modal').classList.contains('hidden')) closeLoyaltyQrScanner();
+  });
+
+  async function startLoyaltyQrCamera() {
+    if (loyaltyQrStream) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof jsQR !== 'function') {
+      setLoyaltyQrStatus('Camera scanning is not available in this browser. Enter the customer ID manually instead.', 'danger');
+      return;
+    }
+    setLoyaltyQrStatus('Requesting camera access…');
+    try {
+      loyaltyQrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
+      loyaltyQrVideo.srcObject = loyaltyQrStream;
+      await new Promise((resolve, reject) => {
+        if (loyaltyQrVideo.readyState >= 1) return resolve();
+        loyaltyQrVideo.onloadedmetadata = resolve;
+        loyaltyQrVideo.onerror = reject;
+        setTimeout(() => reject(new Error('Camera did not start in time.')), 10000);
+      });
+      await loyaltyQrVideo.play();
+      document.getElementById('loyaltyQrPlaceholder').hidden = true;
+      loyaltyQrVideo.style.display = 'block';
+      document.getElementById('loyaltyQrStart').hidden = true;
+      document.getElementById('loyaltyQrStop').hidden = false;
+      setLoyaltyQrStatus('Scanning… hold the customer’s loyalty QR in front of the camera.');
+      loyaltyQrFrame = requestAnimationFrame(scanLoyaltyQrFrame);
+    } catch (error) {
+      stopLoyaltyQrCamera();
+      const message = error.name === 'NotAllowedError' ? 'Camera permission was denied. Allow camera access and try again.' : error.name === 'NotFoundError' ? 'No camera was found on this device.' : (error.message || 'Could not start the camera.');
+      setLoyaltyQrStatus(message, 'danger');
+    }
+  }
+
+  function stopLoyaltyQrCamera() {
+    if (loyaltyQrFrame) cancelAnimationFrame(loyaltyQrFrame);
+    loyaltyQrFrame = null;
+    if (loyaltyQrStream) loyaltyQrStream.getTracks().forEach(track => track.stop());
+    loyaltyQrStream = null;
+    if (loyaltyQrVideo) {
+      loyaltyQrVideo.pause();
+      loyaltyQrVideo.srcObject = null;
+      loyaltyQrVideo.style.display = 'none';
+    }
+    document.getElementById('loyaltyQrPlaceholder').hidden = false;
+    document.getElementById('loyaltyQrStop').hidden = true;
+    document.getElementById('loyaltyQrStart').hidden = false;
+  }
+
+  function scanLoyaltyQrFrame() {
+    if (!loyaltyQrStream) return;
+    if (!loyaltyQrBusy && loyaltyQrVideo.readyState >= 2 && loyaltyQrVideo.videoWidth > 0) {
+      loyaltyQrCanvas.width = loyaltyQrVideo.videoWidth;
+      loyaltyQrCanvas.height = loyaltyQrVideo.videoHeight;
+      loyaltyQrContext.drawImage(loyaltyQrVideo, 0, 0, loyaltyQrCanvas.width, loyaltyQrCanvas.height);
+      const pixels = loyaltyQrContext.getImageData(0, 0, loyaltyQrCanvas.width, loyaltyQrCanvas.height);
+      const code = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+      if (code?.data) {
+        loyaltyQrBusy = true;
+        stopLoyaltyQrCamera();
+        lookupLoyaltyCustomerByQr(code.data);
+        return;
+      }
+    }
+    loyaltyQrFrame = requestAnimationFrame(scanLoyaltyQrFrame);
+  }
+
+  async function lookupLoyaltyCustomerByQr(qrData) {
+    setLoyaltyQrStatus('QR detected. Looking up the loyalty account…');
+    try {
+      const response = await fetch(`${POS_APP_URL}/api/loyalty-customer-lookup.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+        body: JSON.stringify({ qr_data: qrData })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Loyalty QR lookup failed.');
+      applyLoyaltyCustomer(data.account);
+      closeLoyaltyQrScanner();
+    } catch (error) {
+      loyaltyQrBusy = false;
+      setLoyaltyQrStatus(error.message || 'Could not read this loyalty QR. Try again or enter the ID manually.', 'danger');
+    }
+  }
+
+  window.addEventListener('beforeunload', stopLoyaltyQrCamera);
 
   document.getElementById('loyalty-customer-identifier').addEventListener('input', () => {
     _loyaltyCustomer = null;
@@ -3084,6 +3371,7 @@ layoutHeader('Walk-in POS', '');
       </div>
       <div id="pm-section-addons">
         <div class="pm-section-label">Add-ons</div>
+        <div style="font-size:11px;color:var(--text-muted);margin:-5px 0 8px">Add-on prices apply per item and are multiplied by the line quantity.</div>
         <div id="pm-addons-container">
           <div class="pm-no-addons">No add-ons available.</div>
         </div>
@@ -3219,7 +3507,7 @@ layoutHeader('Walk-in POS', '');
         <input type="checkbox" class="pm-addon-cb" data-id="${addon.id}" data-name="${e(addon.name)}" data-price="${addon.price}" ${_pos.selectedAddonIds.includes(Number(addon.id)) ? 'checked' : ''} onchange="posRecalc();posUpdateStockEstimate()">
         <div class="pm-addon-check"><i class="fa-solid fa-check"></i></div>
         <span class="pm-addon-name">${e(addon.name)}</span>
-        <span class="pm-addon-price">+₱${parseFloat(addon.price).toFixed(2)}</span>
+        <span class="pm-addon-price">+₱${parseFloat(addon.price).toFixed(2)} / item</span>
       </label>`;
     });
     html += '</div>';

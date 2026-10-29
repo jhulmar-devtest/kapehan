@@ -360,7 +360,6 @@ layoutHeader('QR Scanner', '');
     </div>
     <div class="result-body">
       <div class="result-row"><span class="lbl">Customer</span><span class="val" id="rCustomer"></span></div>
-      <div class="result-row"><span class="lbl">ID No.</span><span class="val" id="rCustomerId"></span></div>
       <div class="result-row"><span class="lbl">Items</span><span class="val" id="rItems"></span></div>
       <div class="result-row"><span class="lbl">Total</span><span class="val result-total" id="rTotal"></span></div>
     </div>
@@ -650,7 +649,6 @@ layoutHeader('QR Scanner', '');
   function fillOrderFields(order) {
     document.getElementById('resultOrderNum').textContent = order.order_number;
     document.getElementById('rCustomer').textContent = order.customer_name;
-    document.getElementById('rCustomerId').textContent = order.customer_id_no;
     document.getElementById('rItems').textContent = order.items;
     document.getElementById('rTotal').textContent = '₱' + parseFloat(order.total_amount).toLocaleString('en-PH', {
       minimumFractionDigits: 2

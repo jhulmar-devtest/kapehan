@@ -103,20 +103,47 @@ if ($selectedProduct) {
     $selectedRecipe = $defaultRecipe;
   }
 }
+$configuredIngredientCount = count($selectedRecipe);
 
 layoutHeader('Recipes');
 ?>
 <style>
-  .recipe-help {
-    margin-bottom: 18px;
-  }
+  .recipe-help { margin-bottom:18px; border-radius:var(--radius-md); line-height:1.6; }
+  .recipe-hero { margin-bottom:18px; border:1px solid var(--border-color); border-radius:var(--radius-lg); overflow:hidden; background:linear-gradient(120deg,var(--surface-color),var(--surface-raised)); box-shadow:var(--shadow-xs); }
+  .recipe-hero-top { display:flex; align-items:center; gap:14px; padding:18px 20px 14px; }
+  .recipe-hero-icon { display:grid; place-items:center; flex:0 0 42px; width:42px; height:42px; border-radius:13px; background:var(--primary-subtle); color:var(--primary-color); font-size:17px; }
+  .recipe-hero h2 { margin:0; font-size:15px; }
+  .recipe-hero p { margin:4px 0 0; color:var(--text-muted); font-size:12px; }
 
   .recipe-selectors {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 14px;
     align-items: end;
+    padding: 0 20px 19px;
   }
+  .recipe-product-search { grid-column:1 / -1; max-width:520px; }
+  .recipe-product-search .form-hint { display:block; margin-top:5px; }
+
+  .recipe-editor-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; width:100%; }
+  .recipe-editor-name { display:flex; align-items:center; gap:9px; min-width:0; }
+  .recipe-editor-name i { color:var(--primary-color); }
+  .recipe-count { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; padding:6px 10px; border-radius:999px; background:var(--primary-subtle); color:var(--primary-color); font-size:11px; font-weight:700; }
+  .recipe-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .recipe-search { max-width:300px; position:relative; flex:1; }
+  .recipe-search i { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+  .recipe-search input { padding-left:35px; }
+  .recipe-table-wrap { border:1px solid var(--border-color); border-radius:var(--radius-md); }
+  .recipe-table-wrap .data-table { margin:0; }
+  .recipe-table-wrap .data-table th { white-space:nowrap; }
+  .recipe-table-wrap .data-table tr[hidden] { display:none !important; }
+  .recipe-stock-value { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .recipe-unit { color:var(--text-muted); font-size:11px; }
+  .recipe-qty { font-variant-numeric:tabular-nums; }
+  .recipe-empty-filter { display:none; padding:20px; text-align:center; color:var(--text-muted); }
+  .recipe-editor-note { display:flex; align-items:flex-start; gap:9px; margin-bottom:16px; padding:11px 13px; border-radius:var(--radius-sm); background:var(--surface-raised); color:var(--text-secondary); font-size:12px; line-height:1.5; }
+  .recipe-editor-note i { margin-top:2px; color:var(--primary-color); }
+  .recipe-save-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; }
 
   .recipe-table-wrap {
     overflow-x: auto;
@@ -147,6 +174,12 @@ layoutHeader('Recipes');
     .recipe-qty {
       width: 126px;
     }
+    .recipe-hero-top { padding:16px; }
+    .recipe-selectors { padding:0 16px 16px; }
+    .recipe-toolbar,.recipe-save-row { align-items:stretch; flex-direction:column; }
+    .recipe-search { max-width:none; }
+    .recipe-save-row .btn { width:100%; }
+    .recipe-editor-head { flex-direction:column; }
   }
 </style>
 
@@ -171,14 +204,22 @@ layoutHeader('Recipes');
   </div>
 </div>
 
-<div class="card mb-4">
-  <div class="card-body">
-    <form method="GET" class="recipe-selectors">
+<section class="recipe-hero" aria-labelledby="recipe-setup-heading">
+  <div class="recipe-hero-top">
+    <span class="recipe-hero-icon"><i class="fa-solid fa-list-check" aria-hidden="true"></i></span>
+    <div><h2 id="recipe-setup-heading">Choose what to configure</h2><p>Select a product, then choose its default recipe or a size-specific override.</p></div>
+  </div>
+  <form method="GET" class="recipe-selectors">
+      <div class="form-group recipe-product-search" style="margin:0">
+        <label class="form-label" for="recipe-product-search">Find a product</label>
+        <input class="form-control" type="search" id="recipe-product-search" placeholder="Search by product or category" autocomplete="off" <?= !$products ? 'disabled' : '' ?>>
+        <small class="form-hint" id="recipe-product-match-count" aria-live="polite"><?= count($products) ?> product<?= count($products) === 1 ? '' : 's' ?> available</small>
+      </div>
       <div class="form-group" style="margin:0">
         <label class="form-label" for="recipe-product">Product</label>
         <select class="form-control" name="product_id" id="recipe-product" onchange="this.form.submit()" <?= !$products ? 'disabled' : '' ?>>
           <?php foreach ($products as $product): ?>
-            <option value="<?= (int) $product['id'] ?>" <?= (int) $product['id'] === $selectedProductId ? 'selected' : '' ?>><?= e($product['name']) ?> · <?= e($product['category_name']) ?></option>
+            <option value="<?= (int) $product['id'] ?>" data-search="<?= e(mb_strtolower($product['name'] . ' ' . $product['category_name'])) ?>" <?= (int) $product['id'] === $selectedProductId ? 'selected' : '' ?>><?= e($product['name']) ?> · <?= e($product['category_name']) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -193,9 +234,8 @@ layoutHeader('Recipes');
           </select>
         </div>
       <?php endif; ?>
-    </form>
-  </div>
-</div>
+  </form>
+</section>
 
 <?php if (!$products): ?>
   <div class="card recipe-empty">Add a product in Ordering before defining its recipe.</div>
@@ -207,15 +247,16 @@ layoutHeader('Recipes');
 <?php else: ?>
   <div class="card">
     <div class="card-header">
-      <div class="card-title"><i class="fa-solid fa-flask"></i> <?= e($selectedProduct['name']) ?> · <?= $selectedSize !== '' ? e($selectedSize) . ' recipe' : 'Default recipe' ?></div>
+      <div class="recipe-editor-head">
+        <div><div class="card-title recipe-editor-name"><i class="fa-solid fa-flask"></i> <?= e($selectedProduct['name']) ?> <span aria-hidden="true">·</span> <?= $selectedSize !== '' ? e($selectedSize) . ' recipe' : 'Default recipe' ?></div><div class="text-muted" style="font-size:12px;margin-top:5px"><?= e($selectedProduct['category_name']) ?><?= !empty($selectedProduct['has_sizes']) ? ' · size-aware product' : ' · one recipe for all servings' ?></div></div>
+        <span class="recipe-count"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i> <?= $configuredIngredientCount ?> <?= $selectedSize !== '' ? 'override' : 'ingredient' ?><?= $configuredIngredientCount === 1 ? '' : 's' ?> configured</span>
+      </div>
     </div>
     <div class="card-body">
       <?php if ($selectedSize !== ''): ?>
-        <div class="alert alert-info mb-4" style="font-size:.82rem">
-          Leave a quantity blank to use the default recipe. Enter a different amount to override it; enter 0 to exclude that ingredient for this size.
-        </div>
+        <div class="recipe-editor-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Blank uses the default amount. Enter a quantity to override it, or <strong>0</strong> to exclude the ingredient for this size.</span></div>
       <?php else: ?>
-        <p class="text-muted mb-4">This recipe is the default for this product. Size-specific values can override individual ingredients.</p>
+        <div class="recipe-editor-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>This is the base recipe. For size-aware products, size overrides can replace individual ingredient quantities.</span></div>
       <?php endif; ?>
 
       <form method="POST">
@@ -223,6 +264,10 @@ layoutHeader('Recipes');
         <input type="hidden" name="save_recipe" value="1">
         <input type="hidden" name="product_id" value="<?= $selectedProductId ?>">
         <input type="hidden" name="size_label" value="<?= e($selectedSize) ?>">
+        <div class="recipe-toolbar">
+          <label class="recipe-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="recipe-item-search" type="search" class="form-control" placeholder="Find an ingredient" autocomplete="off"></label>
+          <span class="text-muted" style="font-size:11px">Amounts use each item’s stock unit</span>
+        </div>
         <div class="recipe-table-wrap">
           <table class="data-table">
             <thead>
@@ -241,11 +286,11 @@ layoutHeader('Recipes');
                   ? ($selectedRecipe[$itemId] ?? '')
                   : ($hasVariantAmount ? $selectedRecipe[$itemId] : '');
               ?>
-                <tr>
+                <tr data-recipe-item="<?= e(mb_strtolower($item['name'])) ?>">
                   <td><strong><?= e($item['name']) ?></strong>
-                    <div class="text-muted"><?= e($item['unit']) ?> per stock unit</div>
+                    <div class="recipe-unit">Stock unit: <?= e($item['unit']) ?></div>
                   </td>
-                  <td><?= number_format((float) $item['quantity_on_hand'], 3) ?> <?= e($item['unit']) ?></td>
+                  <td class="recipe-stock-value"><?= number_format((float) $item['quantity_on_hand'], 3) ?> <span class="recipe-unit"><?= e($item['unit']) ?></span></td>
                   <?php if ($selectedSize !== ''): ?>
                     <td class="recipe-size-hint">
                       <?= array_key_exists($itemId, $defaultRecipe) ? number_format($defaultRecipe[$itemId], 3) . ' ' . e($item['unit']) : '—' ?>
@@ -262,12 +307,49 @@ layoutHeader('Recipes');
             </tbody>
           </table>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:var(--space-4)">
+        <div class="recipe-empty-filter" id="recipe-no-match">No inventory items match that search.</div>
+        <div class="recipe-save-row"><span class="text-muted" style="font-size:11px">Changes apply to future stock deductions.</span>
           <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Recipe</button>
         </div>
       </form>
     </div>
   </div>
 <?php endif; ?>
+
+<script>
+  (() => {
+    const productSearch = document.getElementById('recipe-product-search');
+    const productSelect = document.getElementById('recipe-product');
+    const productCount = document.getElementById('recipe-product-match-count');
+    if (productSearch && productSelect && productCount) {
+      const productOptions = Array.from(productSelect.options);
+      productSearch.addEventListener('input', () => {
+        const query = productSearch.value.trim().toLocaleLowerCase();
+        let matches = 0;
+        productOptions.forEach(option => {
+          const match = !query || (option.dataset.search || option.textContent.toLocaleLowerCase()).includes(query);
+          option.hidden = !match;
+          if (match) matches++;
+        });
+        productCount.textContent = `${matches} product${matches === 1 ? '' : 's'} found`;
+      });
+    }
+
+    const input = document.getElementById('recipe-item-search');
+    const rows = Array.from(document.querySelectorAll('[data-recipe-item]'));
+    const empty = document.getElementById('recipe-no-match');
+    if (!input || !rows.length || !empty) return;
+    input.addEventListener('input', () => {
+      const query = input.value.trim().toLocaleLowerCase();
+      let visible = 0;
+      rows.forEach(row => {
+        const match = row.dataset.recipeItem.includes(query);
+        row.hidden = !match;
+        if (match) visible++;
+      });
+      empty.style.display = visible ? 'none' : 'block';
+    });
+  })();
+</script>
 
 <?php layoutFooter(); ?>

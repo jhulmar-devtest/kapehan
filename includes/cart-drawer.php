@@ -82,7 +82,7 @@
     <button class="modal-close" onclick="closeConfirmModal()" aria-label="Close">&times;</button>
     <div class="confirm-icon"><i class="fa-solid fa-check"></i></div>
     <div class="confirm-heading" id="confirmHeading">Order placed!</div>
-    <div class="confirm-subheading">Show your school ID when claiming.</div>
+    <div class="confirm-subheading">Show your order QR at the counter to claim it.</div>
     <div class="confirm-details">
       <div class="confirm-row"><span>Order number</span><span id="confOrderNo"></span></div>
       <div class="confirm-row"><span>Pickup</span><span id="confPickup"></span></div>

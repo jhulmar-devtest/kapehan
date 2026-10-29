@@ -33,6 +33,9 @@ $loyaltyRules = loyaltyRules($db);
 $loyaltyProductRewards = $loyaltyReady ? loyaltyProductRewards($db) : [];
 $loyaltyBalance = loyaltyPointsBalance($db, $role, $userId);
 $loyaltyEntries = loyaltyHistory($db, $role, $userId, 30);
+$loyaltyQrPayload = $loyaltyReady && defined('APP_KEY')
+  ? 'KAPEHAN-LOYALTY|' . $role . '|' . $userId . '|' . hash_hmac('sha256', 'loyalty|' . $role . '|' . $userId, APP_KEY)
+  : '';
 
 // ---- Update profile fields ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
@@ -298,6 +301,12 @@ $ordersUrl = APP_URL . '/orders.php';
       opacity: .88;
       margin-top: 4px;
     }
+
+    .loyalty-qr-card { display:flex; align-items:center; gap:16px; padding:14px; margin:0 0 20px; border:1px solid var(--border-color); border-radius:12px; background:var(--surface-raised); }
+    .loyalty-qr-code { display:grid; place-items:center; flex:0 0 148px; width:148px; height:148px; padding:8px; border-radius:9px; background:#fff; }
+    .loyalty-qr-copy strong { display:block; margin-bottom:4px; }
+    .loyalty-qr-copy p { margin:0; color:var(--text-muted); font-size:.82rem; line-height:1.5; }
+    @media(max-width:520px) { .loyalty-qr-card { align-items:flex-start; flex-direction:column; } }
 
     .loyalty-history {
       width: 100%;
@@ -581,6 +590,12 @@ $ordersUrl = APP_URL . '/orders.php';
             <div><strong><?= number_format($loyaltyBalance) ?></strong><span>available points</span></div>
             <i class="fa-solid fa-mug-hot" style="font-size:1.8rem;opacity:.85" aria-hidden="true"></i>
           </div>
+          <?php if ($loyaltyQrPayload !== ''): ?>
+            <div class="loyalty-qr-card">
+              <div class="loyalty-qr-code" id="loyalty-account-qr" role="img" aria-label="Your loyalty account QR code"></div>
+              <div class="loyalty-qr-copy"><strong><i class="fa-solid fa-qrcode" aria-hidden="true"></i> Walk-in loyalty QR</strong><p>Show this code to the cashier to find your loyalty account for a walk-in order. The cashier can check your points balance and apply an eligible reward.</p></div>
+            </div>
+          <?php endif; ?>
           <div style="font-weight:800;margin-bottom:8px">Points activity</div>
           <?php if (!$loyaltyEntries): ?>
             <p class="text-muted" style="font-size:.86rem">No points activity yet. Points from pre-orders are added after the cashier marks the order claimed.</p>
@@ -648,9 +663,16 @@ $ordersUrl = APP_URL . '/orders.php';
     </div>
   </div>
 
+  <?php if ($loyaltyQrPayload !== ''): ?><script src="<?= APP_URL ?>/../assets/js/qrcode.min.js"></script><?php endif; ?>
   <script>
     const APP_URL = '<?= APP_URL ?>';
     const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
+    <?php if ($loyaltyQrPayload !== ''): ?>
+    if (typeof QRCode === 'function') new QRCode(document.getElementById('loyalty-account-qr'), {
+      text: <?= json_encode($loyaltyQrPayload, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
+      width: 132, height: 132, correctLevel: QRCode.CorrectLevel.M
+    });
+    <?php endif; ?>
 
     /* ── Profile inline-edit ── */
     const editableFields = ['full_name', 'email'

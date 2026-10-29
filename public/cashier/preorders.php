@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_PO
   verifyCsrf();
   $oid    = (int)$_POST['order_id'];
   $status = $_POST['new_status'] ?? '';
-  $allowed = [STATUS_PREPARING, STATUS_READY, STATUS_CLAIMED, STATUS_CANCELLED];
+  $allowed = [STATUS_PREPARING, STATUS_READY, STATUS_CANCELLED];
 
   // Check if order is locked by another cashier (unless cancelling)
   $gatewayPaidAtCancel = false;
@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_PO
 
     try {
       $db->beginTransaction();
+      lockAsapPreparationWorkload($db, date('Y-m-d'));
       $orderStmt = $db->prepare("SELECT id, status FROM orders WHERE id = ? AND order_type = 'pre-order' FOR UPDATE");
       $orderStmt->execute([$oid]);
       $orderRow = $orderStmt->fetch(PDO::FETCH_ASSOC);
@@ -82,7 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_PO
       $allowedFrom = [
         STATUS_PREPARING => [STATUS_PENDING],
         STATUS_READY     => [STATUS_PREPARING],
-        STATUS_CLAIMED   => [STATUS_READY],
         STATUS_CANCELLED => [STATUS_PENDING, STATUS_READY],
       ];
       if ($currentStatus === $status) {
@@ -123,9 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'], $_PO
         deductInventoryForOrder($db, $oid, ROLE_CASHIER, $currentUser);
       }
 
-      if ($status === STATUS_CLAIMED) {
-        loyaltyAwardOrder($db, $oid, ROLE_CASHIER, $currentUser);
-      } elseif ($status === STATUS_CANCELLED) {
+      if ($status === STATUS_CANCELLED) {
         if ($paymentRow && $paymentRow['payment_status'] === PAY_STATUS_PENDING) {
           // Cashier cancellation closes a pending payment record for either
           // manual GCash or PayMongo. Failed references can then be reused.
@@ -966,7 +964,7 @@ layoutHeader('Pre-orders', '');
       <i class="fa-solid fa-rotate-right"></i> Refresh
     </button>
     <button type="button" class="btn btn-outline" onclick="openQueueQrModal()">
-      <i class="fa-solid fa-qrcode"></i> Scan QR to find order
+      <i class="fa-solid fa-qrcode"></i> Scan QR to hand over
     </button>
     <?php if ($counts['ready'] > 0): ?>
       <span class="badge badge-ready"><?= $counts['ready'] ?> ready</span>
@@ -985,7 +983,7 @@ layoutHeader('Pre-orders', '');
   <i class="fa-solid fa-circle-info"></i>
   <div>
     <strong>How to verify payment:</strong> Orders marked <em>Paid online</em> were confirmed automatically by PayMongo. For manual GCash payments, check the reference and amount in the shop's <strong>GCash transaction history</strong>, then use <em>Verify Payment</em> before starting preparation. A customer screenshot alone is not confirmation. If a cancellation is requested, check the account first; if money arrived, send the request to the admin refund queue.
-    At pickup, use <strong>Verify ID</strong> to check the physical school ID, or scan the customer's QR and review the matched order before confirming handover.
+    At pickup, scan the customer's order QR, review the matched order, then confirm the handover.
   </div>
 </div>
 
@@ -1210,8 +1208,8 @@ layoutHeader('Pre-orders', '');
 
             <?php elseif ($o['status'] === STATUS_READY): ?>
               <button type="button" class="btn btn-success btn-sm flex-1"
-                onclick="handleClaimOrder(<?= $o['id'] ?>, '<?= e($o['customer_name']) ?>')">
-                <i class="fa-solid fa-id-card"></i> Verify ID
+                onclick="openQueueQrModal()">
+                <i class="fa-solid fa-qrcode"></i> Scan QR to hand over
               </button>
             <?php endif; ?>
 
@@ -1256,14 +1254,12 @@ layoutHeader('Pre-orders', '');
         <h3 id="queueQrReviewTitle" style="margin:0 0 10px">Review matched order</h3>
         <div class="queue-qr-row"><span class="queue-qr-label">Order</span><span class="queue-qr-value" id="queueQrOrderNumber"></span></div>
         <div class="queue-qr-row"><span class="queue-qr-label">Customer</span><span class="queue-qr-value" id="queueQrCustomer"></span></div>
-        <div class="queue-qr-row"><span class="queue-qr-label">School ID</span><span class="queue-qr-value" id="queueQrCustomerId"></span></div>
         <div class="queue-qr-row"><span class="queue-qr-label">Items</span><span class="queue-qr-value" id="queueQrItems"></span></div>
         <div class="queue-qr-row"><span class="queue-qr-label">Total</span><span class="queue-qr-value" id="queueQrTotal"></span></div>
         <div id="queueQrReviewActions" style="display:flex;gap:8px;margin-top:14px">
           <button type="button" class="btn btn-ghost flex-1" onclick="resetQueueQrReview()">Scan again</button>
           <button type="button" class="btn btn-success flex-1" id="queueQrConfirm" onclick="confirmQueueQrHandover()"><i class="fa-solid fa-check"></i> Confirm Handover</button>
         </div>
-        <button type="button" class="btn btn-primary w-full" id="queueQrDone" onclick="finishQueueQrClaim()" hidden style="margin-top:14px">Done</button>
       </section>
     </div>
   </div>
@@ -1422,7 +1418,7 @@ layoutHeader('Pre-orders', '');
   async function startQueueQrCamera() {
     if (queueQrStream) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof jsQR !== 'function') {
-      setQueueQrStatus('Camera scanning is not available in this browser. Use Verify ID instead.', 'danger');
+      setQueueQrStatus('Camera scanning is not available in this browser. Use a camera-enabled device to scan the order QR.', 'danger');
       return;
     }
     setQueueQrStatus('Requesting camera access…');
@@ -1530,7 +1526,6 @@ layoutHeader('Pre-orders', '');
       const order = result.order;
       document.getElementById('queueQrOrderNumber').textContent = order.order_number || '—';
       document.getElementById('queueQrCustomer').textContent = order.customer_name || '—';
-      document.getElementById('queueQrCustomerId').textContent = order.customer_id_no || '—';
       document.getElementById('queueQrItems').textContent = order.items || '—';
       document.getElementById('queueQrTotal').textContent = '₱' + Number(order.total_amount || 0).toLocaleString('en-PH', {
         minimumFractionDigits: 2
@@ -1538,7 +1533,6 @@ layoutHeader('Pre-orders', '');
       document.getElementById('queueQrReviewTitle').textContent = 'Review matched order';
       document.getElementById('queueQrReviewActions').hidden = false;
       document.getElementById('queueQrConfirm').disabled = false;
-      document.getElementById('queueQrDone').hidden = true;
       document.getElementById('queueQrReview').hidden = false;
       document.getElementById('queueQrStart').hidden = true;
       setQueueQrStatus('Order verified. Check the customer and items before confirming handover.', 'success');
@@ -1571,45 +1565,18 @@ layoutHeader('Pre-orders', '');
       pendingQueueQrData = null;
       document.getElementById('queueQrReviewTitle').textContent = 'Order claimed';
       document.getElementById('queueQrReviewActions').hidden = true;
-      document.getElementById('queueQrDone').hidden = false;
       setQueueQrStatus('Handover confirmed. Give the displayed items to the customer.', 'success');
+      window.setTimeout(() => {
+        closeQueueQrModal();
+        window.location.reload();
+      }, 1400);
     } catch (error) {
       button.disabled = false;
       setQueueQrStatus(error.message || 'Network error while claiming the order.', 'danger');
     }
   }
 
-  function finishQueueQrClaim() {
-    closeQueueQrModal();
-    window.location.reload();
-  }
-
   window.addEventListener('beforeunload', stopQueueQrCamera);
-
-  async function handleClaimOrder(orderId, studentName) {
-    const confirmed = await confirmModal(
-      `Confirm school ID has been verified for <strong>${studentName}</strong>?`, {
-        title: 'Verify ID & Claim',
-        icon: 'fa-id-card',
-        iconColor: 'success',
-        confirmText: 'Yes, ID verified',
-        confirmClass: 'btn-success'
-      }
-    );
-
-    if (confirmed) {
-      document.querySelector(`#order-form-${orderId} input[name="new_status"]`)?.remove();
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'new_status';
-      input.value = 'claimed';
-      document.querySelector(`#order-form-${orderId}`).appendChild(input);
-      isSubmitting = true;
-      document.querySelector(`#order-form-${orderId}`).submit();
-    } else {
-      unlockOrder(orderId); // release if they cancel
-    }
-  }
 
   async function handleCancelOrder(orderId, orderNumber, paymentAlreadyVerified = false) {
     const confirmed = await confirmModal(

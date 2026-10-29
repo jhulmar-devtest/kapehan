@@ -104,7 +104,7 @@ layoutHeader('Dashboard');
         <?php if ($ao['status'] === STATUS_READY): ?>
           <div class="alert alert-success" style="margin-bottom:0">
             <i class="fa-solid fa-circle-check"></i>
-            <div><strong>Your order is ready!</strong> Go to the counter and present your <strong>school ID</strong> to claim it.</div>
+            <div><strong>Your order is ready!</strong> Go to the counter and show your <strong>order QR</strong> to claim it.</div>
           </div>
         <?php elseif ($ao['status'] === STATUS_PREPARING): ?>
           <div class="alert alert-info" style="margin-bottom:0">
