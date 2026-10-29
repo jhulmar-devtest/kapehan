@@ -283,12 +283,31 @@ layoutHeader('Walk-in POS', '');
     gap: var(--space-3);
   }
 
+  .pos-menu-head {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 42;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+  }
+
   .filter-bar-wrap {
     display: flex;
     flex-direction: column;
     gap: 8px;
     flex-shrink: 0;
     margin-bottom: 8px;
+    position: sticky;
+    top: calc(var(--header-h) + 76px);
+    z-index: 41;
+    padding: 6px 8px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-color);
+    box-shadow: var(--shadow-xs);
   }
 
   .cat-pills {
@@ -300,6 +319,8 @@ layoutHeader('Walk-in POS', '');
     flex-wrap: nowrap;
     -webkit-overflow-scrolling: touch;
     padding-bottom: 2px;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: x proximity;
   }
 
   .cat-pills::-webkit-scrollbar {
@@ -307,8 +328,8 @@ layoutHeader('Walk-in POS', '');
   }
 
   .cat-pill {
-    height: 40px;
-    padding: 0 18px;
+    height: 48px;
+    padding: 0 17px;
     border-radius: var(--radius-full);
     font-size: 0.86rem;
     font-weight: 600;
@@ -322,6 +343,8 @@ layoutHeader('Walk-in POS', '');
     display: inline-flex;
     align-items: center;
     gap: 7px;
+    touch-action: manipulation;
+    scroll-snap-align: start;
   }
 
   .cat-pill:focus-visible,
@@ -354,9 +377,9 @@ layoutHeader('Walk-in POS', '');
   }
 
   .sub-pill {
-    height: 28px;
-    padding: 0 14px;
-    font-size: 0.72rem;
+    height: 42px;
+    padding: 0 15px;
+    font-size: 0.78rem;
     background: var(--surface-raised);
     border-color: transparent;
   }
@@ -378,11 +401,11 @@ layoutHeader('Walk-in POS', '');
 
   .pos-search {
     width: 100%;
-    height: 36px;
-    padding: 0 12px 0 34px;
+    height: 48px;
+    padding: 0 14px 0 40px;
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius-sm);
-    font-size: 0.83rem;
+    font-size: 1rem;
     font-family: inherit;
     color: var(--text-color);
     background: var(--surface-color);
@@ -614,14 +637,27 @@ layoutHeader('Walk-in POS', '');
 
   .pos-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
   }
 
   @media (min-width: 540px) {
     .pos-grid {
-      grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
     }
+  }
+
+  @media (min-width: 1101px) {
+    .pos-grid { grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); }
+  }
+
+  @media (max-width: 1100px) {
+    .filter-bar-wrap { top: calc(var(--header-h) + 76px); }
+  }
+
+  @media (max-width: 700px) {
+    .pos-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 9px; }
+    .filter-bar-wrap { top: calc(var(--header-h) + 76px); }
   }
 
   .pos-card {
@@ -634,6 +670,9 @@ layoutHeader('Walk-in POS', '');
     box-shadow: var(--shadow-xs);
     user-select: none;
     position: relative;
+    min-height: 100%;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .pos-card:hover {
@@ -690,7 +729,7 @@ layoutHeader('Walk-in POS', '');
   .pos-card-img {
     position: relative;
     width: 100%;
-    padding-bottom: 100%;
+    aspect-ratio: 4 / 3;
     background: var(--surface-raised);
     overflow: hidden;
   }
@@ -769,7 +808,7 @@ layoutHeader('Walk-in POS', '');
   }
 
   .pos-card-body {
-    padding: var(--space-3) var(--space-3) var(--space-3);
+    padding: 11px 12px 12px;
   }
 
   .pos-card-name {
@@ -777,7 +816,7 @@ layoutHeader('Walk-in POS', '');
     font-weight: 600;
     color: var(--text-color);
     line-height: 1.3;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -789,6 +828,16 @@ layoutHeader('Walk-in POS', '');
     font-size: 0.98rem;
     font-weight: 800;
     color: var(--primary-color);
+  }
+
+  .pos-card-footer { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .pos-card-add { display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:4px 9px; border-radius:999px; color:var(--primary-color); background:var(--primary-subtle); font-size:10px; font-weight:800; white-space:nowrap; }
+  .pos-card.in-cart .pos-card-add { color:#fff; background:var(--primary-color); }
+
+  @media (hover: none) {
+    .pos-card:hover { border-color:var(--border-color); box-shadow:var(--shadow-xs); transform:none; }
+    .pos-card:hover .pos-card-img img { transform:none; }
+    .pos-card:active { border-color:var(--primary-color); background:var(--primary-subtle); transform:scale(.99); }
   }
 
   .pos-no-results {
@@ -1185,6 +1234,51 @@ layoutHeader('Walk-in POS', '');
     background: rgba(5, 150, 105, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
+  }
+
+  .pos-totals-line.loyalty-saving .lbl,
+  .pos-totals-line.loyalty-saving .val { color: #16834b; }
+  .pos-totals-line.loyalty-saving .val { background: #e9f8ef; }
+
+  .loyalty-pos-box {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--surface-raised);
+  }
+  .loyalty-pos-head { display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; }
+  .loyalty-pos-icon { display:grid; place-items:center; flex:0 0 34px; width:34px; height:34px; border-radius:11px; color:#16834b; background:#e9f8ef; }
+  .loyalty-pos-title { margin:0; font-size:13px; font-weight:800; color:var(--text-primary); }
+  .loyalty-pos-subtitle { margin:3px 0 0; font-size:11px; line-height:1.4; color:var(--text-muted); }
+  .loyalty-search-label { display:block; margin:0 0 4px; font-size:10px; font-weight:800; letter-spacing:.04em; color:var(--text-muted); }
+  .loyalty-identity-row { display:grid; grid-template-columns:100px minmax(0,1fr); gap:8px; }
+  .loyalty-search-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .loyalty-search-actions .btn { min-height:36px; padding:7px 9px; }
+  .loyalty-customer-result { display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:center; gap:8px; min-height:54px; margin-top:10px; padding:9px 10px; border:1px solid var(--border-color); border-radius:11px; background:var(--surface-color); }
+  .loyalty-result-icon { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; color:var(--text-muted); background:var(--surface-raised); }
+  .loyalty-result-copy { min-width:0; }
+  .loyalty-result-title { display:block; overflow:hidden; color:var(--text-primary); font-size:11px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+  .loyalty-result-detail { display:block; margin-top:2px; color:var(--text-muted); font-size:10px; line-height:1.35; }
+  .loyalty-balance-badge { padding:5px 7px; border-radius:999px; color:#137443; background:#e9f8ef; font-size:10px; font-weight:800; white-space:nowrap; }
+  .loyalty-customer-result[data-state="success"] { border-color:#b9e4ca; background:#f7fcf8; }
+  .loyalty-customer-result[data-state="success"] .loyalty-result-icon { color:#16834b; background:#e9f8ef; }
+  .loyalty-customer-result[data-state="error"] { border-color:#f1c6c3; background:#fff9f8; }
+  .loyalty-customer-result[data-state="error"] .loyalty-result-icon { color:var(--primary-color); background:var(--primary-subtle); }
+  .loyalty-redemption-heading { margin:13px 0 7px; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+  .loyalty-redemption-option { padding:10px; border:1px solid var(--border-color); border-radius:11px; background:var(--surface-color); }
+  .loyalty-redemption-option + .loyalty-redemption-option { margin-top:7px; }
+  .loyalty-option-label { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:800; color:var(--text-primary); cursor:pointer; }
+  .loyalty-option-label input { flex:0 0 auto; accent-color:#16834b; }
+  .loyalty-option-help { display:block; margin:4px 0 0 23px; color:var(--text-muted); font-size:10px; line-height:1.4; }
+  .loyalty-reward-select { margin-top:8px; font-size:11px; }
+  .loyalty-redemption-option:has(input:checked) { border-color:#95d5ad; box-shadow:0 0 0 2px rgba(22,131,75,.08); }
+  .loyalty-redemption-option:has(input:disabled) { opacity:.68; }
+  .loyalty-points-preview { display:flex; align-items:flex-start; gap:8px; margin-top:9px; padding:9px 10px; border-radius:10px; color:#41604c; background:#edf7f0; font-size:10px; line-height:1.45; }
+  .loyalty-points-preview i { margin-top:1px; color:#16834b; }
+
+  @media(max-width:480px) {
+    .loyalty-identity-row { grid-template-columns:88px minmax(0,1fr); }
   }
 
   .pos-totals-line.total-final {
@@ -1771,7 +1865,10 @@ layoutHeader('Walk-in POS', '');
 
           <div class="pos-card-body">
             <div class="pos-card-name"><?= e($p['name']) ?></div>
-            <div class="pos-card-price"><?= peso($p['price']) ?></div>
+            <div class="pos-card-footer">
+              <div class="pos-card-price"><?= peso($p['price']) ?></div>
+              <span class="pos-card-add"><i class="fa-solid fa-plus" aria-hidden="true"></i> <?= ($p['has_sizes'] || $p['has_sugar'] || $p['has_addons'] || $p['has_inventory']) ? 'Choose' : 'Add' ?></span>
+            </div>
           </div>
         </div>
       <?php endforeach; ?>
@@ -1813,7 +1910,7 @@ layoutHeader('Walk-in POS', '');
           <span class="lbl" id="tot-discount-lbl">Discount (20%)</span>
           <span class="val discount" id="tot-discount">−₱0.00</span>
         </div>
-        <div class="pos-totals-line" id="tot-loyalty-row" style="display:none">
+        <div class="pos-totals-line loyalty-saving" id="tot-loyalty-row" style="display:none">
           <span class="lbl" id="tot-loyalty-lbl">Loyalty discount</span>
           <span class="val discount" id="tot-loyalty">−₱0.00</span>
         </div>
@@ -1830,30 +1927,56 @@ layoutHeader('Walk-in POS', '');
           <button class="discount-pill senior" data-dtype="senior" onclick="setDiscount('senior')">Senior</button>
         </div>
       </div>
-      <div class="loyalty-pos-box" style="padding:12px;border:1px solid var(--border-color);border-radius:12px;margin-top:12px">
-        <strong style="display:block;margin-bottom:8px">Customer loyalty points</strong>
-        <div style="display:flex;gap:7px">
-          <select id="loyalty-customer-type" class="form-control" style="max-width:115px">
-            <option value="student">Student</option>
-            <option value="faculty">Faculty</option>
-          </select>
-          <input id="loyalty-customer-identifier" class="form-control" placeholder="School ID" maxlength="30" style="min-width:0;flex:1">
-          <button type="button" class="btn btn-secondary" id="loyalty-lookup-button" onclick="lookupLoyaltyCustomer()">Find</button>
+      <section class="loyalty-pos-box" aria-labelledby="loyalty-pos-heading">
+        <div class="loyalty-pos-head">
+          <span class="loyalty-pos-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
+          <div>
+            <h3 class="loyalty-pos-title" id="loyalty-pos-heading">Loyalty</h3>
+            <p class="loyalty-pos-subtitle">Scan the customer’s QR or find their account to link this sale and use points.</p>
+          </div>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openLoyaltyQrScanner()"><i class="fa-solid fa-qrcode"></i> Scan loyalty QR</button>
-        <div id="loyalty-customer-result" role="status" style="font-size:12px;color:var(--text-muted);margin-top:7px">Optional: look up an account to link this walk-in order.</div>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
-          <input type="checkbox" id="pos-redeem-general" disabled> Use points for general discount
-        </label>
-        <small id="pos-general-redemption-hint" style="display:block;color:var(--text-muted);margin:4px 0">Look up a customer to see available points.</small>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px">
-          <input type="checkbox" id="pos-redeem-points" disabled> Redeem points for one drink reward
-        </label>
-        <label for="pos-loyalty-reward-product" style="display:block;margin-top:8px;font-size:12px;color:var(--text-muted)">Reward drink in this order</label>
-        <select id="pos-loyalty-reward-product" class="form-control" disabled>
-          <option value="">Look up a customer and add a reward drink</option>
-        </select>
-      </div>
+        <div class="loyalty-identity-row">
+          <div>
+            <label class="loyalty-search-label" for="loyalty-customer-type">Account</label>
+            <select id="loyalty-customer-type" class="form-control">
+              <option value="student">Student</option>
+              <option value="faculty">Faculty</option>
+            </select>
+          </div>
+          <div>
+            <label class="loyalty-search-label" for="loyalty-customer-identifier">School ID</label>
+            <input id="loyalty-customer-identifier" class="form-control" placeholder="Enter ID number" maxlength="30" autocomplete="off">
+          </div>
+        </div>
+        <div class="loyalty-search-actions">
+          <button type="button" class="btn btn-secondary" id="loyalty-lookup-button" onclick="lookupLoyaltyCustomer()"><i class="fa-solid fa-magnifying-glass"></i> Find account</button>
+          <button type="button" class="btn btn-ghost" onclick="openLoyaltyQrScanner()"><i class="fa-solid fa-qrcode"></i> Scan QR</button>
+        </div>
+        <div id="loyalty-customer-result" class="loyalty-customer-result" data-state="idle" role="status" aria-live="polite">
+          <span class="loyalty-result-icon"><i class="fa-solid fa-user" aria-hidden="true"></i></span>
+          <span class="loyalty-result-copy"><strong class="loyalty-result-title" id="loyalty-result-title">No account linked</strong><small class="loyalty-result-detail" id="loyalty-result-detail">Loyalty is optional for walk-in orders.</small></span>
+          <span class="loyalty-balance-badge" id="loyalty-balance-badge" hidden></span>
+        </div>
+        <div class="loyalty-redemption-heading">Use points</div>
+        <div class="loyalty-redemption-option">
+          <label class="loyalty-option-label" for="pos-redeem-general">
+            <input type="checkbox" id="pos-redeem-general" disabled>
+            <span>Discount this bill</span>
+          </label>
+          <small class="loyalty-option-help" id="pos-general-redemption-hint">Find an account to check available points.</small>
+        </div>
+        <div class="loyalty-redemption-option">
+          <label class="loyalty-option-label" for="pos-loyalty-reward-product"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i><span>Apply a drink reward</span></label>
+          <input type="checkbox" id="pos-redeem-points" disabled hidden>
+          <select id="pos-loyalty-reward-product" class="form-control loyalty-reward-select" disabled aria-label="Choose an eligible drink reward">
+            <option value="">Find an account and add an eligible drink</option>
+          </select>
+          <small class="loyalty-option-help" style="margin-top:6px">Choose a reward already in this order. Selecting it applies the points automatically.</small>
+        </div>
+        <div class="loyalty-points-preview" id="loyalty-points-preview" role="status" aria-live="polite">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Choose a points option to preview the savings before payment.</span>
+        </div>
+      </section>
     </div>
 
     <div class="pos-cart-footer">
@@ -2174,19 +2297,29 @@ layoutHeader('Walk-in POS', '');
     };
   }
 
+  function setLoyaltyStatus(title, detail, state = 'idle', balance = null) {
+    const result = document.getElementById('loyalty-customer-result');
+    result.dataset.state = state;
+    document.getElementById('loyalty-result-title').textContent = title;
+    document.getElementById('loyalty-result-detail').textContent = detail;
+    const badge = document.getElementById('loyalty-balance-badge');
+    badge.hidden = balance === null;
+    badge.textContent = balance === null ? '' : `${Number(balance).toLocaleString()} pts`;
+  }
+
   async function lookupLoyaltyCustomer() {
     const button = document.getElementById('loyalty-lookup-button');
     const type = document.getElementById('loyalty-customer-type').value;
     const identifier = document.getElementById('loyalty-customer-identifier').value.trim();
-    const result = document.getElementById('loyalty-customer-result');
     const redeem = document.getElementById('pos-redeem-points');
     const redeemGeneral = document.getElementById('pos-redeem-general');
     if (!identifier) {
-      result.textContent = 'Enter a student or faculty ID first.';
+      setLoyaltyStatus('School ID needed', 'Enter the customer ID or scan their loyalty QR.', 'error');
       return;
     }
     button.disabled = true;
-    button.textContent = 'Finding…';
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Finding…';
+    setLoyaltyStatus('Finding account…', 'Checking account and points balance.', 'loading');
     _loyaltyCustomer = null;
     redeem.checked = false;
     redeem.disabled = true;
@@ -2209,10 +2342,10 @@ layoutHeader('Walk-in POS', '');
       if (!response.ok || !data.ok) throw new Error(data.message || 'Account lookup failed.');
       applyLoyaltyCustomer(data.account);
     } catch (error) {
-      result.textContent = error.message;
+      setLoyaltyStatus('Account not found', error.message || 'Check the account type and ID, then try again.', 'error');
     } finally {
       button.disabled = false;
-      button.textContent = 'Find';
+      button.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Find account';
       renderCart();
     }
   }
@@ -2221,7 +2354,7 @@ layoutHeader('Walk-in POS', '');
     _loyaltyCustomer = account;
     document.getElementById('loyalty-customer-type').value = account.type;
     document.getElementById('loyalty-customer-identifier').value = account.identifier;
-    document.getElementById('loyalty-customer-result').textContent = `${account.name} · ${account.balance} points available`;
+    setLoyaltyStatus(account.name, `${account.type === 'faculty' ? 'Faculty' : 'Student'} account · ${account.identifier}`, 'success', account.balance);
     const redeem = document.getElementById('pos-redeem-points');
     const redeemGeneral = document.getElementById('pos-redeem-general');
     redeem.checked = false;
@@ -2343,6 +2476,13 @@ layoutHeader('Walk-in POS', '');
 
   window.addEventListener('beforeunload', stopLoyaltyQrCamera);
 
+  document.getElementById('loyalty-customer-identifier').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      lookupLoyaltyCustomer();
+    }
+  });
+
   document.getElementById('loyalty-customer-identifier').addEventListener('input', () => {
     _loyaltyCustomer = null;
     const redeem = document.getElementById('pos-redeem-points');
@@ -2351,7 +2491,7 @@ layoutHeader('Walk-in POS', '');
     redeem.disabled = true;
     redeemGeneral.checked = false;
     redeemGeneral.disabled = true;
-    document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its ID.';
+    setLoyaltyStatus('Account needs confirmation', 'Find the account again after changing its ID.', 'idle');
     renderCart();
   });
   document.getElementById('loyalty-customer-type').addEventListener('change', () => {
@@ -2362,20 +2502,8 @@ layoutHeader('Walk-in POS', '');
     redeem.disabled = true;
     redeemGeneral.checked = false;
     redeemGeneral.disabled = true;
-    document.getElementById('loyalty-customer-result').textContent = 'Look up the account again after changing its type.';
+    setLoyaltyStatus('Account needs confirmation', 'Find the account again after changing account type.', 'idle');
     renderCart();
-  });
-  document.getElementById('pos-redeem-points').addEventListener('change', () => {
-    if (document.getElementById('pos-redeem-points').checked) {
-      document.getElementById('pos-redeem-general').checked = false;
-    }
-    if (document.getElementById('pos-redeem-points').checked && getFinancials(getSubtotal()).loyaltyPoints < 1) {
-      document.getElementById('pos-redeem-points').checked = false;
-      document.getElementById('loyalty-customer-result').textContent = 'Choose an eligible drink reward in this order.';
-    }
-    renderCart();
-    if (_payMethod === 'cash') calcChange();
-    else onGcashRefInput();
   });
   document.getElementById('pos-loyalty-reward-product').addEventListener('change', () => {
     const rewardId = Number(document.getElementById('pos-loyalty-reward-product').value || 0);
@@ -2474,6 +2602,9 @@ layoutHeader('Walk-in POS', '');
       rewardSelect.disabled = true;
       document.getElementById('pos-redeem-points').checked = false;
       document.getElementById('pos-redeem-points').disabled = true;
+      document.getElementById('pos-redeem-general').checked = false;
+      document.getElementById('pos-redeem-general').disabled = true;
+      document.getElementById('loyalty-points-preview').innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Add items to the order to check reward eligibility.</span>';
       document.getElementById('pos-totals-block').style.display = 'none';
       document.getElementById('pos-total').textContent = '₱0.00';
       document.getElementById('pos-process-btn').disabled = true;
@@ -2542,14 +2673,26 @@ layoutHeader('Walk-in POS', '');
       fin = getFinancials(getSubtotal());
     }
     if (_loyaltyCustomer && generalHint) {
-      generalHint.textContent = generalBlocks > 0
-        ? `Available now: ${generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts for ₱${(generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount)).toFixed(2)} off.`
+      generalHint.textContent = generalCheckbox.checked && generalBlocks > 0
+        ? `Using ${generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts · saves ₱${(generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount)).toFixed(2)}.`
+        : generalBlocks > 0
+          ? `Available now: ${generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts for ₱${(generalBlocks * Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount)).toFixed(2)} off.`
         : `₱${Number(POS_LOYALTY_REDEMPTION_RULES.discount_amount).toFixed(2)} off per ${Number(POS_LOYALTY_REDEMPTION_RULES.points_step)} pts; points and order total limit redemption.`;
     }
     const redeemControl = document.getElementById('pos-redeem-points');
     if (redeemControl.checked && fin.loyaltyPoints < 1) {
       redeemControl.checked = false;
       fin = getFinancials(getSubtotal());
+    }
+    const pointsPreview = document.getElementById('loyalty-points-preview');
+    if (fin.loyaltyPoints > 0) {
+      pointsPreview.innerHTML = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i><span></span>';
+      pointsPreview.querySelector('span').textContent = `Applying ${fin.loyaltyPoints.toLocaleString()} points · saves ₱${fin.loyaltyDiscount.toFixed(2)}.`;
+    } else if (_loyaltyCustomer) {
+      pointsPreview.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span></span>';
+      pointsPreview.querySelector('span').textContent = `${Number(_loyaltyCustomer.balance || 0).toLocaleString()} points available. Select a discount or eligible drink reward to use them.`;
+    } else {
+      pointsPreview.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Find an account to see available points and rewards.</span>';
     }
     document.getElementById('pos-totals-block').style.display = '';
     document.getElementById('tot-subtotal').textContent = '₱' + fin.subtotal.toFixed(2);

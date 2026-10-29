@@ -590,6 +590,7 @@ layoutHeader('My Cart', '');
   }
 
   input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 </style>
@@ -856,7 +857,10 @@ layoutHeader('My Cart', '');
 
   async function refreshAsapAvailability() {
     try {
-      const response = await fetch(asapAvailabilityUrl, { cache: 'no-store', credentials: 'same-origin' });
+      const response = await fetch(asapAvailabilityUrl, {
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
       const slots = await response.json();
       const asap = Array.isArray(slots) ? slots.find(slot => slot.value === 'ASAP') : null;
       if (asap) asapRemainingDrinks = asap.full ? Math.min(0, parseInt(asap.remaining_drinks ?? 0, 10)) : Math.max(0, parseInt(asap.remaining_drinks ?? 0, 10));

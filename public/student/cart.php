@@ -585,6 +585,7 @@ layoutHeader('My Cart', '');
   }
 
   input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 </style>
