@@ -151,7 +151,7 @@ layoutHeader('Inventory Categories');
               <td><?= (int) $category['item_count'] ?></td>
               <td>
                 <?php if ($category['name'] !== $otherCategory): ?>
-                  <form method="POST" onsubmit="return confirm('Archive this category and its stock items? You can restore them later.')">
+                  <form method="POST" data-confirm-message="Archive this category and its stock items? You can restore them later." data-confirm-title="Archive category?" data-confirm-button="Archive category" data-confirm-icon="fa-box-archive" data-confirm-icon-color="warning" data-confirm-danger="true">
                     <?= csrfField() ?>
                     <input type="hidden" name="archive_category" value="1">
                     <input type="hidden" name="category_id" value="<?= (int) $category['id'] ?>">

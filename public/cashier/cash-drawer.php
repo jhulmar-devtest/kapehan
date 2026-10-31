@@ -428,7 +428,11 @@ if ($recentDrawerDays && (count($recentDrawerDays) > 1 || !$report)):
       .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-print"></i> Print Full Drawer Report';
-        alert(err.message);
+        alertModal(err.message || 'Could not print the drawer report.', {
+          title: 'Print failed',
+          icon: 'fa-triangle-exclamation',
+          iconColor: 'warning'
+        });
       });
   }
 </script>

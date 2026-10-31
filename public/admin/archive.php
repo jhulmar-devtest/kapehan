@@ -133,7 +133,7 @@ layoutHeader('Archive');
         $canRestore = !($type === 'cashiers' && str_starts_with((string) ($record['username'] ?? ''), '__deleted_cashier_'));
       ?>
         <tr><td><strong><?= e($name) ?></strong></td><td><?= e($detail ?: '—') ?></td><td><?= e(date('M j, Y g:i A', strtotime($record['archived_at']))) ?></td><td>
-          <?php if ($canRestore): ?><form method="POST" onsubmit="return confirm('Restore this record?')"><?= csrfField() ?><input type="hidden" name="type" value="<?= e($type) ?>"><input type="hidden" name="record_id" value="<?= (int) $record['id'] ?>"><button class="btn btn-sm btn-primary" name="restore" value="1" type="submit"><i class="fa-solid fa-rotate-left"></i> Restore</button></form>
+          <?php if ($canRestore): ?><form method="POST" data-confirm-message="<?= e('Restore ' . $name . '?') ?>" data-confirm-title="Restore record?" data-confirm-button="Restore" data-confirm-icon="fa-rotate-left" data-confirm-icon-color="success"><?= csrfField() ?><input type="hidden" name="type" value="<?= e($type) ?>"><input type="hidden" name="record_id" value="<?= (int) $record['id'] ?>"><button class="btn btn-sm btn-primary" name="restore" value="1" type="submit"><i class="fa-solid fa-rotate-left"></i> Restore</button></form>
           <?php else: ?><span class="text-muted" title="The old login credentials were removed before reversible archiving was added.">Cannot restore</span><?php endif; ?>
         </td></tr>
       <?php endforeach; ?>

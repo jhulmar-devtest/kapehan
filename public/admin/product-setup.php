@@ -463,7 +463,7 @@ layoutHeader('Ordering');
       <p>Set the product details, connect the stock it uses, and choose which add-ons customers can request.</p>
     </div>
     <?php if ($editing): ?>
-      <form method="POST" action="<?= e(APP_URL) ?>/admin/ordering.php" onsubmit="return confirm('Archive this product? It will be hidden from active pages and can be restored later.');">
+      <form method="POST" action="<?= e(APP_URL) ?>/admin/ordering.php" data-confirm-message="Archive this product? It will be hidden from active pages and can be restored later." data-confirm-title="Archive product?" data-confirm-button="Archive product" data-confirm-icon="fa-box-archive" data-confirm-icon-color="warning" data-confirm-danger="true">
         <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE"><input type="hidden" name="product_id" value="<?= $productId ?>">
         <button type="submit" class="btn btn-danger"><i class="fa-solid fa-box-archive"></i> Archive product</button>
       </form>

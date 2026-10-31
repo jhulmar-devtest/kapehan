@@ -70,16 +70,39 @@ function showToast(message, type = "success") {
   }, 3000);
 }
 
-/**
- * confirmDelete(message, formOrCallback)
- * Shows a browser confirm dialog. Returns true if user confirms.
- * Usage: <form onsubmit="return confirmDelete('Delete this item?')">
- */
-function confirmDelete(message) {
-  return confirm(
-    message || "Are you sure you want to delete this? This cannot be undone.",
-  );
-}
+// Forms can opt into a consistent async confirmation modal with data attributes.
+// Keep the submission paused while the user decides, then bypass this listener
+// when submitting the already-confirmed form.
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("form[data-confirm-message]");
+  if (!form) return;
+  if (form.dataset.confirmPending === "true") {
+    event.preventDefault();
+    return;
+  }
+
+  event.preventDefault();
+  form.dataset.confirmPending = "true";
+  const submitter = event.submitter;
+  confirmModal(escapeHtml(form.dataset.confirmMessage), {
+    title: form.dataset.confirmTitle || "Confirm action",
+    confirmText: form.dataset.confirmButton || "Yes, proceed",
+    icon: form.dataset.confirmIcon || "fa-circle-question",
+    iconColor: form.dataset.confirmIconColor || "primary",
+    danger: form.dataset.confirmDanger === "true",
+  }).then((confirmed) => {
+    delete form.dataset.confirmPending;
+    if (!confirmed) return;
+    if (submitter?.name) {
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = submitter.name;
+      hidden.value = submitter.value;
+      form.appendChild(hidden);
+    }
+    HTMLFormElement.prototype.submit.call(form);
+  });
+});
 
 /**
  * fetchJSON(url, options)

@@ -705,7 +705,7 @@ layoutHeader('Inventory');
                   <button class="btn btn-sm btn-outline" title="View Details" onclick='openDetailsModal(<?= json_encode($it) ?>, <?= json_encode($historyByItem[$it['id']] ?? []) ?>)'><i class="fa-solid fa-eye"></i></button>
                   <button class="btn btn-sm btn-outline" title="Adjust Stock" onclick='openAdjustModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-arrows-rotate"></i> Adjust</button>
                   <button class="btn btn-sm btn-outline" title="Edit Item" onclick='openEditItemModal(<?= json_encode($it) ?>)'><i class="fa-solid fa-pen"></i></button>
-                  <form method="POST" style="display:inline" onsubmit="return confirm('Archive this inventory item? Products using it and its add-ons will be hidden to protect stock accuracy. You can restore them later.')">
+                  <form method="POST" style="display:inline" data-confirm-message="Archive this inventory item? Products using it and its add-ons will be hidden to protect stock accuracy. You can restore them later." data-confirm-title="Archive inventory item?" data-confirm-button="Archive item" data-confirm-icon="fa-box-archive" data-confirm-icon-color="warning" data-confirm-danger="true">
                     <?= csrfField() ?>
                     <input type="hidden" name="archive_item" value="1">
                     <input type="hidden" name="item_id" value="<?= $it['id'] ?>">

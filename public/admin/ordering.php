@@ -1036,7 +1036,7 @@ layoutHeader('Ordering');
             <div class="category-actions">
               <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($groupData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
               <button class="btn btn-sm btn-outline" type="button" onclick="openCategoryModal(<?= (int)$group['id'] ?>)"><i class="fa-solid fa-folder-plus"></i> Add subcategory</button>
-              <form method="POST" onsubmit="return confirmCategoryArchive(this, <?= (int)$groupProductCount ?>)">
+              <form method="POST" onsubmit="return confirmCategoryArchive(event, <?= (int)$groupProductCount ?>)">
                 <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$group['id'] ?>">
                 <button type="submit" class="btn btn-sm btn-danger" title="Archive this category and its subcategories and products"><i class="fa-solid fa-box-archive"></i> Archive</button>
               </form>
@@ -1055,7 +1055,7 @@ layoutHeader('Ordering');
                   <div class="category-actions">
                     <a class="btn btn-sm btn-ghost" href="<?= e(APP_URL) ?>/admin/product-setup.php?category_id=<?= (int)$sub['id'] ?>"><i class="fa-solid fa-plus"></i> Add product</a>
                     <button class="btn btn-sm btn-outline" type="button" onclick='openCategoryModal(null, <?= json_encode($subData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Rename</button>
-                    <form method="POST" onsubmit="return confirmCategoryArchive(this, <?= (int)$subCount ?>)">
+                    <form method="POST" onsubmit="return confirmCategoryArchive(event, <?= (int)$subCount ?>)">
                       <?= csrfField() ?><input type="hidden" name="_method" value="ARCHIVE_CATEGORY"><input type="hidden" name="category_id" value="<?= (int)$sub['id'] ?>">
                       <button type="submit" class="btn btn-sm btn-danger" aria-label="Archive <?= e($sub['name']) ?>"><i class="fa-solid fa-box-archive"></i></button>
                     </form>
@@ -1197,7 +1197,7 @@ layoutHeader('Ordering');
                 <td>
                   <div class="size-actions">
                     <button type="button" class="btn btn-sm btn-outline" onclick='openSizeModal(<?= json_encode($s, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'><i class="fa-solid fa-pen"></i> Edit</button>
-                    <form method="POST" style="display:inline" onsubmit="return confirm('Archive this size option? It will be hidden from checkout and can be restored later.')">
+                    <form method="POST" style="display:inline" onsubmit="return confirmSizeArchive(event)">
                       <?= csrfField() ?>
                       <input type="hidden" name="size_action" value="archive">
                       <input type="hidden" name="size_id" value="<?= $s['id'] ?>">
@@ -1432,13 +1432,33 @@ layoutHeader('Ordering');
     });
   }
 
-  function handleToggle(input) {
-    if (!confirm('Change product availability?')) {
+  async function handleToggle(input) {
+    const confirmed = await confirmModal('Change product availability?', {
+      title: 'Change availability?',
+      confirmText: 'Change availability',
+      icon: 'fa-toggle-on',
+      iconColor: 'warning'
+    });
+    if (!confirmed) {
       input.checked = !input.checked;
       return;
     }
     input.disabled = true;
     input.form.submit();
+  }
+
+  async function confirmSizeArchive(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const confirmed = await confirmModal('Archive this size option? It will be hidden from checkout and can be restored later.', {
+      title: 'Archive size option?',
+      confirmText: 'Archive size',
+      icon: 'fa-box-archive',
+      iconColor: 'warning',
+      danger: true
+    });
+    if (confirmed) HTMLFormElement.prototype.submit.call(form);
+    return false;
   }
 
   function openAddonsListModal() {
@@ -1582,10 +1602,20 @@ layoutHeader('Ordering');
     document.getElementById('category-name').focus();
   }
 
-  function confirmCategoryArchive(form, productCount) {
+  async function confirmCategoryArchive(event, productCount) {
+    event.preventDefault();
+    const form = event.currentTarget;
     const products = productCount === 1 ? '1 product' : `${productCount} products`;
     const impact = productCount > 0 ? ` Its ${products} will be archived too.` : '';
-    return confirm(`Archive this category and all its subcategories?${impact} You can restore them later from Archive.`);
+    const confirmed = await confirmModal(`Archive this category and all its subcategories?${impact} You can restore them later from Archive.`, {
+      title: 'Archive category?',
+      confirmText: 'Archive category',
+      icon: 'fa-box-archive',
+      iconColor: 'warning',
+      danger: true
+    });
+    if (confirmed) HTMLFormElement.prototype.submit.call(form);
+    return false;
   }
 
   function closeCategoryModal() {

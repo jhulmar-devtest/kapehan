@@ -205,7 +205,7 @@ function layoutFooter(string $extraScripts = ''): void
   echo "\n" . '  </main>' . "\n";
   echo '</div><!-- /main-wrapper -->' . "\n\n";
   echo '<script src="' . $appUrl . '/../assets/js/sidebar.js"></script>' . "\n";
-  echo '<script src="' . $appUrl . '/../assets/js/utils.js"></script>' . "\n";
+  echo '<script src="' . $appUrl . '/../assets/js/utils.js?v=' . (int) filemtime(__DIR__ . '/../assets/js/utils.js') . '"></script>' . "\n";
   echo '<script>
 (function() {
   const modal = document.getElementById("logoutConfirmModal");

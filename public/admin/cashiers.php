@@ -153,7 +153,7 @@ layoutHeader('Cashiers');
                   </button>
                 </form>
                 <?php if (!(int) $c['is_active']): ?>
-                  <form method="POST" style="margin-top:6px" onsubmit="return confirm('Archive this cashier login? Past orders and drawer records will stay linked, and you can restore the account later.');">
+                  <form method="POST" style="margin-top:6px" data-confirm-message="Archive this cashier login? Past orders and drawer records will stay linked, and you can restore the account later." data-confirm-title="Archive cashier login?" data-confirm-button="Archive login" data-confirm-icon="fa-box-archive" data-confirm-icon-color="warning" data-confirm-danger="true">
                     <?= csrfField() ?>
                     <input type="hidden" name="archive_cashier" value="1">
                     <input type="hidden" name="cashier_id" value="<?= (int) $c['id'] ?>">

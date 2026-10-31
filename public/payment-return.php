@@ -136,7 +136,9 @@ $stepIcons = [
     </noscript><?php endif; ?>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="<?= e(APP_URL) ?>/../assets/css/variables.css">
+  <link rel="stylesheet" href="<?= e(APP_URL) ?>/../assets/css/components.css">
   <style>
     :root {
       color-scheme: light;
@@ -766,7 +768,7 @@ $stepIcons = [
           </svg>
           <span>Unpaid orders are released automatically after <?= (int) PAYMONGO_UNPAID_ORDER_MINUTES ?> minutes.</span>
         </div>
-        <form method="POST" class="actions" onsubmit="return confirm('Cancel this unpaid order?');">
+        <form method="POST" class="actions" data-confirm-message="Cancel this unpaid order? This cannot be undone." data-confirm-title="Cancel unpaid order?" data-confirm-button="Cancel order" data-confirm-icon="fa-ban" data-confirm-icon-color="warning" data-confirm-danger="true">
           <?= csrfField() ?>
           <input type="hidden" name="order" value="<?= e($order['order_number']) ?>">
           <a class="btn primary" href="<?= e($self) ?>&amp;resume=1">Complete payment</a>
@@ -858,6 +860,7 @@ $stepIcons = [
       })();
     </script>
   <?php endif; ?>
+  <script src="<?= e(APP_URL) ?>/../assets/js/utils.js?v=<?= (int) filemtime(__DIR__ . '/../assets/js/utils.js') ?>"></script>
 </body>
 
 </html>
