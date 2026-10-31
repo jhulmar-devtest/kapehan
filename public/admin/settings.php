@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     'store_close_time'             => $_POST['store_close_time'] ?? '20:00',
     'pickup_slot_interval_minutes' => (string) max(5, (int) ($_POST['pickup_slot_interval_minutes'] ?? 15)),
     'pickup_slot_capacity'         => (string) max(1, (int) ($_POST['pickup_slot_capacity'] ?? 6)),
-    'asap_order_quantity_limit'    => (string) max(1, min(99, (int) ($_POST['asap_order_quantity_limit'] ?? 10))),
+    'asap_order_quantity_limit'    => (string) max(1, min(99, (int) ($_POST['asap_order_quantity_limit'] ?? 8))),
     'asap_preparation_workload_limit' => (string) max(1, min(99, (int) ($_POST['asap_preparation_workload_limit'] ?? 8))),
     'online_ordering_enabled'      => ($_POST['online_ordering_enabled'] ?? '0') === '1' ? '1' : '0',
   ];
@@ -437,7 +437,7 @@ layoutHeader('Settings');
           </div>
           <div class="form-group">
             <label class="form-label" for="asap-order-quantity-limit">Maximum items for ASAP</label>
-            <input id="asap-order-quantity-limit" type="number" name="asap_order_quantity_limit" class="form-control" min="1" max="99" value="<?= e($asapQuantityLimit) ?>"><small class="form-hint">Larger orders must choose a scheduled pickup time. Default: 10 items.</small>
+            <input id="asap-order-quantity-limit" type="number" name="asap_order_quantity_limit" class="form-control" min="1" max="99" value="<?= e($asapQuantityLimit) ?>"><small class="form-hint">Larger orders must choose a scheduled pickup time. Default: 8 items. Admins can change this limit.</small>
           </div>
           <div class="form-group">
             <label class="form-label" for="asap-preparation-workload-limit">ASAP preparation limit</label>

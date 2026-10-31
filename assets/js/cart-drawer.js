@@ -234,7 +234,7 @@ function cartLineHtml(item, cart) {
             ${item.qty > 1 ? `<span class="cart-line-unit">${formatPeso(item.unit_price)} each</span>` : ""}
           </div>
         </div>
-        ${atMax ? '<div class="cart-line-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Maximum available quantity reached</div>' : ""}
+        ${atMax ? '<div class="cart-line-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Quantity limit reached for this item</div>' : ""}
       </div>
     </div>`;
 }
@@ -504,7 +504,7 @@ function cartChangeQty(lineId, d) {
   const nextProductQty =
     productItems.reduce((sum, i) => sum + Number(i.qty || 0), 0) + d;
   if (d > 0 && stockCaps.length && nextProductQty > Math.min(...stockCaps)) {
-    showToast("warning", `Estimated stock limit reached for ${item.name}.`);
+    showToast("warning", `Quantity limit reached for ${item.name}.`);
     return;
   }
   item.qty = Math.max(1, item.qty + d);
@@ -530,7 +530,7 @@ function cartSetQty(lineId, value) {
   const maxQty = cap === null ? requestedQty : Math.max(1, cap - otherProductQty);
   item.qty = Math.min(requestedQty, maxQty);
   if (item.qty < requestedQty) {
-    showToast("warning", `Estimated stock limit reached for ${item.name}.`);
+    showToast("warning", `Quantity limit reached for ${item.name}.`);
   }
   saveCart(cart);
   renderCartSidebar(false);

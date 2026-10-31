@@ -2130,7 +2130,7 @@ $asapQuantityLimit = asapOrderQuantityLimit();
       if (hasSizes) {
         document.getElementById('cmSizes').setAttribute('role', 'radiogroup');
         document.getElementById('cmSizes').innerHTML = SIZES.map((s, i) =>
-          `<div class="pay-option ${i===_cm.sizeIdx?'active':''}" data-i="${i}" role="radio" aria-checked="${i===_cm.sizeIdx}" tabindex="0" onclick="cmPick('size',${i})">${s.label}${s.adj?' +\u20b1'+s.adj:''}</div>`
+          `<div class="pay-option ${i===_cm.sizeIdx?'active':''}" data-i="${i}" role="radio" aria-checked="${i===_cm.sizeIdx}" tabindex="0" onclick="cmPick('size',${i})">${s.label} · ₱${(_cm.base + s.adj).toFixed(2)}</div>`
         ).join('');
       }
       document.getElementById('cmSugarBlock').hidden = !hasSugar;
@@ -2228,7 +2228,7 @@ $asapQuantityLimit = asapOrderQuantityLimit();
       _cm.stockLoading = true;
       _cm.stockEstimate = null;
       _cm.maxToAdd = null;
-      box.hidden = false;
+      box.hidden = true;
       box.style.background = 'var(--surface-raised)';
       box.style.color = 'var(--text-muted)';
       box.textContent = 'Checking available quantity…';
@@ -2258,17 +2258,12 @@ $asapQuantityLimit = asapOrderQuantityLimit();
           if (cart.length) saveCart(cart);
           box.hidden = false;
           if (result.max_quantity < 1) {
+            box.hidden = false;
             box.style.background = 'var(--status-cancelled-bg, #fce8e6)';
             box.style.color = 'var(--status-cancelled, #b42318)';
             box.textContent = 'This item is currently unavailable.';
-          } else if (result.low_stock) {
-            box.style.background = 'var(--status-warning-bg, #fff4d6)';
-            box.style.color = 'var(--status-warning, #8a5a00)';
-            box.textContent = 'Quantity is limited by current availability.';
           } else {
-            box.style.background = 'var(--surface-raised)';
-            box.style.color = 'var(--text-muted)';
-            box.textContent = 'Quantity is limited by current availability.';
+            box.hidden = true;
           }
         }
         _cm.qty = Math.max(1, Math.min(_cm.qty, _cm.maxToAdd === null ? 99 : Math.max(1, _cm.maxToAdd)));

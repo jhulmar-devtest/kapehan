@@ -89,6 +89,7 @@ INSERT INTO `app_settings` (`setting_key`, `setting_value`) VALUES
 ('loyalty_redeem_discount', '10.00'),
 ('loyalty_redeem_points', '100'),
 ('max_cash_preorder_amount', '150'),
+('asap_order_quantity_limit', '8'),
 ('no_show_strike_limit', '3'),
 ('asap_preparation_workload_limit', '8'),
 ('pickup_slot_capacity', '6'),

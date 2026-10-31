@@ -537,7 +537,7 @@ function onlineOrderingEnabled(): bool
 /** Maximum total drink quantity eligible for ASAP pickup. */
 function asapOrderQuantityLimit(): int
 {
-  return max(1, (int) getSetting('asap_order_quantity_limit', '10'));
+  return max(1, (int) getSetting('asap_order_quantity_limit', '8'));
 }
 
 /** Maximum number of drink units that may be in the active preparation queue before ASAP pauses. */

@@ -1286,7 +1286,7 @@ layoutHeader('Order Now', '');
           <?php foreach ([['16oz', 0], ['22oz', SIZE_22OZ_UPCHARGE]] as [$sz, $adj]): ?>
             <button class="cm-size-btn" onclick="document.querySelectorAll('.cm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');recalcModal();">
               <span class="cm-size-name"><?= $sz ?></span>
-              <span class="cm-size-adj"><?= $adj > 0 ? '+₱' . $adj : ($adj < 0 ? '−₱' . abs($adj) : 'Base') ?></span>
+              <span class="cm-size-adj">₱0.00</span>
             </button>
           <?php endforeach; ?>
         </div>
@@ -1512,6 +1512,10 @@ layoutHeader('Order Now', '');
   function recalcModal() {
     const sizeIdx = [...document.querySelectorAll('.cm-size-btn')].findIndex(b => b.classList.contains('active'));
     const sizeAdj = _modal.hasSizes ? (SIZES[sizeIdx]?.adj ?? 0) : 0;
+    document.querySelectorAll('.cm-size-btn').forEach((button, index) => {
+      const priceLabel = button.querySelector('.cm-size-adj');
+      if (priceLabel) priceLabel.textContent = '\u20b1' + (_modal.basePrice + (SIZES[index]?.adj ?? 0)).toFixed(2);
+    });
     let addonTotal = 0;
     if (_modal.hasAddons && _modal.addons.length > 0) {
       document.querySelectorAll('.cm-addon-cb:checked').forEach(cb => {

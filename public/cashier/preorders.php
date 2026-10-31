@@ -1214,7 +1214,7 @@ layoutHeader('Pre-orders', '');
             <?php endif; ?>
 
 
-            <?php if ($o['status'] !== STATUS_PREPARING && !in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required'], true)): ?>
+            <?php if ($o['status'] === STATUS_PENDING && !in_array(($o['cancellation_request_status'] ?? ''), ['pending', 'refund_required'], true)): ?>
               <button type="button" class="btn btn-danger btn-sm" onclick="handleCancelOrder(<?= $o['id'] ?>, '<?= e($o['order_number']) ?>', <?= ($o['pay_status'] ?? '') === PAY_STATUS_PAID ? 'true' : 'false' ?>)" title="Cancel order">
                 <i class="fa-solid fa-xmark"></i>
               </button>

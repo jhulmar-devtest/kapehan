@@ -3499,7 +3499,7 @@ layoutHeader('Walk-in POS', '');
             $adj = (float) $sizeOption['price_adjustment']; ?>
             <button class="pm-size-btn" onclick="document.querySelectorAll('.pm-size-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');posRecalc();posUpdateStockEstimate();">
               <span class="pm-size-name"><?= $sz ?></span>
-              <span class="pm-size-adj"><?= $adj > 0 ? '+₱' . $adj : ($adj < 0 ? '−₱' . abs($adj) : 'Base') ?></span>
+              <span class="pm-size-adj">₱0.00</span>
             </button>
           <?php endforeach; ?>
         </div>
@@ -3754,6 +3754,10 @@ layoutHeader('Walk-in POS', '');
   function posRecalc() {
     const sizeIdx = [...document.querySelectorAll('.pm-size-btn')].findIndex(b => b.classList.contains('active'));
     const sizeAdj = _pos.hasSizes ? (POS_SIZES[sizeIdx]?.adj ?? 0) : 0;
+    document.querySelectorAll('.pm-size-btn').forEach((button, index) => {
+      const priceLabel = button.querySelector('.pm-size-adj');
+      if (priceLabel) priceLabel.textContent = '\u20b1' + (_pos.basePrice + (POS_SIZES[index]?.adj ?? 0)).toFixed(2);
+    });
     let addonTotal = 0;
     if (_pos.hasAddons && _pos.addons.length > 0)
       document.querySelectorAll('.pm-addon-cb:checked').forEach(cb => addonTotal += parseFloat(cb.dataset.price));
